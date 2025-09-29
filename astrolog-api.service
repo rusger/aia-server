@@ -1,0 +1,15 @@
+[Unit]
+Description=Astrolog API Service
+After=network.target
+
+[Service]
+Type=simple
+User=ruslan
+WorkingDirectory=/home/ruslan/aia
+Environment="ASTROLOG_SECRET_KEY=cdc350a9383c659817d65e6fdab137a2fe9c750590e7e866ca0ae999a0ba5ce5"
+Environment="PORT=8081"
+ExecStart=/home/ruslan/aia/server/astrolog-api
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
