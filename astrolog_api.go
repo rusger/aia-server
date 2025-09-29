@@ -321,3 +321,4 @@ func main() {
     
     log.Printf("Astrolog API server starting on port %s", PORT)
     log.Fatal(http.ListenAndServe(":"+PORT, handler))
+}
