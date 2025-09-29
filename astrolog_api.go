@@ -96,9 +96,12 @@ func generateSignature(data map[string]interface{}) string {
 }
 
 func validateSignature(req AstrologRequest) bool {
-    // Check timestamp (prevent replay attacks - 5 minute window)
     currentTime := time.Now().Unix()
+    fmt.Printf("Current server time: %d, Request timestamp: %d, Diff: %d\n", 
+        currentTime, req.Timestamp, currentTime - req.Timestamp)
+    
     if currentTime - req.Timestamp > 300 || req.Timestamp > currentTime + 60 {
+        fmt.Printf("Timestamp validation failed\n")
         return false
     }
 
@@ -114,6 +117,8 @@ func validateSignature(req AstrologRequest) bool {
     }
 
     expectedSig := generateSignature(data)
+    fmt.Printf("Expected sig: %s\nReceived sig: %s\n", expectedSig, req.Signature)
+    
     return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
 }
 
