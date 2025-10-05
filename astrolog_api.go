@@ -263,12 +263,18 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
 
     // Build command
     dateParts := strings.Split(date, " ")
+    // Invert timezone and longitude for Astrolog
+    tzFloat, _ := strconv.ParseFloat(timezone, 64)
+    lonFloat, _ := strconv.ParseFloat(longitude, 64)
+    invertedTz := -tzFloat
+    invertedLon := -lonFloat
+    
     args := []string{
         "-qa",
         dateParts[0], dateParts[1], dateParts[2],
         timeStr,
-        fmt.Sprintf("-%s", timezone),
-        fmt.Sprintf("-%s", longitude),
+        fmt.Sprintf("%g", invertedTz),
+        fmt.Sprintf("%g", invertedLon),
         latitude,
         "-s", "0.883208",
         "-R", "8", "9", "10",
