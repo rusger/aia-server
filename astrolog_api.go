@@ -44,6 +44,7 @@ type AstrologRequest struct {
 type AstrologResponse struct {
     Success bool   `json:"success"`
     Data    string `json:"data,omitempty"`
+    Command string `json:"command,omitempty"`
     Error   string `json:"error,omitempty"`
 }
 
@@ -280,6 +281,10 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
         "-R", "8", "9", "10",
         "-c", "14", "-C", "-RC", "22", "31",
     }
+    
+    // Create the full command string
+    fullCommand := fmt.Sprintf("./astrolog %s", strings.Join(args, " "))
+    log.Printf("Executing command: %s", fullCommand)
 
     // Execute command with timeout
     ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
