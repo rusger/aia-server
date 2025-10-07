@@ -279,7 +279,6 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
         "-s", "0.883208",
         "-R", "8", "9", "10",
         "-c", "14", "-C", "-RC", "22", "31"
-"
     }
 
     // Execute command with timeout
