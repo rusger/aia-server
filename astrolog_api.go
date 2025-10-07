@@ -314,6 +314,7 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(AstrologResponse{
         Success: true,
         Data:    strings.Join(filtered, "\n"),
+        Command: fullCommand, 
     })
 }
 
