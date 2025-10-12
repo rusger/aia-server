@@ -16,6 +16,7 @@ import (
     "strings"
     "sync"
     "time"
+    "sort"
 
     "github.com/gorilla/mux"
     "github.com/rs/cors"
@@ -90,8 +91,20 @@ func getEnv(key, defaultValue string) string {
 }
 
 func generateSignature(data map[string]interface{}) string {
-    // Sort keys and create string
-    jsonData, _ := json.Marshal(data)
+    // Sort keys to ensure consistent ordering
+    keys := make([]string, 0, len(data))
+    for k := range data {
+        keys = append(keys, k)
+    }
+    sort.Strings(keys)
+    
+    // Build sorted map
+    sortedData := make(map[string]interface{})
+    for _, k := range keys {
+        sortedData[k] = data[k]
+    }
+    
+    jsonData, _ := json.Marshal(sortedData)
     h := hmac.New(sha256.New, []byte(SECRET_KEY))
     h.Write(jsonData)
     return hex.EncodeToString(h.Sum(nil))
