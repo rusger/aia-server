@@ -91,20 +91,8 @@ func getEnv(key, defaultValue string) string {
 }
 
 func generateSignature(data map[string]interface{}) string {
-    // Sort keys to ensure consistent ordering
-    keys := make([]string, 0, len(data))
-    for k := range data {
-        keys = append(keys, k)
-    }
-    sort.Strings(keys)
-    
-    // Build sorted map
-    sortedData := make(map[string]interface{})
-    for _, k := range keys {
-        sortedData[k] = data[k]
-    }
-    
-    jsonData, _ := json.Marshal(sortedData)
+    // json.Marshal automatically sorts keys alphabetically in Go
+    jsonData, _ := json.Marshal(data)
     h := hmac.New(sha256.New, []byte(SECRET_KEY))
     h.Write(jsonData)
     return hex.EncodeToString(h.Sum(nil))
@@ -135,6 +123,10 @@ func validateSignature(req AstrologRequest) bool {
     if req.ChartType != "" {
         data["chart_type"] = req.ChartType
     }
+
+    // DEBUG: Print the JSON being hashed
+    jsonData, _ := json.Marshal(data)
+    fmt.Printf("JSON for signature: %s\n", string(jsonData))
 
     expectedSig := generateSignature(data)
     fmt.Printf("Expected sig: %s\nReceived sig: %s\n", expectedSig, req.Signature)
