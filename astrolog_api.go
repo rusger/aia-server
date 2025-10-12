@@ -35,6 +35,7 @@ type AstrologRequest struct {
     Timezone  string `json:"timezone"`  // GMT offset
     Longitude string `json:"longitude"`
     Latitude  string `json:"latitude"`
+    ChartType string `json:"chart_type,omitempty"` // "natal" or "navamsha"
     DeviceID  string `json:"device_id"`
     Signature string `json:"signature"`
     Timestamp int64  `json:"timestamp"` // Unix timestamp for replay attack prevention
@@ -115,6 +116,11 @@ func validateSignature(req AstrologRequest) bool {
         "latitude":  req.Latitude,
         "device_id": req.DeviceID,
         "timestamp": req.Timestamp,
+    }
+    
+    // Include chart_type in signature validation if present
+    if req.ChartType != "" {
+        data["chart_type"] = req.ChartType
     }
 
     expectedSig := generateSignature(data)
@@ -270,6 +276,7 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     invertedTz := -tzFloat
     invertedLon := -lonFloat
     
+    // Base arguments
     args := []string{
         "-qa",
         dateParts[0], dateParts[1], dateParts[2],
@@ -277,9 +284,17 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
         fmt.Sprintf("%g", invertedTz),
         fmt.Sprintf("%g", invertedLon),
         latitude,
-        "-s", "0.883208",
-        "-R", "8", "9", "10",
-        "-c", "14", "-C", "-RC", "22", "31",
+    }
+    
+    // Add chart-specific parameters
+    if req.ChartType == "navamsha" {
+        // Navamsha divisional chart parameters
+        args = append(args, "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31")
+        log.Printf("Calculating Navamsha chart")
+    } else {
+        // Natal chart parameters (default)
+        args = append(args, "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31")
+        log.Printf("Calculating Natal chart")
     }
     
     // Create the full command string
