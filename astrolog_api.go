@@ -68,8 +68,8 @@ func (dl *DeviceLimiter) GetLimiter(deviceID string) *rate.Limiter {
 
     limiter, exists := dl.limiters[deviceID]
     if !exists {
-        // 1 request per 10 seconds
-        limiter = rate.NewLimiter(rate.Every(10*time.Second), 1)
+        // Allow burst of 2 requests (natal + navamsha), then 1 request per 10 seconds
+        limiter = rate.NewLimiter(rate.Every(10*time.Second), 2)
         dl.limiters[deviceID] = limiter
     }
 
