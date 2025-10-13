@@ -90,10 +90,37 @@ func getEnv(key, defaultValue string) string {
 }
 
 func generateSignature(data map[string]interface{}) string {
-    // json.Marshal automatically sorts keys alphabetically in Go
-    jsonData, _ := json.Marshal(data)
+    // Manually build sorted JSON string
+    keys := make([]string, 0, len(data))
+    for k := range data {
+        keys = append(keys, k)
+    }
+    sort.Strings(keys)
+    
+    // Build JSON string with sorted keys
+    jsonParts := make([]string, 0, len(keys))
+    for _, k := range keys {
+        var valueStr string
+        switch v := data[k].(type) {
+        case string:
+            valueStr = fmt.Sprintf(`"%s":"%s"`, k, v)
+        case int64:
+            valueStr = fmt.Sprintf(`"%s":%d`, k, v)
+        case int:
+            valueStr = fmt.Sprintf(`"%s":%d`, k, v)
+        case float64:
+            valueStr = fmt.Sprintf(`"%s":"%v"`, k, v)
+        default:
+            valueStr = fmt.Sprintf(`"%s":"%v"`, k, v)
+        }
+        jsonParts = append(jsonParts, valueStr)
+    }
+    jsonStr := "{" + strings.Join(jsonParts, ",") + "}"
+    
+    fmt.Printf("JSON for signature (Go): %s\n", jsonStr)
+    
     h := hmac.New(sha256.New, []byte(SECRET_KEY))
-    h.Write(jsonData)
+    h.Write([]byte(jsonStr))
     return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -122,10 +149,6 @@ func validateSignature(req AstrologRequest) bool {
     if req.ChartType != "" {
         data["chart_type"] = req.ChartType
     }
-
-    // DEBUG: Print the JSON being hashed
-    jsonData, _ := json.Marshal(data)
-    fmt.Printf("JSON for signature: %s\n", string(jsonData))
 
     expectedSig := generateSignature(data)
     fmt.Printf("Expected sig: %s\nReceived sig: %s\n", expectedSig, req.Signature)
