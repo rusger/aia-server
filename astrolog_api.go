@@ -317,7 +317,7 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     // Add chart-specific parameters
     if req.ChartType == "navamsha" {
         // Navamsha divisional chart parameters
-        args = append(args, "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31")
+        args = append(args, "-s", "0.883208", "-R", "8", "9", "10", "-9", "-c", "14", "-C", "-RC", "22", "31")
         log.Printf("Calculating Navamsha chart")
     } else {
         // Natal chart parameters (default)
