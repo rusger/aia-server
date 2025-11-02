@@ -55,7 +55,7 @@ type AstrologResponse struct {
 
 // User registration request
 type UserRegisterRequest struct {
-    UserID             string `json:"user_id"`
+    DeviceID           string `json:"device_id"`           // STABLE device identifier
     SubscriptionType   string `json:"subscription_type"`   // "free" or "paid"
     SubscriptionLength string `json:"subscription_length"` // "monthly" or "yearly"
 }
@@ -111,10 +111,10 @@ func initDB() error {
         return fmt.Errorf("failed to open database: %v", err)
     }
 
-    // Create users table
+    // Create users table with device_id as primary key
     createTableSQL := `
     CREATE TABLE IF NOT EXISTS users (
-        user_id TEXT PRIMARY KEY,
+        device_id TEXT PRIMARY KEY,
         subscription_type TEXT NOT NULL DEFAULT 'free',
         subscription_length TEXT NOT NULL DEFAULT 'monthly',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -411,15 +411,15 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-// Create new user with server-generated ID (atomic operation)
-func createUser(w http.ResponseWriter, r *http.Request) {
-    log.Println("🔵 [createUser] Received request to create new user")
+// Register or update user by device ID (IDEMPOTENT - safe to call multiple times)
+func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
+    log.Println("🔵 [registerOrUpdateUser] Received request")
     w.Header().Set("Content-Type", "application/json")
 
     // Parse request
     var req UserRegisterRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("❌ [createUser] Failed to parse request: %v", err)
+        log.Printf("❌ [registerOrUpdateUser] Failed to parse request: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Invalid request format",
@@ -427,7 +427,18 @@ func createUser(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("🔵 [createUser] Request params: type=%s, length=%s", req.SubscriptionType, req.SubscriptionLength)
+    // Validate device_id
+    if req.DeviceID == "" {
+        log.Printf("❌ [registerOrUpdateUser] Missing device_id")
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "device_id is required",
+        })
+        return
+    }
+
+    log.Printf("🔵 [registerOrUpdateUser] Device ID: %s, type=%s, length=%s",
+        req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
 
     // Validate subscription_type
     if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
@@ -439,14 +450,10 @@ func createUser(w http.ResponseWriter, r *http.Request) {
         req.SubscriptionLength = "monthly" // Default to monthly
     }
 
-    // Generate UUID on server side
-    userID := uuid.New().String()
-    log.Printf("🔵 [createUser] Generated UUID: %s", userID)
-
     // Use transaction to ensure atomicity
     tx, err := db.Begin()
     if err != nil {
-        log.Printf("❌ [createUser] Transaction error: %v", err)
+        log.Printf("❌ [registerOrUpdateUser] Transaction error: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Database error",
@@ -455,91 +462,20 @@ func createUser(w http.ResponseWriter, r *http.Request) {
     }
     defer tx.Rollback()
 
-    // Insert new user
-    query := `INSERT INTO users (user_id, subscription_type, subscription_length)
-              VALUES (?, ?, ?)`
-    log.Printf("🔵 [createUser] Inserting into database...")
+    // INSERT OR REPLACE - this is idempotent and safe
+    // If device_id exists, it updates. If not, it inserts.
+    query := `INSERT INTO users (device_id, subscription_type, subscription_length, updated_at)
+              VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+              ON CONFLICT(device_id) DO UPDATE SET
+                  subscription_type = excluded.subscription_type,
+                  subscription_length = excluded.subscription_length,
+                  updated_at = CURRENT_TIMESTAMP`
 
-    _, err = tx.Exec(query, userID, req.SubscriptionType, req.SubscriptionLength)
+    log.Printf("🔵 [registerOrUpdateUser] Upserting into database...")
+
+    _, err = tx.Exec(query, req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
     if err != nil {
-        log.Printf("❌ [createUser] Database insert error: %v", err)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Failed to create user",
-        })
-        return
-    }
-
-    // Commit transaction
-    log.Printf("🔵 [createUser] Committing transaction...")
-    if err = tx.Commit(); err != nil {
-        log.Printf("❌ [createUser] Transaction commit error: %v", err)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Failed to create user",
-        })
-        return
-    }
-
-    log.Printf("✅ [createUser] User created successfully: %s (type: %s, length: %s)",
-        userID, req.SubscriptionType, req.SubscriptionLength)
-
-    // Return the generated user_id
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "success":             true,
-        "message":             "User created successfully",
-        "user_id":             userID,
-        "subscription_type":   req.SubscriptionType,
-        "subscription_length": req.SubscriptionLength,
-    })
-}
-
-// Register or update user
-func registerUser(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Content-Type", "application/json")
-
-    // Parse request
-    var req UserRegisterRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Invalid request format",
-        })
-        return
-    }
-
-    // Validate user_id (should be UUID format)
-    if req.UserID == "" {
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "user_id is required",
-        })
-        return
-    }
-
-    // Validate subscription_type
-    if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
-        req.SubscriptionType = "free" // Default to free
-    }
-
-    // Validate subscription_length
-    if req.SubscriptionLength != "monthly" && req.SubscriptionLength != "yearly" {
-        req.SubscriptionLength = "monthly" // Default to monthly
-    }
-
-    // Insert or update user in database
-    query := `
-    INSERT INTO users (user_id, subscription_type, subscription_length)
-    VALUES (?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET
-        subscription_type = excluded.subscription_type,
-        subscription_length = excluded.subscription_length,
-        updated_at = CURRENT_TIMESTAMP
-    `
-
-    _, err := db.Exec(query, req.UserID, req.SubscriptionType, req.SubscriptionLength)
-    if err != nil {
-        log.Printf("Database error: %v", err)
+        log.Printf("❌ [registerOrUpdateUser] Database error: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Failed to register user",
@@ -547,24 +483,50 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("User registered/updated: %s (type: %s, length: %s)",
-        req.UserID, req.SubscriptionType, req.SubscriptionLength)
+    // Commit transaction
+    log.Printf("🔵 [registerOrUpdateUser] Committing transaction...")
+    if err = tx.Commit(); err != nil {
+        log.Printf("❌ [registerOrUpdateUser] Transaction commit error: %v", err)
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "Failed to register user",
+        })
+        return
+    }
 
-    json.NewEncoder(w).Encode(UserRegisterResponse{
-        Success: true,
-        Message: "User registered successfully",
+    log.Printf("✅ [registerOrUpdateUser] User registered/updated: device=%s (type: %s, length: %s)",
+        req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
+
+    // Return the device_id
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":             true,
+        "message":             "User registered successfully",
+        "device_id":           req.DeviceID,
+        "subscription_type":   req.SubscriptionType,
+        "subscription_length": req.SubscriptionLength,
     })
 }
 
-// Get user subscription info
+// Legacy endpoint - redirects to registerOrUpdateUser
+func registerUser(w http.ResponseWriter, r *http.Request) {
+    registerOrUpdateUser(w, r)
+}
+
+
+// Get user subscription info by device_id
 func getUserInfo(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
-    userID := r.URL.Query().Get("user_id")
-    if userID == "" {
+    deviceID := r.URL.Query().Get("device_id")
+    if deviceID == "" {
+        // Try legacy parameter name
+        deviceID = r.URL.Query().Get("user_id")
+    }
+
+    if deviceID == "" {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
-            "error":   "user_id parameter is required",
+            "error":   "device_id parameter is required",
         })
         return
     }
@@ -573,9 +535,9 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     var createdAt, updatedAt string
 
     query := `SELECT subscription_type, subscription_length, created_at, updated_at
-              FROM users WHERE user_id = ?`
+              FROM users WHERE device_id = ?`
 
-    err := db.QueryRow(query, userID).Scan(&subscriptionType, &subscriptionLength, &createdAt, &updatedAt)
+    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &createdAt, &updatedAt)
     if err == sql.ErrNoRows {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -593,7 +555,7 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
 
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success":             true,
-        "user_id":             userID,
+        "device_id":           deviceID,
         "subscription_type":   subscriptionType,
         "subscription_length": subscriptionLength,
         "created_at":          createdAt,
@@ -610,13 +572,11 @@ func main() {
 
     router := mux.NewRouter()
     router.HandleFunc("/api/astrolog", calculateChart).Methods("POST")
-    router.HandleFunc("/api/user/create", createUser).Methods("POST")
-    router.HandleFunc("/api/user/register", registerUser).Methods("POST")
+    router.HandleFunc("/api/user/register", registerOrUpdateUser).Methods("POST")
     router.HandleFunc("/api/user/info", getUserInfo).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  POST /api/astrolog")
-    log.Println("  POST /api/user/create")
     log.Println("  POST /api/user/register")
     log.Println("  GET  /api/user/info")
 

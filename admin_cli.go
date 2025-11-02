@@ -14,10 +14,10 @@ import (
 func main() {
     // Define subcommands
     getCmd := flag.NewFlagSet("get", flag.ExitOnError)
-    getUserID := getCmd.String("id", "", "User ID to query")
+    getDeviceID := getCmd.String("id", "", "Device ID to query")
 
     updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
-    updateUserID := updateCmd.String("id", "", "User ID to update")
+    updateDeviceID := updateCmd.String("id", "", "Device ID to update")
     updateType := updateCmd.String("type", "", "Subscription type (free/paid)")
     updateLength := updateCmd.String("length", "", "Subscription length (monthly/yearly)")
 
@@ -41,21 +41,21 @@ func main() {
     switch os.Args[1] {
     case "get":
         getCmd.Parse(os.Args[2:])
-        if *getUserID == "" {
+        if *getDeviceID == "" {
             fmt.Println("Error: -id is required")
             getCmd.Usage()
             os.Exit(1)
         }
-        getUserInfo(db, *getUserID)
+        getUserInfo(db, *getDeviceID)
 
     case "update":
         updateCmd.Parse(os.Args[2:])
-        if *updateUserID == "" || *updateType == "" || *updateLength == "" {
+        if *updateDeviceID == "" || *updateType == "" || *updateLength == "" {
             fmt.Println("Error: -id, -type, and -length are required")
             updateCmd.Usage()
             os.Exit(1)
         }
-        updateUser(db, *updateUserID, *updateType, *updateLength)
+        updateUser(db, *updateDeviceID, *updateType, *updateLength)
 
     case "list":
         listCmd.Parse(os.Args[2:])
@@ -76,21 +76,22 @@ func printUsage() {
     fmt.Println("  update  Update user subscription")
     fmt.Println("  list    List all users")
     fmt.Println("\nExamples:")
-    fmt.Println("  admin_cli get -id 5c8f4981-43ad-4fcb-92a9-515d7efec8f8")
-    fmt.Println("  admin_cli update -id 5c8f4981-43ad-4fcb-92a9-515d7efec8f8 -type paid -length yearly")
+    fmt.Println("  admin_cli get -id 263C369F-0823-41A5-A08A-39A63FD34C08")
+    fmt.Println("  admin_cli update -id 263C369F-0823-41A5-A08A-39A63FD34C08 -type paid -length yearly")
     fmt.Println("  admin_cli list -limit 100")
+    fmt.Println("\nNote: The ID is the device ID from the user's phone.")
 }
 
-func getUserInfo(db *sql.DB, userID string) {
+func getUserInfo(db *sql.DB, deviceID string) {
     var subscriptionType, subscriptionLength string
     var createdAt, updatedAt string
 
     query := `SELECT subscription_type, subscription_length, created_at, updated_at
-              FROM users WHERE user_id = ?`
+              FROM users WHERE device_id = ?`
 
-    err := db.QueryRow(query, userID).Scan(&subscriptionType, &subscriptionLength, &createdAt, &updatedAt)
+    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &createdAt, &updatedAt)
     if err == sql.ErrNoRows {
-        fmt.Printf("❌ User not found: %s\n", userID)
+        fmt.Printf("❌ User not found with device_id: %s\n", deviceID)
         os.Exit(1)
     } else if err != nil {
         log.Fatalf("Database error: %v", err)
@@ -99,7 +100,7 @@ func getUserInfo(db *sql.DB, userID string) {
     fmt.Println("\n┌─────────────────────────────────────────────────────────┐")
     fmt.Println("│                    USER INFORMATION                     │")
     fmt.Println("└─────────────────────────────────────────────────────────┘")
-    fmt.Printf("\n  User ID:              %s\n", userID)
+    fmt.Printf("\n  Device ID:            %s\n", deviceID)
     fmt.Printf("  Subscription Type:    %s\n", subscriptionType)
     fmt.Printf("  Subscription Length:  %s\n", subscriptionLength)
     fmt.Printf("  Created At:           %s\n", createdAt)
@@ -107,7 +108,7 @@ func getUserInfo(db *sql.DB, userID string) {
     fmt.Println()
 }
 
-func updateUser(db *sql.DB, userID, subscriptionType, subscriptionLength string) {
+func updateUser(db *sql.DB, deviceID, subscriptionType, subscriptionLength string) {
     // Validate subscription_type
     if subscriptionType != "free" && subscriptionType != "paid" {
         fmt.Printf("❌ Invalid subscription type: %s (must be 'free' or 'paid')\n", subscriptionType)
@@ -122,45 +123,45 @@ func updateUser(db *sql.DB, userID, subscriptionType, subscriptionLength string)
 
     // Check if user exists first
     var exists int
-    err := db.QueryRow("SELECT COUNT(*) FROM users WHERE user_id = ?", userID).Scan(&exists)
+    err := db.QueryRow("SELECT COUNT(*) FROM users WHERE device_id = ?", deviceID).Scan(&exists)
     if err != nil {
         log.Fatalf("Database error: %v", err)
     }
 
     if exists == 0 {
-        fmt.Printf("❌ User not found: %s\n", userID)
-        fmt.Println("   Create the user first before updating.")
+        fmt.Printf("❌ User not found with device_id: %s\n", deviceID)
+        fmt.Println("   User must register through the app first.")
         os.Exit(1)
     }
 
     // Update user
     query := `UPDATE users
               SET subscription_type = ?, subscription_length = ?, updated_at = CURRENT_TIMESTAMP
-              WHERE user_id = ?`
+              WHERE device_id = ?`
 
-    result, err := db.Exec(query, subscriptionType, subscriptionLength, userID)
+    result, err := db.Exec(query, subscriptionType, subscriptionLength, deviceID)
     if err != nil {
         log.Fatalf("Failed to update user: %v", err)
     }
 
     rowsAffected, _ := result.RowsAffected()
     if rowsAffected == 0 {
-        fmt.Printf("❌ User not found: %s\n", userID)
+        fmt.Printf("❌ User not found with device_id: %s\n", deviceID)
         os.Exit(1)
     }
 
     fmt.Println("\n✓ User updated successfully")
-    fmt.Printf("  User ID:              %s\n", userID)
+    fmt.Printf("  Device ID:            %s\n", deviceID)
     fmt.Printf("  Subscription Type:    %s\n", subscriptionType)
     fmt.Printf("  Subscription Length:  %s\n", subscriptionLength)
     fmt.Println()
 
     // Show updated info
-    getUserInfo(db, userID)
+    getUserInfo(db, deviceID)
 }
 
 func listUsers(db *sql.DB, limit int) {
-    query := `SELECT user_id, subscription_type, subscription_length, created_at, updated_at
+    query := `SELECT device_id, subscription_type, subscription_length, created_at, updated_at
               FROM users ORDER BY created_at DESC LIMIT ?`
 
     rows, err := db.Query(query, limit)
@@ -174,17 +175,17 @@ func listUsers(db *sql.DB, limit int) {
     fmt.Println("└─────────────────────────────────────────────────────────┘\n")
 
     w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-    fmt.Fprintln(w, "USER ID\tTYPE\tLENGTH\tCREATED AT\tUPDATED AT")
+    fmt.Fprintln(w, "DEVICE ID\tTYPE\tLENGTH\tCREATED AT\tUPDATED AT")
     fmt.Fprintln(w, "───────────────────────────────────────\t─────\t────────\t───────────────────────\t───────────────────────")
 
     count := 0
     for rows.Next() {
-        var userID, subscriptionType, subscriptionLength, createdAt, updatedAt string
-        if err := rows.Scan(&userID, &subscriptionType, &subscriptionLength, &createdAt, &updatedAt); err != nil {
+        var deviceID, subscriptionType, subscriptionLength, createdAt, updatedAt string
+        if err := rows.Scan(&deviceID, &subscriptionType, &subscriptionLength, &createdAt, &updatedAt); err != nil {
             log.Printf("Error scanning row: %v", err)
             continue
         }
-        fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", userID, subscriptionType, subscriptionLength, createdAt, updatedAt)
+        fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", deviceID, subscriptionType, subscriptionLength, createdAt, updatedAt)
         count++
     }
 
