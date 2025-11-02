@@ -19,7 +19,6 @@ import (
     "time"
     "sort"
 
-    "github.com/google/uuid"
     "github.com/gorilla/mux"
     "github.com/rs/cors"
     "golang.org/x/time/rate"
