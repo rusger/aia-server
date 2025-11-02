@@ -19,6 +19,7 @@ import (
     "time"
     "sort"
 
+    "github.com/google/uuid"
     "github.com/gorilla/mux"
     "github.com/rs/cors"
     "golang.org/x/time/rate"
@@ -410,6 +411,82 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Create new user with server-generated ID (atomic operation)
+func createUser(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Parse request
+    var req UserRegisterRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate subscription_type
+    if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
+        req.SubscriptionType = "free" // Default to free
+    }
+
+    // Validate subscription_length
+    if req.SubscriptionLength != "monthly" && req.SubscriptionLength != "yearly" {
+        req.SubscriptionLength = "monthly" // Default to monthly
+    }
+
+    // Generate UUID on server side
+    userID := uuid.New().String()
+
+    // Use transaction to ensure atomicity
+    tx, err := db.Begin()
+    if err != nil {
+        log.Printf("Transaction error: %v", err)
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "Database error",
+        })
+        return
+    }
+    defer tx.Rollback()
+
+    // Insert new user
+    query := `INSERT INTO users (user_id, subscription_type, subscription_length)
+              VALUES (?, ?, ?)`
+
+    _, err = tx.Exec(query, userID, req.SubscriptionType, req.SubscriptionLength)
+    if err != nil {
+        log.Printf("Database insert error: %v", err)
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "Failed to create user",
+        })
+        return
+    }
+
+    // Commit transaction
+    if err = tx.Commit(); err != nil {
+        log.Printf("Transaction commit error: %v", err)
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "Failed to create user",
+        })
+        return
+    }
+
+    log.Printf("User created: %s (type: %s, length: %s)",
+        userID, req.SubscriptionType, req.SubscriptionLength)
+
+    // Return the generated user_id
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":             true,
+        "message":             "User created successfully",
+        "user_id":             userID,
+        "subscription_type":   req.SubscriptionType,
+        "subscription_length": req.SubscriptionLength,
+    })
+}
+
 // Register or update user
 func registerUser(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -526,6 +603,7 @@ func main() {
 
     router := mux.NewRouter()
     router.HandleFunc("/api/astrolog", calculateChart).Methods("POST")
+    router.HandleFunc("/api/user/create", createUser).Methods("POST")
     router.HandleFunc("/api/user/register", registerUser).Methods("POST")
     router.HandleFunc("/api/user/info", getUserInfo).Methods("GET")
 
