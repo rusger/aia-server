@@ -39,13 +39,14 @@ go get modernc.org/sqlite
 echo "✓ Dependencies installed"
 echo ""
 
-# Stop the current server
-echo "🛑 Stopping current server..."
-if pgrep -f "astrolog_api" > /dev/null; then
-    pkill -f "astrolog_api" && echo "✓ Old server stopped"
+# Stop the systemd service
+echo "🛑 Stopping astrolog-api.service..."
+if systemctl is-active --quiet astrolog-api.service; then
+    sudo systemctl stop astrolog-api.service
+    echo "✓ Service stopped"
     sleep 2
 else
-    echo "  No running server found"
+    echo "  Service not running"
 fi
 echo ""
 
@@ -83,12 +84,18 @@ echo "================================"
 echo "  Build Complete!"
 echo "================================"
 echo ""
-echo "Now start the server with:"
-echo "  ./astrolog_api"
+echo "🔄 Starting astrolog-api.service..."
+sudo systemctl start astrolog-api.service
+sleep 2
 echo ""
-echo "Or run in background:"
-echo "  nohup ./astrolog_api > server.log 2>&1 &"
+
+echo "📊 Service Status:"
+sudo systemctl status astrolog-api.service --no-pager -l
 echo ""
-echo "Check logs with:"
-echo "  tail -f server.log"
+
+echo "✅ Done! Check the logs with:"
+echo "  sudo journalctl -u astrolog-api.service -f"
+echo ""
+echo "Or test the endpoint:"
+echo "  ./test_user_create.sh"
 echo ""
