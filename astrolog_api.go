@@ -413,17 +413,21 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
 
 // Create new user with server-generated ID (atomic operation)
 func createUser(w http.ResponseWriter, r *http.Request) {
+    log.Println("🔵 [createUser] Received request to create new user")
     w.Header().Set("Content-Type", "application/json")
 
     // Parse request
     var req UserRegisterRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        log.Printf("❌ [createUser] Failed to parse request: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Invalid request format",
         })
         return
     }
+
+    log.Printf("🔵 [createUser] Request params: type=%s, length=%s", req.SubscriptionType, req.SubscriptionLength)
 
     // Validate subscription_type
     if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
@@ -437,11 +441,12 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 
     // Generate UUID on server side
     userID := uuid.New().String()
+    log.Printf("🔵 [createUser] Generated UUID: %s", userID)
 
     // Use transaction to ensure atomicity
     tx, err := db.Begin()
     if err != nil {
-        log.Printf("Transaction error: %v", err)
+        log.Printf("❌ [createUser] Transaction error: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Database error",
@@ -453,10 +458,11 @@ func createUser(w http.ResponseWriter, r *http.Request) {
     // Insert new user
     query := `INSERT INTO users (user_id, subscription_type, subscription_length)
               VALUES (?, ?, ?)`
+    log.Printf("🔵 [createUser] Inserting into database...")
 
     _, err = tx.Exec(query, userID, req.SubscriptionType, req.SubscriptionLength)
     if err != nil {
-        log.Printf("Database insert error: %v", err)
+        log.Printf("❌ [createUser] Database insert error: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Failed to create user",
@@ -465,8 +471,9 @@ func createUser(w http.ResponseWriter, r *http.Request) {
     }
 
     // Commit transaction
+    log.Printf("🔵 [createUser] Committing transaction...")
     if err = tx.Commit(); err != nil {
-        log.Printf("Transaction commit error: %v", err)
+        log.Printf("❌ [createUser] Transaction commit error: %v", err)
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "Failed to create user",
@@ -474,7 +481,7 @@ func createUser(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("User created: %s (type: %s, length: %s)",
+    log.Printf("✅ [createUser] User created successfully: %s (type: %s, length: %s)",
         userID, req.SubscriptionType, req.SubscriptionLength)
 
     // Return the generated user_id
@@ -606,6 +613,12 @@ func main() {
     router.HandleFunc("/api/user/create", createUser).Methods("POST")
     router.HandleFunc("/api/user/register", registerUser).Methods("POST")
     router.HandleFunc("/api/user/info", getUserInfo).Methods("GET")
+
+    log.Println("✓ Registered routes:")
+    log.Println("  POST /api/astrolog")
+    log.Println("  POST /api/user/create")
+    log.Println("  POST /api/user/register")
+    log.Println("  GET  /api/user/info")
 
     // CORS configuration
     c := cors.New(cors.Options{
