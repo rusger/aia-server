@@ -84,8 +84,8 @@ func (dl *DeviceLimiter) GetLimiter(deviceID string) *rate.Limiter {
 
     limiter, exists := dl.limiters[deviceID]
     if !exists {
-        // Allow burst of 2 requests (natal + navamsha), then 1 request per 10 seconds
-        limiter = rate.NewLimiter(rate.Every(10*time.Second), 2)
+        // Allow burst of 2 requests (natal + navamsha), then 1 request per 1 second
+        limiter = rate.NewLimiter(rate.Every(1*time.Second), 2)
         dl.limiters[deviceID] = limiter
     }
 
@@ -294,7 +294,7 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
         w.WriteHeader(http.StatusTooManyRequests)
         json.NewEncoder(w).Encode(AstrologResponse{
             Success: false,
-            Error:   "Rate limit exceeded. Please wait 10 seconds.",
+            Error:   "Rate limit exceeded. Please wait 1 second.",
         })
         return
     }
