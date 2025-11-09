@@ -1,6 +1,7 @@
 package main
 
 import (
+    "bytes"
     "context"
     "crypto/hmac"
     "crypto/sha256"
@@ -8,6 +9,7 @@ import (
     "encoding/hex"
     "encoding/json"
     "fmt"
+    "io"
     "log"
     "net/http"
     "os"
@@ -27,8 +29,12 @@ import (
 
 // Configuration
 var (
-    SECRET_KEY = getEnv("ASTROLOG_SECRET_KEY", "your-very-secret-key-change-this")
-    PORT       = getEnv("PORT", "8080")
+    SECRET_KEY       = getEnv("ASTROLOG_SECRET_KEY", "your-very-secret-key-change-this")
+    PORT             = getEnv("PORT", "8080")
+    TLS_CERT_FILE    = getEnv("TLS_CERT_FILE", "")
+    TLS_KEY_FILE     = getEnv("TLS_KEY_FILE", "")
+    OPENAI_API_KEY   = getEnv("OPENAI_API_KEY", "")
+    USE_HTTPS        = getEnv("USE_HTTPS", "false")
 )
 
 // Request structure
@@ -57,12 +63,32 @@ type UserRegisterRequest struct {
     DeviceID           string `json:"device_id"`           // STABLE device identifier
     SubscriptionType   string `json:"subscription_type"`   // "free" or "paid"
     SubscriptionLength string `json:"subscription_length"` // "monthly" or "yearly"
+    Timestamp          int64  `json:"timestamp"`           // Unix timestamp
+    Signature          string `json:"signature"`           // HMAC signature
 }
 
 // User registration response
 type UserRegisterResponse struct {
     Success bool   `json:"success"`
     Message string `json:"message,omitempty"`
+    Error   string `json:"error,omitempty"`
+}
+
+// ChatGPT proxy request
+type ChatGPTProxyRequest struct {
+    Messages   []map[string]string `json:"messages"`
+    Model      string              `json:"model"`
+    Temperature float64            `json:"temperature,omitempty"`
+    MaxTokens   int                `json:"max_tokens,omitempty"`
+    DeviceID    string             `json:"device_id"`
+    Timestamp   int64              `json:"timestamp"`
+    Signature   string             `json:"signature"`
+}
+
+// ChatGPT proxy response
+type ChatGPTProxyResponse struct {
+    Success bool   `json:"success"`
+    Content string `json:"content,omitempty"`
     Error   string `json:"error,omitempty"`
 }
 
@@ -410,6 +436,28 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Validate signature for user registration requests
+func validateUserRegisterSignature(req UserRegisterRequest) bool {
+    currentTime := time.Now().Unix()
+
+    // Check timestamp (5 min window)
+    if currentTime - req.Timestamp > 300 || req.Timestamp > currentTime + 60 {
+        log.Printf("User registration timestamp validation failed")
+        return false
+    }
+
+    // Create data map without signature
+    data := map[string]interface{}{
+        "device_id":           req.DeviceID,
+        "subscription_type":   req.SubscriptionType,
+        "subscription_length": req.SubscriptionLength,
+        "timestamp":           req.Timestamp,
+    }
+
+    expectedSig := generateSignature(data)
+    return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
+}
+
 // Register or update user by device ID (IDEMPOTENT - safe to call multiple times)
 func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
     log.Println("🔵 [registerOrUpdateUser] Received request")
@@ -432,6 +480,17 @@ func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
         json.NewEncoder(w).Encode(UserRegisterResponse{
             Success: false,
             Error:   "device_id is required",
+        })
+        return
+    }
+
+    // Validate signature
+    if !validateUserRegisterSignature(req) {
+        log.Printf("❌ [registerOrUpdateUser] Invalid signature")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(UserRegisterResponse{
+            Success: false,
+            Error:   "Invalid signature or expired timestamp",
         })
         return
     }
@@ -512,6 +571,195 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 }
 
 
+// Validate signature for ChatGPT proxy requests
+func validateChatGPTSignature(req ChatGPTProxyRequest) bool {
+    currentTime := time.Now().Unix()
+
+    // Check timestamp (5 min window)
+    if currentTime - req.Timestamp > 300 || req.Timestamp > currentTime + 60 {
+        log.Printf("ChatGPT request timestamp validation failed")
+        return false
+    }
+
+    // Create data map without signature
+    data := map[string]interface{}{
+        "device_id": req.DeviceID,
+        "timestamp": req.Timestamp,
+        "model":     req.Model,
+    }
+
+    expectedSig := generateSignature(data)
+    return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
+}
+
+// Proxy ChatGPT requests (keeps API key on server)
+func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Check if OpenAI API key is configured
+    if OPENAI_API_KEY == "" {
+        log.Printf("❌ OpenAI API key not configured")
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "ChatGPT service not configured on server",
+        })
+        return
+    }
+
+    // Parse request
+    var req ChatGPTProxyRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate signature
+    if !validateChatGPTSignature(req) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Invalid signature or expired timestamp",
+        })
+        return
+    }
+
+    // Rate limiting for ChatGPT requests (more restrictive)
+    limiter := deviceLimiter.GetLimiter(req.DeviceID)
+    if !limiter.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Rate limit exceeded. Please wait 1 second.",
+        })
+        return
+    }
+
+    log.Printf("🤖 Proxying ChatGPT request for device: %s, model: %s", req.DeviceID, req.Model)
+
+    // Prepare OpenAI API request
+    openAIRequest := map[string]interface{}{
+        "model":       req.Model,
+        "messages":    req.Messages,
+    }
+
+    if req.Temperature > 0 {
+        openAIRequest["temperature"] = req.Temperature
+    }
+    if req.MaxTokens > 0 {
+        openAIRequest["max_tokens"] = req.MaxTokens
+    }
+
+    requestBody, err := json.Marshal(openAIRequest)
+    if err != nil {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Failed to prepare request",
+        })
+        return
+    }
+
+    // Call OpenAI API
+    client := &http.Client{Timeout: 120 * time.Second}
+    openAIReq, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(requestBody))
+    if err != nil {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Failed to create request",
+        })
+        return
+    }
+
+    openAIReq.Header.Set("Content-Type", "application/json")
+    openAIReq.Header.Set("Authorization", "Bearer "+OPENAI_API_KEY)
+
+    resp, err := client.Do(openAIReq)
+    if err != nil {
+        log.Printf("❌ OpenAI API error: %v", err)
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Failed to connect to ChatGPT",
+        })
+        return
+    }
+    defer resp.Body.Close()
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Failed to read response",
+        })
+        return
+    }
+
+    if resp.StatusCode != 200 {
+        log.Printf("❌ OpenAI API error status %d: %s", resp.StatusCode, string(body))
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   fmt.Sprintf("ChatGPT API error: %d", resp.StatusCode),
+        })
+        return
+    }
+
+    // Parse OpenAI response
+    var openAIResp map[string]interface{}
+    if err := json.Unmarshal(body, &openAIResp); err != nil {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Failed to parse response",
+        })
+        return
+    }
+
+    // Extract content from response
+    choices, ok := openAIResp["choices"].([]interface{})
+    if !ok || len(choices) == 0 {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Invalid response format",
+        })
+        return
+    }
+
+    firstChoice, ok := choices[0].(map[string]interface{})
+    if !ok {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Invalid choice format",
+        })
+        return
+    }
+
+    message, ok := firstChoice["message"].(map[string]interface{})
+    if !ok {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Invalid message format",
+        })
+        return
+    }
+
+    content, ok := message["content"].(string)
+    if !ok {
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Invalid content format",
+        })
+        return
+    }
+
+    log.Printf("✅ ChatGPT request successful, response length: %d", len(content))
+
+    // Return success response
+    json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+        Success: true,
+        Content: content,
+    })
+}
+
 // Get user subscription info by device_id
 func getUserInfo(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -573,11 +821,13 @@ func main() {
     router.HandleFunc("/api/astrolog", calculateChart).Methods("POST")
     router.HandleFunc("/api/user/register", registerOrUpdateUser).Methods("POST")
     router.HandleFunc("/api/user/info", getUserInfo).Methods("GET")
+    router.HandleFunc("/api/chatgpt", chatGPTProxy).Methods("POST")
 
     log.Println("✓ Registered routes:")
     log.Println("  POST /api/astrolog")
     log.Println("  POST /api/user/register")
     log.Println("  GET  /api/user/info")
+    log.Println("  POST /api/chatgpt")
 
     // CORS configuration
     c := cors.New(cors.Options{
@@ -588,6 +838,15 @@ func main() {
 
     handler := c.Handler(router)
 
-    log.Printf("Astrolog API server starting on port %s", PORT)
-    log.Fatal(http.ListenAndServe(":"+PORT, handler))
+    // Start server with HTTPS if configured
+    if USE_HTTPS == "true" && TLS_CERT_FILE != "" && TLS_KEY_FILE != "" {
+        log.Printf("🔒 Astrolog API server starting with HTTPS on port %s", PORT)
+        log.Printf("   Certificate: %s", TLS_CERT_FILE)
+        log.Printf("   Private Key: %s", TLS_KEY_FILE)
+        log.Fatal(http.ListenAndServeTLS(":"+PORT, TLS_CERT_FILE, TLS_KEY_FILE, handler))
+    } else {
+        log.Printf("⚠️  Astrolog API server starting with HTTP (insecure) on port %s", PORT)
+        log.Printf("   Set USE_HTTPS=true, TLS_CERT_FILE, and TLS_KEY_FILE for secure HTTPS")
+        log.Fatal(http.ListenAndServe(":"+PORT, handler))
+    }
 }
