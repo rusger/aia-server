@@ -1,0 +1,25 @@
+# Binaries
+astrolog-api
+*.exe
+
+# Database
+users.db
+*.db
+
+# Security - NEVER commit secrets!
+jwt_secret.key
+*.key
+*.pem
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

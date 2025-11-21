@@ -4,8 +4,10 @@ import (
     "bytes"
     "context"
     "crypto/hmac"
+    "crypto/rand"
     "crypto/sha256"
     "database/sql"
+    "encoding/base64"
     "encoding/hex"
     "encoding/json"
     "fmt"
@@ -15,12 +17,13 @@ import (
     "os"
     "os/exec"
     "regexp"
+    "sort"
     "strconv"
     "strings"
     "sync"
     "time"
-    "sort"
 
+    "github.com/golang-jwt/jwt/v5"
     "github.com/gorilla/mux"
     "github.com/rs/cors"
     "golang.org/x/time/rate"
@@ -29,13 +32,78 @@ import (
 
 // Configuration
 var (
-    SECRET_KEY       = getEnv("ASTROLOG_SECRET_KEY", "your-very-secret-key-change-this")
-    PORT             = getEnv("PORT", "8080")
-    TLS_CERT_FILE    = getEnv("TLS_CERT_FILE", "")
-    TLS_KEY_FILE     = getEnv("TLS_KEY_FILE", "")
-    OPENAI_API_KEY   = getEnv("OPENAI_API_KEY", "")
-    USE_HTTPS        = getEnv("USE_HTTPS", "false")
+    SECRET_KEY         = getEnv("ASTROLOG_SECRET_KEY", "your-very-secret-key-change-this") // Legacy HMAC key (deprecated)
+    JWT_SECRET_KEY     string                                                               // JWT signing key (loaded/generated on startup)
+    PORT               = getEnv("PORT", "8080")
+    TLS_CERT_FILE      = getEnv("TLS_CERT_FILE", "")
+    TLS_KEY_FILE       = getEnv("TLS_KEY_FILE", "")
+    OPENAI_API_KEY     = getEnv("OPENAI_API_KEY", "")
+    USE_HTTPS          = getEnv("USE_HTTPS", "false")
+    ACCESS_TOKEN_EXP   = 24 * time.Hour  // Access tokens expire in 24 hours
+    REFRESH_TOKEN_EXP  = 30 * 24 * time.Hour // Refresh tokens expire in 30 days
+    JWT_SECRET_FILE    = "jwt_secret.key" // File to persist JWT secret
 )
+
+// JWT Claims structure
+type JWTClaims struct {
+    DeviceID           string `json:"device_id"`
+    SubscriptionType   string `json:"subscription_type"`
+    SubscriptionLength string `json:"subscription_length"`
+    TokenType          string `json:"token_type"` // "access" or "refresh"
+    jwt.RegisteredClaims
+}
+
+// Auth response with tokens
+type AuthTokensResponse struct {
+    Success      bool   `json:"success"`
+    AccessToken  string `json:"access_token"`
+    RefreshToken string `json:"refresh_token"`
+    ExpiresIn    int64  `json:"expires_in"` // seconds until access token expires
+    Message      string `json:"message,omitempty"`
+    Error        string `json:"error,omitempty"`
+}
+
+// Token refresh request
+type TokenRefreshRequest struct {
+    RefreshToken string `json:"refresh_token"`
+}
+
+// Generate a random secret for JWT if not provided
+func generateRandomSecret() string {
+    bytes := make([]byte, 32)
+    if _, err := rand.Read(bytes); err != nil {
+        log.Fatal("Failed to generate random secret:", err)
+    }
+    return base64.URLEncoding.EncodeToString(bytes)
+}
+
+// Load or generate JWT secret key (persists to file)
+func initJWTSecret() error {
+    // Check if secret file exists
+    if _, err := os.Stat(JWT_SECRET_FILE); err == nil {
+        // File exists, read it
+        data, err := os.ReadFile(JWT_SECRET_FILE)
+        if err != nil {
+            return fmt.Errorf("failed to read JWT secret file: %v", err)
+        }
+        JWT_SECRET_KEY = string(data)
+        log.Printf("✅ JWT secret loaded from %s", JWT_SECRET_FILE)
+        return nil
+    }
+
+    // File doesn't exist, generate new secret
+    JWT_SECRET_KEY = generateRandomSecret()
+
+    // Save to file with restricted permissions (0600 = read/write for owner only)
+    err := os.WriteFile(JWT_SECRET_FILE, []byte(JWT_SECRET_KEY), 0600)
+    if err != nil {
+        return fmt.Errorf("failed to save JWT secret to file: %v", err)
+    }
+
+    log.Printf("✅ JWT secret generated and saved to %s", JWT_SECRET_FILE)
+    log.Printf("   Secret will be reused on server restarts")
+    return nil
+}
 
 // Request structure
 type AstrologRequest struct {
@@ -163,6 +231,118 @@ func getEnv(key, defaultValue string) string {
         return value
     }
     return defaultValue
+}
+
+// Generate JWT access token
+func generateAccessToken(deviceID, subscriptionType, subscriptionLength string) (string, error) {
+    now := time.Now()
+    claims := JWTClaims{
+        DeviceID:           deviceID,
+        SubscriptionType:   subscriptionType,
+        SubscriptionLength: subscriptionLength,
+        TokenType:          "access",
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(now.Add(ACCESS_TOKEN_EXP)),
+            IssuedAt:  jwt.NewNumericDate(now),
+            NotBefore: jwt.NewNumericDate(now),
+            Issuer:    "astrolog-api",
+            Subject:   deviceID,
+        },
+    }
+
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString([]byte(JWT_SECRET_KEY))
+}
+
+// Generate JWT refresh token
+func generateRefreshToken(deviceID, subscriptionType, subscriptionLength string) (string, error) {
+    now := time.Now()
+    claims := JWTClaims{
+        DeviceID:           deviceID,
+        SubscriptionType:   subscriptionType,
+        SubscriptionLength: subscriptionLength,
+        TokenType:          "refresh",
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(now.Add(REFRESH_TOKEN_EXP)),
+            IssuedAt:  jwt.NewNumericDate(now),
+            NotBefore: jwt.NewNumericDate(now),
+            Issuer:    "astrolog-api",
+            Subject:   deviceID,
+        },
+    }
+
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString([]byte(JWT_SECRET_KEY))
+}
+
+// Validate and parse JWT token
+func validateToken(tokenString string, expectedType string) (*JWTClaims, error) {
+    token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+        // Validate signing method
+        if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+        }
+        return []byte(JWT_SECRET_KEY), nil
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
+        // Validate token type
+        if claims.TokenType != expectedType {
+            return nil, fmt.Errorf("invalid token type: expected %s, got %s", expectedType, claims.TokenType)
+        }
+        return claims, nil
+    }
+
+    return nil, fmt.Errorf("invalid token")
+}
+
+// Extract JWT token from Authorization header
+func extractTokenFromHeader(r *http.Request) (string, error) {
+    authHeader := r.Header.Get("Authorization")
+    if authHeader == "" {
+        return "", fmt.Errorf("missing authorization header")
+    }
+
+    // Expected format: "Bearer <token>"
+    parts := strings.Split(authHeader, " ")
+    if len(parts) != 2 || parts[0] != "Bearer" {
+        return "", fmt.Errorf("invalid authorization header format")
+    }
+
+    return parts[1], nil
+}
+
+// JWT validation middleware
+func jwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        tokenString, err := extractTokenFromHeader(r)
+        if err != nil {
+            w.WriteHeader(http.StatusUnauthorized)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Unauthorized: " + err.Error(),
+            })
+            return
+        }
+
+        claims, err := validateToken(tokenString, "access")
+        if err != nil {
+            w.WriteHeader(http.StatusUnauthorized)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Invalid or expired token",
+            })
+            return
+        }
+
+        // Add claims to request context for use in handlers
+        ctx := context.WithValue(r.Context(), "claims", claims)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    }
 }
 
 func generateSignature(data map[string]interface{}) string {
@@ -294,6 +474,17 @@ func sanitizeCoordinate(coord string, isLatitude bool) (string, error) {
 func calculateChart(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
+    // Get claims from JWT middleware
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(AstrologResponse{
+            Success: false,
+            Error:   "Unauthorized",
+        })
+        return
+    }
+
     // Parse request
     var req AstrologRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -304,18 +495,11 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Validate signature
-    if !validateSignature(req) {
-        w.WriteHeader(http.StatusForbidden)
-        json.NewEncoder(w).Encode(AstrologResponse{
-            Success: false,
-            Error:   "Invalid signature or expired timestamp",
-        })
-        return
-    }
+    // Use device_id from JWT claims (more secure than trusting request body)
+    deviceID := claims.DeviceID
 
     // Check device rate limit
-    limiter := deviceLimiter.GetLimiter(req.DeviceID)
+    limiter := deviceLimiter.GetLimiter(deviceID)
     if !limiter.Allow() {
         w.WriteHeader(http.StatusTooManyRequests)
         json.NewEncoder(w).Encode(AstrologResponse{
@@ -555,19 +739,119 @@ func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
     log.Printf("✅ [registerOrUpdateUser] User registered/updated: device=%s (type: %s, length: %s)",
         req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
 
-    // Return the device_id
-    json.NewEncoder(w).Encode(map[string]interface{}{
-        "success":             true,
-        "message":             "User registered successfully",
-        "device_id":           req.DeviceID,
-        "subscription_type":   req.SubscriptionType,
-        "subscription_length": req.SubscriptionLength,
+    // Generate JWT tokens
+    accessToken, err := generateAccessToken(req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
+    if err != nil {
+        log.Printf("❌ [registerOrUpdateUser] Failed to generate access token: %v", err)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Failed to generate token",
+        })
+        return
+    }
+
+    refreshToken, err := generateRefreshToken(req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
+    if err != nil {
+        log.Printf("❌ [registerOrUpdateUser] Failed to generate refresh token: %v", err)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Failed to generate token",
+        })
+        return
+    }
+
+    // Return tokens
+    json.NewEncoder(w).Encode(AuthTokensResponse{
+        Success:      true,
+        AccessToken:  accessToken,
+        RefreshToken: refreshToken,
+        ExpiresIn:    int64(ACCESS_TOKEN_EXP.Seconds()),
+        Message:      "User registered successfully",
     })
 }
 
 // Legacy endpoint - redirects to registerOrUpdateUser
 func registerUser(w http.ResponseWriter, r *http.Request) {
     registerOrUpdateUser(w, r)
+}
+
+// Refresh access token using refresh token
+func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Parse request
+    var req TokenRefreshRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate refresh token
+    claims, err := validateToken(req.RefreshToken, "refresh")
+    if err != nil {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Invalid or expired refresh token",
+        })
+        return
+    }
+
+    // Verify device still exists in database and get current subscription status
+    var subscriptionType, subscriptionLength string
+    query := `SELECT subscription_type, subscription_length FROM users WHERE device_id = ?`
+    err = db.QueryRow(query, claims.DeviceID).Scan(&subscriptionType, &subscriptionLength)
+    if err == sql.ErrNoRows {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Device not registered",
+        })
+        return
+    } else if err != nil {
+        log.Printf("Database error: %v", err)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Database error",
+        })
+        return
+    }
+
+    // Generate new access token with current subscription status
+    accessToken, err := generateAccessToken(claims.DeviceID, subscriptionType, subscriptionLength)
+    if err != nil {
+        log.Printf("Failed to generate access token: %v", err)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Failed to generate token",
+        })
+        return
+    }
+
+    // Optionally generate new refresh token (token rotation for better security)
+    newRefreshToken, err := generateRefreshToken(claims.DeviceID, subscriptionType, subscriptionLength)
+    if err != nil {
+        log.Printf("Failed to generate refresh token: %v", err)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Failed to generate token",
+        })
+        return
+    }
+
+    log.Printf("🔄 Token refreshed for device: %s", claims.DeviceID)
+
+    // Return new tokens
+    json.NewEncoder(w).Encode(AuthTokensResponse{
+        Success:      true,
+        AccessToken:  accessToken,
+        RefreshToken: newRefreshToken,
+        ExpiresIn:    int64(ACCESS_TOKEN_EXP.Seconds()),
+        Message:      "Token refreshed successfully",
+    })
 }
 
 
@@ -596,6 +880,17 @@ func validateChatGPTSignature(req ChatGPTProxyRequest) bool {
 func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
+    // Get claims from JWT middleware
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Unauthorized",
+        })
+        return
+    }
+
     // Check if OpenAI API key is configured
     if OPENAI_API_KEY == "" {
         log.Printf("❌ OpenAI API key not configured")
@@ -616,18 +911,11 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Validate signature
-    if !validateChatGPTSignature(req) {
-        w.WriteHeader(http.StatusForbidden)
-        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
-            Success: false,
-            Error:   "Invalid signature or expired timestamp",
-        })
-        return
-    }
+    // Use device_id from JWT claims (more secure than trusting request body)
+    deviceID := claims.DeviceID
 
     // Rate limiting for ChatGPT requests (more restrictive)
-    limiter := deviceLimiter.GetLimiter(req.DeviceID)
+    limiter := deviceLimiter.GetLimiter(deviceID)
     if !limiter.Allow() {
         w.WriteHeader(http.StatusTooManyRequests)
         json.NewEncoder(w).Encode(ChatGPTProxyResponse{
@@ -637,7 +925,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("🤖 Proxying ChatGPT request for device: %s, model: %s", req.DeviceID, req.Model)
+    log.Printf("🤖 Proxying ChatGPT request for device: %s, model: %s", deviceID, req.Model)
 
     // Prepare OpenAI API request
     openAIRequest := map[string]interface{}{
@@ -764,19 +1052,19 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 func getUserInfo(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
-    deviceID := r.URL.Query().Get("device_id")
-    if deviceID == "" {
-        // Try legacy parameter name
-        deviceID = r.URL.Query().Get("user_id")
-    }
-
-    if deviceID == "" {
+    // Get claims from JWT middleware
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
-            "error":   "device_id parameter is required",
+            "error":   "Unauthorized",
         })
         return
     }
+
+    // Use device_id from JWT claims (more secure than trusting query params)
+    deviceID := claims.DeviceID
 
     var subscriptionType, subscriptionLength string
     var createdAt, updatedAt string
@@ -811,6 +1099,11 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+    // Initialize JWT secret (load or generate)
+    if err := initJWTSecret(); err != nil {
+        log.Fatalf("Failed to initialize JWT secret: %v", err)
+    }
+
     // Initialize database
     if err := initDB(); err != nil {
         log.Fatalf("Failed to initialize database: %v", err)
@@ -818,22 +1111,31 @@ func main() {
     defer db.Close()
 
     router := mux.NewRouter()
-    router.HandleFunc("/api/astrolog", calculateChart).Methods("POST")
+
+    // Public endpoints (no JWT required)
     router.HandleFunc("/api/user/register", registerOrUpdateUser).Methods("POST")
-    router.HandleFunc("/api/user/info", getUserInfo).Methods("GET")
-    router.HandleFunc("/api/chatgpt", chatGPTProxy).Methods("POST")
+    router.HandleFunc("/api/auth/refresh", refreshAccessToken).Methods("POST")
+
+    // Protected endpoints (JWT required)
+    router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
+    router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
+    router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
 
     log.Println("✓ Registered routes:")
-    log.Println("  POST /api/astrolog")
-    log.Println("  POST /api/user/register")
-    log.Println("  GET  /api/user/info")
-    log.Println("  POST /api/chatgpt")
+    log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
+    log.Println("  [PUBLIC]    POST /api/auth/refresh - Refresh access token")
+    log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
+    log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
+    log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
+    log.Println("")
+    log.Println("⚠️  JWT Authentication is ENABLED")
+    log.Println("   Protected endpoints require 'Authorization: Bearer <token>' header")
 
     // CORS configuration
     c := cors.New(cors.Options{
         AllowedOrigins: []string{"*"}, // Configure this for your app
         AllowedMethods: []string{"GET", "POST"},
-        AllowedHeaders: []string{"Content-Type"},
+        AllowedHeaders: []string{"Content-Type", "Authorization"}, // Added Authorization header
     })
 
     handler := c.Handler(router)
