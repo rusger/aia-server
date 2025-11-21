@@ -7,7 +7,7 @@ Type=simple
 User=ruslan
 WorkingDirectory=/home/ruslan/aia/server
 EnvironmentFile=/home/ruslan/aia/server/.env
-ExecStart=/home/ruslan/aia/server/astrolog_server
+ExecStart=/home/ruslan/aia/server/astrolog_api
 Restart=always
 RestartSec=10
 
