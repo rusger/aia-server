@@ -1,7 +1,7 @@
 [Unit]
 Description=Astrolog API Server
-After=network.target caddy.service
-Wants=caddy.service
+After=network.target nginx.service
+Wants=nginx.service
 
 [Service]
 Type=simple
@@ -9,8 +9,9 @@ User=ruslan
 WorkingDirectory=/home/ruslan/aia/server
 # Load environment variables from .env file (if exists)
 EnvironmentFile=-/home/ruslan/aia/server/.env
-# Override PORT to 8080 (Caddy will handle HTTPS on 443)
-Environment="PORT=8080"
+# Override PORT to 8081 (nginx reverse proxy handles HTTPS on 443)
+Environment="PORT=8081"
+Environment="USE_HTTPS=false"
 ExecStart=/home/ruslan/aia/server/astrolog_api
 Restart=always
 RestartSec=10
