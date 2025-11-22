@@ -178,8 +178,8 @@ func (dl *DeviceLimiter) GetLimiter(deviceID string) *rate.Limiter {
 
     limiter, exists := dl.limiters[deviceID]
     if !exists {
-        // Allow burst of 2 requests (natal + navamsha), then 1 request per 1 second
-        limiter = rate.NewLimiter(rate.Every(1*time.Second), 2)
+        // Allow burst of 5 requests (natal + navamsha + transit + tithi + chatgpt), then 2 requests per second
+        limiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 5)
         dl.limiters[deviceID] = limiter
     }
 
