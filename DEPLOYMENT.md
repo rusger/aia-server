@@ -61,13 +61,41 @@ Internet (port 443 HTTPS)
 ### Environment Variables (.env)
 
 ```bash
-# Required
+# Required - ChatGPT proxy
 OPENAI_API_KEY=sk-...
+
+# Required - Email Authentication (GoDaddy M365)
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=noreply@astrolytix.com
+SMTP_PASSWORD=your-email-password
+SMTP_FROM=Astrolytix <noreply@astrolytix.com>
 
 # Optional (auto-generated)
 ASTROLOG_SECRET_KEY=auto-generated-if-not-set
 JWT_SECRET_KEY=auto-generated-in-jwt_secret.key
 ```
+
+### Adding SMTP Credentials (One-time setup)
+
+On the server, add SMTP credentials to the existing `.env` file:
+
+```bash
+cd /home/ruslan/aia/server
+nano .env
+
+# Add these lines:
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=noreply@astrolytix.com
+SMTP_PASSWORD=YOUR_PASSWORD_FROM_GODADDY
+SMTP_FROM=Astrolytix <noreply@astrolytix.com>
+
+# Save and restart
+sudo systemctl restart astrolog-api
+```
+
+The service automatically loads `.env` on every restart via `EnvironmentFile` in systemd.
 
 ### Port Configuration
 
@@ -258,12 +286,14 @@ tar -czf astrolog-backup-$(date +%Y%m%d).tar.gz \
 ## Production Checklist
 
 - [ ] OpenAI API key configured in .env
+- [ ] SMTP credentials configured in .env (for email auth)
 - [ ] Both services enabled: `sudo systemctl enable astrolog-api caddy`
 - [ ] Firewall allows port 443: `sudo ufw allow 443/tcp`
 - [ ] Regular backups configured
 - [ ] Monitoring/alerting setup
 - [ ] Rate limits tested and appropriate
 - [ ] SSL certificate valid (check expiry if using self-signed)
+- [ ] Test email auth: send test code to your email
 
 ---
 

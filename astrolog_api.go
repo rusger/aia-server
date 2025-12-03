@@ -6,6 +6,7 @@ import (
     "crypto/hmac"
     "crypto/rand"
     "crypto/sha256"
+    "crypto/tls"
     "database/sql"
     "encoding/base64"
     "encoding/hex"
@@ -13,7 +14,9 @@ import (
     "fmt"
     "io"
     "log"
+    "math/big"
     "net/http"
+    "net/smtp"
     "os"
     "os/exec"
     "regexp"
@@ -42,6 +45,14 @@ var (
     ACCESS_TOKEN_EXP   = 24 * time.Hour  // Access tokens expire in 24 hours
     REFRESH_TOKEN_EXP  = 30 * 24 * time.Hour // Refresh tokens expire in 30 days
     JWT_SECRET_FILE    = "jwt_secret.key" // File to persist JWT secret
+
+    // SMTP Configuration for email auth
+    SMTP_HOST          = getEnv("SMTP_HOST", "smtp.office365.com")
+    SMTP_PORT          = getEnv("SMTP_PORT", "587")
+    SMTP_USER          = getEnv("SMTP_USER", "")
+    SMTP_PASSWORD      = getEnv("SMTP_PASSWORD", "")
+    SMTP_FROM          = getEnv("SMTP_FROM", "Astrolytix <noreply@astrolytix.com>")
+    AUTH_CODE_EXP      = 10 * time.Minute // Auth codes expire in 10 minutes
 )
 
 // JWT Claims structure
@@ -160,6 +171,29 @@ type ChatGPTProxyResponse struct {
     Error   string `json:"error,omitempty"`
 }
 
+// Email auth request - request code
+type EmailAuthRequestCode struct {
+    Email    string `json:"email"`
+    DeviceID string `json:"device_id"` // Optional - to link email with device
+}
+
+// Email auth request - verify code
+type EmailAuthVerifyCode struct {
+    Email    string `json:"email"`
+    Code     string `json:"code"`
+    DeviceID string `json:"device_id"` // Device to associate with this email
+}
+
+// Email auth response
+type EmailAuthResponse struct {
+    Success      bool   `json:"success"`
+    Message      string `json:"message,omitempty"`
+    Error        string `json:"error,omitempty"`
+    AccessToken  string `json:"access_token,omitempty"`
+    RefreshToken string `json:"refresh_token,omitempty"`
+    ExpiresIn    int64  `json:"expires_in,omitempty"`
+}
+
 // Device rate limiter
 type DeviceLimiter struct {
     limiters map[string]*rate.Limiter
@@ -208,6 +242,7 @@ func initDB() error {
     createTableSQL := `
     CREATE TABLE IF NOT EXISTS users (
         device_id TEXT PRIMARY KEY,
+        email TEXT,
         subscription_type TEXT NOT NULL DEFAULT 'free',
         subscription_length TEXT NOT NULL DEFAULT 'monthly',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -215,11 +250,45 @@ func initDB() error {
     );
 
     CREATE INDEX IF NOT EXISTS idx_subscription ON users(subscription_type, subscription_length);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_email ON users(email) WHERE email IS NOT NULL;
     `
 
     _, err = db.Exec(createTableSQL)
     if err != nil {
-        return fmt.Errorf("failed to create table: %v", err)
+        return fmt.Errorf("failed to create users table: %v", err)
+    }
+
+    // Create auth_codes table for email verification
+    createAuthCodesSQL := `
+    CREATE TABLE IF NOT EXISTS auth_codes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        code TEXT NOT NULL,
+        device_id TEXT,
+        expires_at DATETIME NOT NULL,
+        used INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auth_codes_email ON auth_codes(email, used);
+    `
+
+    _, err = db.Exec(createAuthCodesSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create auth_codes table: %v", err)
+    }
+
+    // Add email column to existing users table if it doesn't exist
+    // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
+    var count int
+    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='email'`).Scan(&count)
+    if err == nil && count == 0 {
+        _, err = db.Exec(`ALTER TABLE users ADD COLUMN email TEXT`)
+        if err != nil {
+            log.Printf("Note: email column may already exist: %v", err)
+        } else {
+            log.Println("Added email column to users table")
+        }
     }
 
     log.Println("Database initialized successfully")
@@ -1098,6 +1167,436 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// ============================================================================
+// EMAIL AUTHENTICATION
+// ============================================================================
+
+// Generate a 6-digit numeric code
+func generateAuthCode() string {
+    max := big.NewInt(1000000)
+    n, err := rand.Int(rand.Reader, max)
+    if err != nil {
+        // Fallback to less secure random if crypto/rand fails
+        return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+    }
+    return fmt.Sprintf("%06d", n.Int64())
+}
+
+// Validate email format
+func isValidEmail(email string) bool {
+    emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+    return emailRegex.MatchString(email)
+}
+
+// Send email using SMTP (Office 365 / GoDaddy M365)
+func sendAuthCodeEmail(toEmail, code string) error {
+    if SMTP_USER == "" || SMTP_PASSWORD == "" {
+        return fmt.Errorf("SMTP credentials not configured")
+    }
+
+    // Parse the From address to get just the email part
+    fromEmail := SMTP_USER
+    fromName := "Astrolytix"
+    if strings.Contains(SMTP_FROM, "<") && strings.Contains(SMTP_FROM, ">") {
+        parts := strings.Split(SMTP_FROM, "<")
+        fromName = strings.TrimSpace(parts[0])
+        fromEmail = strings.TrimSuffix(parts[1], ">")
+    }
+
+    // Build the email message
+    subject := "Your Astrolytix verification code"
+    body := fmt.Sprintf(`Hello,
+
+Your verification code is: %s
+
+This code will expire in 10 minutes.
+
+If you didn't request this code, please ignore this email.
+
+Best regards,
+Astrolytix Team`, code)
+
+    // Build MIME message
+    msg := fmt.Sprintf("From: %s <%s>\r\n"+
+        "To: %s\r\n"+
+        "Subject: %s\r\n"+
+        "MIME-Version: 1.0\r\n"+
+        "Content-Type: text/plain; charset=\"UTF-8\"\r\n"+
+        "\r\n"+
+        "%s", fromName, fromEmail, toEmail, subject, body)
+
+    // Connect to SMTP server with TLS
+    addr := fmt.Sprintf("%s:%s", SMTP_HOST, SMTP_PORT)
+
+    // Create TLS config
+    tlsConfig := &tls.Config{
+        ServerName: SMTP_HOST,
+    }
+
+    // Connect to server
+    conn, err := tls.Dial("tcp", addr, tlsConfig)
+    if err != nil {
+        // Try STARTTLS instead (for port 587)
+        log.Printf("Direct TLS failed, trying STARTTLS: %v", err)
+        return sendAuthCodeEmailSTARTTLS(toEmail, fromEmail, fromName, subject, body)
+    }
+    defer conn.Close()
+
+    // Create SMTP client
+    client, err := smtp.NewClient(conn, SMTP_HOST)
+    if err != nil {
+        return fmt.Errorf("failed to create SMTP client: %v", err)
+    }
+    defer client.Close()
+
+    // Authenticate
+    auth := smtp.PlainAuth("", SMTP_USER, SMTP_PASSWORD, SMTP_HOST)
+    if err = client.Auth(auth); err != nil {
+        return fmt.Errorf("SMTP auth failed: %v", err)
+    }
+
+    // Set sender and recipient
+    if err = client.Mail(fromEmail); err != nil {
+        return fmt.Errorf("SMTP MAIL failed: %v", err)
+    }
+    if err = client.Rcpt(toEmail); err != nil {
+        return fmt.Errorf("SMTP RCPT failed: %v", err)
+    }
+
+    // Send the email body
+    w, err := client.Data()
+    if err != nil {
+        return fmt.Errorf("SMTP DATA failed: %v", err)
+    }
+    _, err = w.Write([]byte(msg))
+    if err != nil {
+        return fmt.Errorf("SMTP write failed: %v", err)
+    }
+    err = w.Close()
+    if err != nil {
+        return fmt.Errorf("SMTP close failed: %v", err)
+    }
+
+    return client.Quit()
+}
+
+// Send email using STARTTLS (for port 587)
+func sendAuthCodeEmailSTARTTLS(toEmail, fromEmail, fromName, subject, body string) error {
+    addr := fmt.Sprintf("%s:%s", SMTP_HOST, SMTP_PORT)
+
+    // Build MIME message
+    msg := fmt.Sprintf("From: %s <%s>\r\n"+
+        "To: %s\r\n"+
+        "Subject: %s\r\n"+
+        "MIME-Version: 1.0\r\n"+
+        "Content-Type: text/plain; charset=\"UTF-8\"\r\n"+
+        "\r\n"+
+        "%s", fromName, fromEmail, toEmail, subject, body)
+
+    // Connect to server
+    conn, err := smtp.Dial(addr)
+    if err != nil {
+        return fmt.Errorf("failed to connect to SMTP server: %v", err)
+    }
+    defer conn.Close()
+
+    // Send EHLO
+    if err = conn.Hello("localhost"); err != nil {
+        return fmt.Errorf("SMTP EHLO failed: %v", err)
+    }
+
+    // Start TLS
+    tlsConfig := &tls.Config{
+        ServerName: SMTP_HOST,
+    }
+    if err = conn.StartTLS(tlsConfig); err != nil {
+        return fmt.Errorf("SMTP STARTTLS failed: %v", err)
+    }
+
+    // Authenticate
+    auth := smtp.PlainAuth("", SMTP_USER, SMTP_PASSWORD, SMTP_HOST)
+    if err = conn.Auth(auth); err != nil {
+        return fmt.Errorf("SMTP auth failed: %v", err)
+    }
+
+    // Set sender and recipient
+    if err = conn.Mail(fromEmail); err != nil {
+        return fmt.Errorf("SMTP MAIL failed: %v", err)
+    }
+    if err = conn.Rcpt(toEmail); err != nil {
+        return fmt.Errorf("SMTP RCPT failed: %v", err)
+    }
+
+    // Send the email body
+    w, err := conn.Data()
+    if err != nil {
+        return fmt.Errorf("SMTP DATA failed: %v", err)
+    }
+    _, err = w.Write([]byte(msg))
+    if err != nil {
+        return fmt.Errorf("SMTP write failed: %v", err)
+    }
+    err = w.Close()
+    if err != nil {
+        return fmt.Errorf("SMTP close failed: %v", err)
+    }
+
+    return conn.Quit()
+}
+
+// Rate limiter for email requests (prevent abuse)
+var emailRateLimiter = NewDeviceLimiter()
+
+// Request auth code - sends 6-digit code to email
+func requestAuthCode(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    log.Println("📧 [requestAuthCode] Received request")
+
+    // Parse request
+    var req EmailAuthRequestCode
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate email
+    email := strings.ToLower(strings.TrimSpace(req.Email))
+    if email == "" || !isValidEmail(email) {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Invalid email address",
+        })
+        return
+    }
+
+    // Rate limit by email (1 request per minute)
+    limiter := emailRateLimiter.GetLimiter(email)
+    if !limiter.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Please wait before requesting another code",
+        })
+        return
+    }
+
+    // Generate 6-digit code
+    code := generateAuthCode()
+    expiresAt := time.Now().Add(AUTH_CODE_EXP)
+
+    // Invalidate any existing unused codes for this email
+    _, err := db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND used = 0`, email)
+    if err != nil {
+        log.Printf("❌ Failed to invalidate old codes: %v", err)
+    }
+
+    // Store the code in database
+    _, err = db.Exec(`INSERT INTO auth_codes (email, code, device_id, expires_at) VALUES (?, ?, ?, ?)`,
+        email, code, req.DeviceID, expiresAt)
+    if err != nil {
+        log.Printf("❌ Failed to store auth code: %v", err)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Failed to generate code",
+        })
+        return
+    }
+
+    // Send email
+    log.Printf("📧 Sending auth code to %s", email)
+    if err := sendAuthCodeEmail(email, code); err != nil {
+        log.Printf("❌ Failed to send email: %v", err)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Failed to send email. Please try again.",
+        })
+        return
+    }
+
+    log.Printf("✅ Auth code sent to %s (expires: %v)", email, expiresAt)
+    json.NewEncoder(w).Encode(EmailAuthResponse{
+        Success: true,
+        Message: "Verification code sent to your email",
+    })
+}
+
+// Verify auth code - validates code and returns JWT tokens
+func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    log.Println("🔐 [verifyAuthCode] Received request")
+
+    // Parse request
+    var req EmailAuthVerifyCode
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate input
+    email := strings.ToLower(strings.TrimSpace(req.Email))
+    code := strings.TrimSpace(req.Code)
+    deviceID := strings.TrimSpace(req.DeviceID)
+
+    if email == "" || !isValidEmail(email) {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Invalid email address",
+        })
+        return
+    }
+
+    if code == "" || len(code) != 6 {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Invalid verification code",
+        })
+        return
+    }
+
+    if deviceID == "" {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Device ID is required",
+        })
+        return
+    }
+
+    // Look up the code in database
+    var storedCode string
+    var expiresAt time.Time
+    var used int
+
+    err := db.QueryRow(`SELECT code, expires_at, used FROM auth_codes
+                        WHERE email = ? AND used = 0
+                        ORDER BY created_at DESC LIMIT 1`, email).Scan(&storedCode, &expiresAt, &used)
+
+    if err == sql.ErrNoRows {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "No verification code found. Please request a new one.",
+        })
+        return
+    } else if err != nil {
+        log.Printf("❌ Database error: %v", err)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Verification failed",
+        })
+        return
+    }
+
+    // Check if code is expired
+    if time.Now().After(expiresAt) {
+        // Mark as used
+        db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND code = ?`, email, storedCode)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Verification code has expired. Please request a new one.",
+        })
+        return
+    }
+
+    // Verify the code
+    if code != storedCode {
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Invalid verification code",
+        })
+        return
+    }
+
+    // Mark code as used
+    _, err = db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND code = ?`, email, storedCode)
+    if err != nil {
+        log.Printf("❌ Failed to mark code as used: %v", err)
+    }
+
+    // Check if user with this email already exists
+    var existingDeviceID string
+    var subscriptionType, subscriptionLength string
+
+    err = db.QueryRow(`SELECT device_id, subscription_type, subscription_length FROM users WHERE email = ?`, email).
+        Scan(&existingDeviceID, &subscriptionType, &subscriptionLength)
+
+    if err == sql.ErrNoRows {
+        // New user - create account with email
+        subscriptionType = "free"
+        subscriptionLength = "monthly"
+
+        _, err = db.Exec(`INSERT INTO users (device_id, email, subscription_type, subscription_length)
+                          VALUES (?, ?, ?, ?)
+                          ON CONFLICT(device_id) DO UPDATE SET
+                              email = excluded.email,
+                              updated_at = CURRENT_TIMESTAMP`,
+            deviceID, email, subscriptionType, subscriptionLength)
+        if err != nil {
+            log.Printf("❌ Failed to create user: %v", err)
+            json.NewEncoder(w).Encode(EmailAuthResponse{
+                Success: false,
+                Error:   "Failed to create account",
+            })
+            return
+        }
+        log.Printf("✅ New user created: %s (device: %s)", email, deviceID)
+    } else if err != nil {
+        log.Printf("❌ Database error: %v", err)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Verification failed",
+        })
+        return
+    } else {
+        // Existing user - update device_id if different (user logging in on new device)
+        if existingDeviceID != deviceID {
+            _, err = db.Exec(`UPDATE users SET device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+                deviceID, email)
+            if err != nil {
+                log.Printf("❌ Failed to update device: %v", err)
+            } else {
+                log.Printf("✅ User %s switched from device %s to %s", email, existingDeviceID, deviceID)
+            }
+        }
+        log.Printf("✅ Existing user logged in: %s (device: %s)", email, deviceID)
+    }
+
+    // Generate JWT tokens
+    accessToken, err := generateAccessToken(deviceID, subscriptionType, subscriptionLength)
+    if err != nil {
+        log.Printf("❌ Failed to generate access token: %v", err)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Failed to generate token",
+        })
+        return
+    }
+
+    refreshToken, err := generateRefreshToken(deviceID, subscriptionType, subscriptionLength)
+    if err != nil {
+        log.Printf("❌ Failed to generate refresh token: %v", err)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Failed to generate token",
+        })
+        return
+    }
+
+    log.Printf("✅ Auth successful for %s, tokens generated", email)
+
+    json.NewEncoder(w).Encode(EmailAuthResponse{
+        Success:      true,
+        Message:      "Email verified successfully",
+        AccessToken:  accessToken,
+        RefreshToken: refreshToken,
+        ExpiresIn:    int64(ACCESS_TOKEN_EXP.Seconds()),
+    })
+}
+
 func main() {
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
@@ -1115,6 +1614,8 @@ func main() {
     // Public endpoints (no JWT required)
     router.HandleFunc("/api/user/register", registerOrUpdateUser).Methods("POST")
     router.HandleFunc("/api/auth/refresh", refreshAccessToken).Methods("POST")
+    router.HandleFunc("/api/auth/request-code", requestAuthCode).Methods("POST")
+    router.HandleFunc("/api/auth/verify-code", verifyAuthCode).Methods("POST")
 
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
@@ -1124,6 +1625,8 @@ func main() {
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
     log.Println("  [PUBLIC]    POST /api/auth/refresh - Refresh access token")
+    log.Println("  [PUBLIC]    POST /api/auth/request-code - Request email verification code")
+    log.Println("  [PUBLIC]    POST /api/auth/verify-code - Verify code and get tokens")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
