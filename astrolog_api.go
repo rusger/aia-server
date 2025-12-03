@@ -194,6 +194,33 @@ type EmailAuthResponse struct {
     ExpiresIn    int64  `json:"expires_in,omitempty"`
 }
 
+// Admin subscription grant request
+type AdminGrantSubscriptionRequest struct {
+    Email              string `json:"email"`
+    SubscriptionType   string `json:"subscription_type"`   // "paid" or "free"
+    SubscriptionLength string `json:"subscription_length"` // "monthly", "yearly", "lifetime"
+    DurationDays       int    `json:"duration_days"`       // Number of days (0 = permanent/lifetime)
+    AdminEmail         string `json:"admin_email"`         // Must match hardcoded admin email
+    AdminSecret        string `json:"admin_secret"`        // Secret key for admin operations (REQUIRED)
+    VerificationCode   string `json:"verification_code"`   // 6-digit code sent to admin email
+}
+
+// Admin code request (step 1)
+type AdminRequestCodeRequest struct {
+    AdminEmail  string `json:"admin_email"`
+    AdminSecret string `json:"admin_secret"`
+}
+
+// Admin hardcoded emails (can grant subscriptions)
+var ADMIN_EMAILS = []string{
+    "somasuryagnilocana@gmail.com",
+    // Add more admin emails here
+}
+
+// Admin secret key (REQUIRED - set via environment variable)
+// Generate with: openssl rand -hex 32
+var ADMIN_SECRET_KEY = getEnv("ADMIN_SECRET_KEY", "")
+
 // Device rate limiter
 type DeviceLimiter struct {
     limiters map[string]*rate.Limiter
@@ -273,6 +300,17 @@ func initDB() error {
     _, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_email ON users(email) WHERE email IS NOT NULL`)
     if err != nil {
         log.Printf("Note: email index may already exist or email column missing: %v", err)
+    }
+
+    // Add subscription_expiry column if it doesn't exist
+    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='subscription_expiry'`).Scan(&count)
+    if err == nil && count == 0 {
+        _, err = db.Exec(`ALTER TABLE users ADD COLUMN subscription_expiry DATETIME`)
+        if err != nil {
+            log.Printf("Warning: Could not add subscription_expiry column: %v", err)
+        } else {
+            log.Println("✅ Added subscription_expiry column to users table")
+        }
     }
 
     // Create auth_codes table for email verification
@@ -1141,11 +1179,12 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
 
     var subscriptionType, subscriptionLength string
     var createdAt, updatedAt string
+    var subscriptionExpiry sql.NullString
 
-    query := `SELECT subscription_type, subscription_length, created_at, updated_at
+    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at
               FROM users WHERE device_id = ?`
 
-    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &createdAt, &updatedAt)
+    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt)
     if err == sql.ErrNoRows {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -1161,13 +1200,23 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Check if subscription is expired
+    effectiveSubType := subscriptionType
+    if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
+        expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
+        if err == nil && time.Now().After(expiryTime) {
+            effectiveSubType = "free" // Subscription expired
+        }
+    }
+
     json.NewEncoder(w).Encode(map[string]interface{}{
-        "success":             true,
-        "device_id":           deviceID,
-        "subscription_type":   subscriptionType,
-        "subscription_length": subscriptionLength,
-        "created_at":          createdAt,
-        "updated_at":          updatedAt,
+        "success":              true,
+        "device_id":            deviceID,
+        "subscription_type":    effectiveSubType,
+        "subscription_length":  subscriptionLength,
+        "subscription_expiry":  subscriptionExpiry.String,
+        "created_at":           createdAt,
+        "updated_at":           updatedAt,
     })
 }
 
@@ -1628,6 +1677,400 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// ============================================================================
+// ADMIN ENDPOINTS
+// ============================================================================
+
+// Check if email is in admin list
+func isAdminEmail(email string) bool {
+    email = strings.ToLower(strings.TrimSpace(email))
+    for _, adminEmail := range ADMIN_EMAILS {
+        if strings.ToLower(adminEmail) == email {
+            return true
+        }
+    }
+    return false
+}
+
+// Admin endpoint to request verification code (Step 1)
+// This sends a 6-digit code to the admin's email
+func adminRequestCode(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    log.Println("🔐 [adminRequestCode] Received request")
+
+    var req AdminRequestCodeRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate admin email is in allowed list
+    if !isAdminEmail(req.AdminEmail) {
+        log.Printf("❌ [adminRequestCode] Unauthorized email: %s", req.AdminEmail)
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    // Validate admin secret (REQUIRED for admin operations)
+    if ADMIN_SECRET_KEY == "" {
+        log.Println("❌ [adminRequestCode] ADMIN_SECRET_KEY not configured on server")
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Admin secret not configured on server",
+        })
+        return
+    }
+
+    if req.AdminSecret != ADMIN_SECRET_KEY {
+        log.Printf("❌ [adminRequestCode] Invalid admin secret")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    // Generate 6-digit code using crypto/rand
+    code := generateAuthCode()
+    expiresAt := time.Now().Add(10 * time.Minute)
+
+    // Store code in database (reuse auth_codes table)
+    _, err := db.Exec(`INSERT INTO auth_codes (email, code, device_id, expires_at) VALUES (?, ?, ?, ?)`,
+        strings.ToLower(req.AdminEmail), code, "admin-action", expiresAt)
+    if err != nil {
+        log.Printf("❌ [adminRequestCode] Failed to store code: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to generate code",
+        })
+        return
+    }
+
+    // Send email with code
+    subject := "🔐 Admin Verification Code - Astrolytix"
+    body := fmt.Sprintf(`
+Your admin verification code is:
+
+%s
+
+This code expires in 10 minutes.
+
+If you did not request this code, please ignore this email and check your server security.
+
+⚠️ Never share this code with anyone.
+`, code)
+
+    // Get from email info
+    fromEmail := SMTP_USER
+    fromName := "Astrolytix"
+    if strings.Contains(SMTP_FROM, "<") && strings.Contains(SMTP_FROM, ">") {
+        parts := strings.Split(SMTP_FROM, "<")
+        fromName = strings.TrimSpace(parts[0])
+        fromEmail = strings.TrimSuffix(parts[1], ">")
+    }
+
+    if err := sendAuthCodeEmailSTARTTLS(req.AdminEmail, fromEmail, fromName, subject, body); err != nil {
+        log.Printf("❌ [adminRequestCode] Failed to send email: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to send verification email",
+        })
+        return
+    }
+
+    log.Printf("✅ [adminRequestCode] Verification code sent to %s", req.AdminEmail)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "message": "Verification code sent to your email",
+    })
+}
+
+// Admin endpoint to grant subscription to any user by email (Step 2)
+// Requires: admin email + admin secret + verification code
+func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    log.Println("🔐 [adminGrantSubscription] Received request")
+
+    // Parse request
+    var req AdminGrantSubscriptionRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid request format",
+        })
+        return
+    }
+
+    // Step 1: Validate admin email is in allowed list
+    if !isAdminEmail(req.AdminEmail) {
+        log.Printf("❌ [adminGrantSubscription] Unauthorized admin email: %s", req.AdminEmail)
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized: Not an admin email",
+        })
+        return
+    }
+
+    // Step 2: Validate admin secret (REQUIRED)
+    if ADMIN_SECRET_KEY == "" {
+        log.Println("❌ [adminGrantSubscription] ADMIN_SECRET_KEY not configured")
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Admin secret not configured on server",
+        })
+        return
+    }
+
+    if req.AdminSecret != ADMIN_SECRET_KEY {
+        log.Printf("❌ [adminGrantSubscription] Invalid admin secret")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized: Invalid admin secret",
+        })
+        return
+    }
+
+    // Step 3: Validate verification code
+    if req.VerificationCode == "" {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Verification code required. Call /api/admin/request-code first.",
+        })
+        return
+    }
+
+    // Check code in database
+    var codeID int
+    var expiresAt time.Time
+    err := db.QueryRow(`SELECT id, expires_at FROM auth_codes
+                        WHERE email = ? AND code = ? AND used = 0 AND device_id = 'admin-action'
+                        ORDER BY created_at DESC LIMIT 1`,
+        strings.ToLower(req.AdminEmail), req.VerificationCode).Scan(&codeID, &expiresAt)
+
+    if err == sql.ErrNoRows {
+        log.Printf("❌ [adminGrantSubscription] Invalid verification code")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid or expired verification code",
+        })
+        return
+    } else if err != nil {
+        log.Printf("❌ [adminGrantSubscription] Database error: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database error",
+        })
+        return
+    }
+
+    // Check if code expired
+    if time.Now().After(expiresAt) {
+        log.Printf("❌ [adminGrantSubscription] Verification code expired")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Verification code expired. Request a new one.",
+        })
+        return
+    }
+
+    // Mark code as used
+    db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
+
+    // Validate target email
+    targetEmail := strings.ToLower(strings.TrimSpace(req.Email))
+    if targetEmail == "" || !isValidEmail(targetEmail) {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid target email address",
+        })
+        return
+    }
+
+    // Validate subscription type
+    if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
+        req.SubscriptionType = "paid" // Default to paid for grants
+    }
+
+    // Validate subscription length
+    if req.SubscriptionLength != "monthly" && req.SubscriptionLength != "yearly" && req.SubscriptionLength != "lifetime" {
+        req.SubscriptionLength = "yearly" // Default to yearly
+    }
+
+    // Calculate expiry date
+    var subscriptionExpiry *time.Time
+    if req.DurationDays > 0 {
+        expiry := time.Now().AddDate(0, 0, req.DurationDays)
+        subscriptionExpiry = &expiry
+    } else if req.SubscriptionLength == "lifetime" {
+        // Lifetime = 100 years from now (effectively permanent)
+        expiry := time.Now().AddDate(100, 0, 0)
+        subscriptionExpiry = &expiry
+    } else if req.SubscriptionLength == "yearly" {
+        expiry := time.Now().AddDate(1, 0, 0)
+        subscriptionExpiry = &expiry
+    } else {
+        // Monthly
+        expiry := time.Now().AddDate(0, 1, 0)
+        subscriptionExpiry = &expiry
+    }
+
+    // Check if user exists by email
+    var existingDeviceID string
+    err = db.QueryRow(`SELECT device_id FROM users WHERE email = ?`, targetEmail).Scan(&existingDeviceID)
+
+    if err == sql.ErrNoRows {
+        // User doesn't exist - create a placeholder record
+        // They will be properly registered when they sign in
+        log.Printf("🔵 [adminGrantSubscription] Creating new user record for %s", targetEmail)
+
+        _, err = db.Exec(`INSERT INTO users (device_id, email, subscription_type, subscription_length, subscription_expiry, updated_at)
+                          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            "pending-"+targetEmail, // Placeholder device ID until user registers
+            targetEmail,
+            req.SubscriptionType,
+            req.SubscriptionLength,
+            subscriptionExpiry)
+
+        if err != nil {
+            log.Printf("❌ [adminGrantSubscription] Failed to create user: %v", err)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Failed to create user record",
+            })
+            return
+        }
+    } else if err != nil {
+        log.Printf("❌ [adminGrantSubscription] Database error: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database error",
+        })
+        return
+    } else {
+        // User exists - update their subscription
+        log.Printf("🔵 [adminGrantSubscription] Updating existing user %s", targetEmail)
+
+        _, err = db.Exec(`UPDATE users SET
+                          subscription_type = ?,
+                          subscription_length = ?,
+                          subscription_expiry = ?,
+                          updated_at = CURRENT_TIMESTAMP
+                          WHERE email = ?`,
+            req.SubscriptionType,
+            req.SubscriptionLength,
+            subscriptionExpiry,
+            targetEmail)
+
+        if err != nil {
+            log.Printf("❌ [adminGrantSubscription] Failed to update user: %v", err)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Failed to update subscription",
+            })
+            return
+        }
+    }
+
+    expiryStr := "never"
+    if subscriptionExpiry != nil {
+        expiryStr = subscriptionExpiry.Format("2006-01-02")
+    }
+
+    log.Printf("✅ [adminGrantSubscription] Granted %s %s subscription to %s (expires: %s)",
+        req.SubscriptionLength, req.SubscriptionType, targetEmail, expiryStr)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":              true,
+        "message":              fmt.Sprintf("Subscription granted to %s", targetEmail),
+        "email":                targetEmail,
+        "subscription_type":    req.SubscriptionType,
+        "subscription_length":  req.SubscriptionLength,
+        "subscription_expiry":  expiryStr,
+    })
+}
+
+// Admin endpoint to list all users with subscriptions
+func adminListUsers(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Get admin email and secret from query params or headers
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    // Query all users
+    rows, err := db.Query(`SELECT device_id, email, subscription_type, subscription_length,
+                           subscription_expiry, created_at, updated_at
+                           FROM users ORDER BY updated_at DESC LIMIT 100`)
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database error",
+        })
+        return
+    }
+    defer rows.Close()
+
+    var users []map[string]interface{}
+    for rows.Next() {
+        var deviceID, subType, subLength string
+        var email, subExpiry, createdAt, updatedAt sql.NullString
+
+        err := rows.Scan(&deviceID, &email, &subType, &subLength, &subExpiry, &createdAt, &updatedAt)
+        if err != nil {
+            continue
+        }
+
+        user := map[string]interface{}{
+            "device_id":           deviceID,
+            "email":               email.String,
+            "subscription_type":   subType,
+            "subscription_length": subLength,
+            "subscription_expiry": subExpiry.String,
+            "created_at":          createdAt.String,
+            "updated_at":          updatedAt.String,
+        }
+        users = append(users, user)
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "users":   users,
+        "count":   len(users),
+    })
+}
+
 func main() {
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
@@ -1653,11 +2096,19 @@ func main() {
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
 
+    // Admin endpoints (admin email + secret + verification code required)
+    router.HandleFunc("/api/admin/request-code", adminRequestCode).Methods("POST")
+    router.HandleFunc("/api/admin/grant-subscription", adminGrantSubscription).Methods("POST")
+    router.HandleFunc("/api/admin/users", adminListUsers).Methods("GET")
+
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
     log.Println("  [PUBLIC]    POST /api/auth/refresh - Refresh access token")
     log.Println("  [PUBLIC]    POST /api/auth/request-code - Request email verification code")
     log.Println("  [PUBLIC]    POST /api/auth/verify-code - Verify code and get tokens")
+    log.Println("  [ADMIN]     POST /api/admin/request-code - Request admin verification code")
+    log.Println("  [ADMIN]     POST /api/admin/grant-subscription - Grant subscription (2FA required)")
+    log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
