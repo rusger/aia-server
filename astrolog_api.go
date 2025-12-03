@@ -238,11 +238,10 @@ func initDB() error {
         return fmt.Errorf("failed to open database: %v", err)
     }
 
-    // Create users table with device_id as primary key
+    // Create users table with device_id as primary key (basic structure)
     createTableSQL := `
     CREATE TABLE IF NOT EXISTS users (
         device_id TEXT PRIMARY KEY,
-        email TEXT,
         subscription_type TEXT NOT NULL DEFAULT 'free',
         subscription_length TEXT NOT NULL DEFAULT 'monthly',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -250,12 +249,30 @@ func initDB() error {
     );
 
     CREATE INDEX IF NOT EXISTS idx_subscription ON users(subscription_type, subscription_length);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_email ON users(email) WHERE email IS NOT NULL;
     `
 
     _, err = db.Exec(createTableSQL)
     if err != nil {
         return fmt.Errorf("failed to create users table: %v", err)
+    }
+
+    // Add email column to existing users table if it doesn't exist
+    // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
+    var count int
+    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='email'`).Scan(&count)
+    if err == nil && count == 0 {
+        _, err = db.Exec(`ALTER TABLE users ADD COLUMN email TEXT`)
+        if err != nil {
+            log.Printf("Warning: Could not add email column: %v", err)
+        } else {
+            log.Println("✅ Added email column to users table")
+        }
+    }
+
+    // Create email index (only if email column exists now)
+    _, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_email ON users(email) WHERE email IS NOT NULL`)
+    if err != nil {
+        log.Printf("Note: email index may already exist or email column missing: %v", err)
     }
 
     // Create auth_codes table for email verification
@@ -278,20 +295,7 @@ func initDB() error {
         return fmt.Errorf("failed to create auth_codes table: %v", err)
     }
 
-    // Add email column to existing users table if it doesn't exist
-    // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
-    var count int
-    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='email'`).Scan(&count)
-    if err == nil && count == 0 {
-        _, err = db.Exec(`ALTER TABLE users ADD COLUMN email TEXT`)
-        if err != nil {
-            log.Printf("Note: email column may already exist: %v", err)
-        } else {
-            log.Println("Added email column to users table")
-        }
-    }
-
-    log.Println("Database initialized successfully")
+    log.Println("✅ Database initialized successfully")
     return nil
 }
 
