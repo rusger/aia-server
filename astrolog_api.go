@@ -1284,6 +1284,33 @@ Astrolytix Team`, code)
     return client.Quit()
 }
 
+// loginAuth implements LOGIN authentication for SMTP (required by Office 365)
+type loginAuth struct {
+    username, password string
+}
+
+func LoginAuth(username, password string) smtp.Auth {
+    return &loginAuth{username, password}
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+    return "LOGIN", []byte{}, nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+    if more {
+        switch string(fromServer) {
+        case "Username:":
+            return []byte(a.username), nil
+        case "Password:":
+            return []byte(a.password), nil
+        default:
+            return nil, fmt.Errorf("unknown server response: %s", fromServer)
+        }
+    }
+    return nil, nil
+}
+
 // Send email using STARTTLS (for port 587)
 func sendAuthCodeEmailSTARTTLS(toEmail, fromEmail, fromName, subject, body string) error {
     addr := fmt.Sprintf("%s:%s", SMTP_HOST, SMTP_PORT)
@@ -1317,8 +1344,8 @@ func sendAuthCodeEmailSTARTTLS(toEmail, fromEmail, fromName, subject, body strin
         return fmt.Errorf("SMTP STARTTLS failed: %v", err)
     }
 
-    // Authenticate
-    auth := smtp.PlainAuth("", SMTP_USER, SMTP_PASSWORD, SMTP_HOST)
+    // Authenticate using LOGIN auth (required by Office 365)
+    auth := LoginAuth(SMTP_USER, SMTP_PASSWORD)
     if err = conn.Auth(auth); err != nil {
         return fmt.Errorf("SMTP auth failed: %v", err)
     }
