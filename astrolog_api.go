@@ -211,6 +211,17 @@ type AdminRequestCodeRequest struct {
     AdminSecret string `json:"admin_secret"`
 }
 
+// Purchase record request
+type RecordPurchaseRequest struct {
+    ProductID          string `json:"product_id"`
+    TransactionID      string `json:"transaction_id"`
+    PurchaseDate       string `json:"purchase_date"`
+    ExpiryDate         string `json:"expiry_date"`
+    SubscriptionType   string `json:"subscription_type"`
+    SubscriptionLength string `json:"subscription_length"`
+    Store              string `json:"store"` // "apple" or "google"
+}
+
 // Admin hardcoded emails (can grant subscriptions)
 var ADMIN_EMAILS = []string{
     "somasuryagnilocana@gmail.com",
@@ -331,6 +342,31 @@ func initDB() error {
     _, err = db.Exec(createAuthCodesSQL)
     if err != nil {
         return fmt.Errorf("failed to create auth_codes table: %v", err)
+    }
+
+    // Create purchase_history table for tracking subscription purchases
+    createPurchaseHistorySQL := `
+    CREATE TABLE IF NOT EXISTS purchase_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        transaction_id TEXT,
+        purchase_date DATETIME NOT NULL,
+        expiry_date DATETIME,
+        subscription_type TEXT NOT NULL,
+        subscription_length TEXT NOT NULL,
+        store TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (device_id) REFERENCES users(device_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_purchase_device ON purchase_history(device_id);
+    CREATE INDEX IF NOT EXISTS idx_purchase_date ON purchase_history(purchase_date);
+    `
+
+    _, err = db.Exec(createPurchaseHistorySQL)
+    if err != nil {
+        return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
     log.Println("✅ Database initialized successfully")
@@ -1220,6 +1256,149 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Record a purchase in the purchase history
+func recordPurchase(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Get claims from JWT middleware
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    deviceID := claims.DeviceID
+
+    var req RecordPurchaseRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid request body",
+        })
+        return
+    }
+
+    // Validate required fields
+    if req.ProductID == "" || req.Store == "" {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "product_id and store are required",
+        })
+        return
+    }
+
+    // Parse purchase date (use current time if not provided)
+    purchaseDate := time.Now()
+    if req.PurchaseDate != "" {
+        parsed, err := time.Parse(time.RFC3339, req.PurchaseDate)
+        if err == nil {
+            purchaseDate = parsed
+        }
+    }
+
+    // Parse expiry date (optional)
+    var expiryDate *time.Time
+    if req.ExpiryDate != "" {
+        parsed, err := time.Parse(time.RFC3339, req.ExpiryDate)
+        if err == nil {
+            expiryDate = &parsed
+        }
+    }
+
+    // Insert purchase record
+    query := `INSERT INTO purchase_history
+              (device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+
+    _, err := db.Exec(query, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
+    if err != nil {
+        log.Printf("Error recording purchase: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to record purchase",
+        })
+        return
+    }
+
+    log.Printf("✅ Purchase recorded: device=%s, product=%s, store=%s", deviceID, req.ProductID, req.Store)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "message": "Purchase recorded successfully",
+    })
+}
+
+// Get purchase history for a user
+func getPurchaseHistory(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Get claims from JWT middleware
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    deviceID := claims.DeviceID
+
+    query := `SELECT product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store, created_at
+              FROM purchase_history WHERE device_id = ? ORDER BY purchase_date DESC`
+
+    rows, err := db.Query(query, deviceID)
+    if err != nil {
+        log.Printf("Error fetching purchase history: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to fetch purchase history",
+        })
+        return
+    }
+    defer rows.Close()
+
+    var purchases []map[string]interface{}
+    for rows.Next() {
+        var productID, transactionID, subscriptionType, subscriptionLength, store string
+        var purchaseDate, createdAt time.Time
+        var expiryDate sql.NullTime
+
+        if err := rows.Scan(&productID, &transactionID, &purchaseDate, &expiryDate, &subscriptionType, &subscriptionLength, &store, &createdAt); err != nil {
+            log.Printf("Error scanning purchase row: %v", err)
+            continue
+        }
+
+        purchase := map[string]interface{}{
+            "product_id":          productID,
+            "transaction_id":      transactionID,
+            "purchase_date":       purchaseDate.Format(time.RFC3339),
+            "subscription_type":   subscriptionType,
+            "subscription_length": subscriptionLength,
+            "store":               store,
+            "created_at":          createdAt.Format(time.RFC3339),
+        }
+        if expiryDate.Valid {
+            purchase["expiry_date"] = expiryDate.Time.Format(time.RFC3339)
+        }
+        purchases = append(purchases, purchase)
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":   true,
+        "purchases": purchases,
+    })
+}
+
 // ============================================================================
 // EMAIL AUTHENTICATION
 // ============================================================================
@@ -2095,6 +2274,8 @@ func main() {
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
+    router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
+    router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
 
     // Admin endpoints (admin email + secret + verification code required)
     router.HandleFunc("/api/admin/request-code", adminRequestCode).Methods("POST")
@@ -2112,6 +2293,8 @@ func main() {
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
+    log.Println("  [PROTECTED] POST /api/user/purchases - Record purchase (JWT required)")
+    log.Println("  [PROTECTED] GET  /api/user/purchases - Get purchase history (JWT required)")
     log.Println("")
     log.Println("⚠️  JWT Authentication is ENABLED")
     log.Println("   Protected endpoints require 'Authorization: Bearer <token>' header")
