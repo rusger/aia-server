@@ -324,6 +324,17 @@ func initDB() error {
         }
     }
 
+    // Add is_super column for super tier access (more powerful AI model)
+    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='is_super'`).Scan(&count)
+    if err == nil && count == 0 {
+        _, err = db.Exec(`ALTER TABLE users ADD COLUMN is_super INTEGER DEFAULT 0`)
+        if err != nil {
+            log.Printf("Warning: Could not add is_super column: %v", err)
+        } else {
+            log.Println("✅ Added is_super column to users table")
+        }
+    }
+
     // Create auth_codes table for email verification
     createAuthCodesSQL := `
     CREATE TABLE IF NOT EXISTS auth_codes (
@@ -1216,11 +1227,12 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     var subscriptionType, subscriptionLength string
     var createdAt, updatedAt string
     var subscriptionExpiry sql.NullString
+    var isSuper int
 
-    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at
+    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at, COALESCE(is_super, 0)
               FROM users WHERE device_id = ?`
 
-    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt)
+    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt, &isSuper)
     if err == sql.ErrNoRows {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -1251,6 +1263,7 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         "subscription_type":    effectiveSubType,
         "subscription_length":  subscriptionLength,
         "subscription_expiry":  subscriptionExpiry.String,
+        "is_super":             isSuper == 1,
         "created_at":           createdAt,
         "updated_at":           updatedAt,
     })
@@ -2210,7 +2223,7 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
 
     // Query all users
     rows, err := db.Query(`SELECT device_id, email, subscription_type, subscription_length,
-                           subscription_expiry, created_at, updated_at
+                           subscription_expiry, COALESCE(is_super, 0), created_at, updated_at
                            FROM users ORDER BY updated_at DESC LIMIT 100`)
     if err != nil {
         json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2225,8 +2238,9 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
     for rows.Next() {
         var deviceID, subType, subLength string
         var email, subExpiry, createdAt, updatedAt sql.NullString
+        var isSuper int
 
-        err := rows.Scan(&deviceID, &email, &subType, &subLength, &subExpiry, &createdAt, &updatedAt)
+        err := rows.Scan(&deviceID, &email, &subType, &subLength, &subExpiry, &isSuper, &createdAt, &updatedAt)
         if err != nil {
             continue
         }
@@ -2237,6 +2251,7 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
             "subscription_type":   subType,
             "subscription_length": subLength,
             "subscription_expiry": subExpiry.String,
+            "is_super":            isSuper == 1,
             "created_at":          createdAt.String,
             "updated_at":          updatedAt.String,
         }
@@ -2247,6 +2262,103 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
         "success": true,
         "users":   users,
         "count":   len(users),
+    })
+}
+
+// Admin endpoint to toggle super status for a user
+func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    var req struct {
+        AdminEmail string `json:"admin_email"`
+        AdminSecret string `json:"admin_secret"`
+        DeviceID string `json:"device_id"`
+        Email string `json:"email"`
+        IsSuper bool `json:"is_super"`
+    }
+
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid request",
+        })
+        return
+    }
+
+    // Validate admin credentials
+    if !isAdminEmail(req.AdminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && req.AdminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    // Find user by device_id or email
+    var deviceID string
+    if req.DeviceID != "" {
+        deviceID = req.DeviceID
+    } else if req.Email != "" {
+        err := db.QueryRow(`SELECT device_id FROM users WHERE email = ?`, req.Email).Scan(&deviceID)
+        if err != nil {
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "User not found by email",
+            })
+            return
+        }
+    } else {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Must provide device_id or email",
+        })
+        return
+    }
+
+    // Update is_super flag
+    superValue := 0
+    if req.IsSuper {
+        superValue = 1
+    }
+
+    result, err := db.Exec(`UPDATE users SET is_super = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?`,
+        superValue, deviceID)
+    if err != nil {
+        log.Printf("Error updating super status: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database error",
+        })
+        return
+    }
+
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "User not found",
+        })
+        return
+    }
+
+    log.Printf("✅ Admin %s toggled super status for device %s to %v", req.AdminEmail, deviceID, req.IsSuper)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":   true,
+        "device_id": deviceID,
+        "is_super":  req.IsSuper,
+        "message":   "Super status updated successfully",
     })
 }
 
@@ -2281,6 +2393,7 @@ func main() {
     router.HandleFunc("/api/admin/request-code", adminRequestCode).Methods("POST")
     router.HandleFunc("/api/admin/grant-subscription", adminGrantSubscription).Methods("POST")
     router.HandleFunc("/api/admin/users", adminListUsers).Methods("GET")
+    router.HandleFunc("/api/admin/toggle-super", adminToggleSuper).Methods("POST")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
@@ -2290,6 +2403,7 @@ func main() {
     log.Println("  [ADMIN]     POST /api/admin/request-code - Request admin verification code")
     log.Println("  [ADMIN]     POST /api/admin/grant-subscription - Grant subscription (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
+    log.Println("  [ADMIN]     POST /api/admin/toggle-super - Toggle super tier (admin only)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
