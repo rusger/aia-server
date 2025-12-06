@@ -2322,16 +2322,17 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-// Admin endpoint to toggle super status for a user
+// Admin endpoint to toggle super status for a user (requires 2FA verification code)
 func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
     var req struct {
-        AdminEmail string `json:"admin_email"`
-        AdminSecret string `json:"admin_secret"`
-        DeviceID string `json:"device_id"`
-        Email string `json:"email"`
-        IsSuper bool `json:"is_super"`
+        AdminEmail       string `json:"admin_email"`
+        AdminSecret      string `json:"admin_secret"`
+        VerificationCode string `json:"verification_code"`
+        DeviceID         string `json:"device_id"`
+        Email            string `json:"email"`
+        IsSuper          bool   `json:"is_super"`
     }
 
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2361,6 +2362,38 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
         })
         return
     }
+
+    // Verify the email code (2FA required for super toggle)
+    if req.VerificationCode == "" {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Verification code required",
+        })
+        return
+    }
+
+    var codeID int
+    var expiresAt time.Time
+    err := db.QueryRow(`SELECT id, expires_at FROM auth_codes WHERE email = ? AND code = ? AND used = 0`,
+        req.AdminEmail, req.VerificationCode).Scan(&codeID, &expiresAt)
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid or expired verification code",
+        })
+        return
+    }
+
+    if time.Now().After(expiresAt) {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Verification code has expired",
+        })
+        return
+    }
+
+    // Mark code as used
+    db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
 
     // Find user by device_id or email
     var deviceID string
@@ -2615,6 +2648,94 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Admin endpoint to download the main database (requires 2FA verification code)
+func adminDownloadDB(w http.ResponseWriter, r *http.Request) {
+    // Get admin credentials from query params
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+    verificationCode := r.URL.Query().Get("verification_code")
+
+    if !isAdminEmail(adminEmail) {
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    // Verify the email code (2FA required)
+    if verificationCode == "" {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Verification code required",
+        })
+        return
+    }
+
+    var codeID int
+    var expiresAt time.Time
+    err := db.QueryRow(`SELECT id, expires_at FROM auth_codes WHERE email = ? AND code = ? AND used = 0`,
+        adminEmail, verificationCode).Scan(&codeID, &expiresAt)
+    if err != nil {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid or expired verification code",
+        })
+        return
+    }
+
+    if time.Now().After(expiresAt) {
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Verification code has expired",
+        })
+        return
+    }
+
+    // Mark code as used
+    db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
+
+    // Read database file
+    dbPath := "./users.db"
+    data, err := os.ReadFile(dbPath)
+    if err != nil {
+        w.Header().Set("Content-Type", "application/json")
+        log.Printf("Error reading database file: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to read database file",
+        })
+        return
+    }
+
+    // Generate filename with timestamp
+    timestamp := time.Now().Format("2006-01-02_15-04-05")
+    filename := fmt.Sprintf("astrolytix_backup_%s.db", timestamp)
+
+    log.Printf("✅ Admin %s downloaded database backup", adminEmail)
+
+    // Send file as download
+    w.Header().Set("Content-Type", "application/x-sqlite3")
+    w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+    w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+    w.Write(data)
+}
+
 func main() {
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
@@ -2656,6 +2777,7 @@ func main() {
     router.HandleFunc("/api/admin/users", adminListUsers).Methods("GET")
     router.HandleFunc("/api/admin/toggle-super", adminToggleSuper).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGetAnalytics).Methods("GET")
+    router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
@@ -2667,6 +2789,7 @@ func main() {
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
     log.Println("  [ADMIN]     POST /api/admin/toggle-super - Toggle super tier (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/analytics - Get usage analytics (admin only)")
+    log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
