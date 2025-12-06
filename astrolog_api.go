@@ -265,8 +265,9 @@ func (dl *DeviceLimiter) GetLimiter(deviceID string) *rate.Limiter {
 
 var deviceLimiter = NewDeviceLimiter()
 
-// Global database connection
+// Global database connections
 var db *sql.DB
+var analyticsDB *sql.DB
 
 // Initialize database
 func initDB() error {
@@ -382,6 +383,52 @@ func initDB() error {
 
     log.Println("✅ Database initialized successfully")
     return nil
+}
+
+// Initialize analytics database (separate from main db for analytical data)
+func initAnalyticsDB() error {
+    var err error
+    analyticsDB, err = sql.Open("sqlite", "./analytics.db")
+    if err != nil {
+        return fmt.Errorf("failed to open analytics database: %v", err)
+    }
+
+    // Create api_calls table to track all API usage
+    createTableSQL := `
+    CREATE TABLE IF NOT EXISTS api_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        call_type TEXT NOT NULL,
+        model TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_api_calls_device ON api_calls(device_id);
+    CREATE INDEX IF NOT EXISTS idx_api_calls_type ON api_calls(call_type);
+    CREATE INDEX IF NOT EXISTS idx_api_calls_date ON api_calls(created_at);
+    `
+
+    _, err = analyticsDB.Exec(createTableSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create api_calls table: %v", err)
+    }
+
+    log.Println("✅ Analytics database initialized successfully")
+    return nil
+}
+
+// Log an API call to analytics database
+func logAPICall(deviceID, callType, model string) {
+    if analyticsDB == nil {
+        return
+    }
+    go func() {
+        _, err := analyticsDB.Exec(`INSERT INTO api_calls (device_id, call_type, model) VALUES (?, ?, ?)`,
+            deviceID, callType, model)
+        if err != nil {
+            log.Printf("⚠️ Failed to log API call: %v", err)
+        }
+    }()
 }
 
 func getEnv(key, defaultValue string) string {
@@ -770,6 +817,13 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
             filtered = append(filtered, line)
         }
     }
+
+    // Log API call for analytics
+    chartType := req.ChartType
+    if chartType == "" {
+        chartType = "natal"
+    }
+    logAPICall(deviceID, "astrolog", chartType)
 
     json.NewEncoder(w).Encode(AstrologResponse{
         Success: true,
@@ -1198,6 +1252,9 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     }
 
     log.Printf("✅ ChatGPT request successful, response length: %d", len(content))
+
+    // Log API call for analytics
+    logAPICall(deviceID, "chatgpt", req.Model)
 
     // Return success response
     json.NewEncoder(w).Encode(ChatGPTProxyResponse{
@@ -2362,6 +2419,202 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Admin endpoint to get analytics data
+func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Get admin credentials from query params
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    if analyticsDB == nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Analytics database not initialized",
+        })
+        return
+    }
+
+    // Get current month and year
+    now := time.Now()
+    currentMonth := now.Format("2006-01")
+    currentYear := now.Format("2006")
+
+    // Total calls this month (astrolog)
+    var astrologMonthly int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'astrolog' AND strftime('%Y-%m', created_at) = ?`, currentMonth).Scan(&astrologMonthly)
+
+    // Total calls this year (astrolog)
+    var astrologYearly int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'astrolog' AND strftime('%Y', created_at) = ?`, currentYear).Scan(&astrologYearly)
+
+    // Total calls this month (chatgpt)
+    var chatgptMonthly int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'chatgpt' AND strftime('%Y-%m', created_at) = ?`, currentMonth).Scan(&chatgptMonthly)
+
+    // Total calls this year (chatgpt)
+    var chatgptYearly int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'chatgpt' AND strftime('%Y', created_at) = ?`, currentYear).Scan(&chatgptYearly)
+
+    // Unique users this month
+    var uniqueUsersMonthly int
+    analyticsDB.QueryRow(`SELECT COUNT(DISTINCT device_id) FROM api_calls WHERE strftime('%Y-%m', created_at) = ?`, currentMonth).Scan(&uniqueUsersMonthly)
+
+    // Unique users this year
+    var uniqueUsersYearly int
+    analyticsDB.QueryRow(`SELECT COUNT(DISTINCT device_id) FROM api_calls WHERE strftime('%Y', created_at) = ?`, currentYear).Scan(&uniqueUsersYearly)
+
+    // Average astrolog calls per user this month
+    var avgAstrologMonthly float64
+    if uniqueUsersMonthly > 0 {
+        avgAstrologMonthly = float64(astrologMonthly) / float64(uniqueUsersMonthly)
+    }
+
+    // Average chatgpt calls per user this month
+    var avgChatgptMonthly float64
+    if uniqueUsersMonthly > 0 {
+        avgChatgptMonthly = float64(chatgptMonthly) / float64(uniqueUsersMonthly)
+    }
+
+    // Average astrolog calls per user this year
+    var avgAstrologYearly float64
+    if uniqueUsersYearly > 0 {
+        avgAstrologYearly = float64(astrologYearly) / float64(uniqueUsersYearly)
+    }
+
+    // Average chatgpt calls per user this year
+    var avgChatgptYearly float64
+    if uniqueUsersYearly > 0 {
+        avgChatgptYearly = float64(chatgptYearly) / float64(uniqueUsersYearly)
+    }
+
+    // Max astrolog calls by a single user (all time)
+    var maxAstrologUser string
+    var maxAstrologCalls int
+    analyticsDB.QueryRow(`SELECT device_id, COUNT(*) as cnt FROM api_calls WHERE call_type = 'astrolog' GROUP BY device_id ORDER BY cnt DESC LIMIT 1`).Scan(&maxAstrologUser, &maxAstrologCalls)
+
+    // Max chatgpt calls by a single user (all time)
+    var maxChatgptUser string
+    var maxChatgptCalls int
+    analyticsDB.QueryRow(`SELECT device_id, COUNT(*) as cnt FROM api_calls WHERE call_type = 'chatgpt' GROUP BY device_id ORDER BY cnt DESC LIMIT 1`).Scan(&maxChatgptUser, &maxChatgptCalls)
+
+    // Monthly breakdown for last 12 months
+    rows, err := analyticsDB.Query(`
+        SELECT strftime('%Y-%m', created_at) as month,
+               SUM(CASE WHEN call_type = 'astrolog' THEN 1 ELSE 0 END) as astrolog_calls,
+               SUM(CASE WHEN call_type = 'chatgpt' THEN 1 ELSE 0 END) as chatgpt_calls,
+               COUNT(DISTINCT device_id) as unique_users
+        FROM api_calls
+        WHERE created_at >= date('now', '-12 months')
+        GROUP BY month
+        ORDER BY month DESC
+    `)
+
+    var monthlyData []map[string]interface{}
+    if err == nil {
+        defer rows.Close()
+        for rows.Next() {
+            var month string
+            var astrologCalls, chatgptCalls, users int
+            if err := rows.Scan(&month, &astrologCalls, &chatgptCalls, &users); err == nil {
+                monthlyData = append(monthlyData, map[string]interface{}{
+                    "month":          month,
+                    "astrolog_calls": astrologCalls,
+                    "chatgpt_calls":  chatgptCalls,
+                    "unique_users":   users,
+                })
+            }
+        }
+    }
+
+    // Model usage breakdown (for ChatGPT)
+    modelRows, err := analyticsDB.Query(`
+        SELECT model, COUNT(*) as cnt
+        FROM api_calls
+        WHERE call_type = 'chatgpt' AND model IS NOT NULL AND model != ''
+        GROUP BY model
+        ORDER BY cnt DESC
+    `)
+
+    var modelUsage []map[string]interface{}
+    if err == nil {
+        defer modelRows.Close()
+        for modelRows.Next() {
+            var model string
+            var cnt int
+            if err := modelRows.Scan(&model, &cnt); err == nil {
+                modelUsage = append(modelUsage, map[string]interface{}{
+                    "model": model,
+                    "count": cnt,
+                })
+            }
+        }
+    }
+
+    // Total all-time stats
+    var totalAstrolog, totalChatgpt, totalUniqueUsers int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'astrolog'`).Scan(&totalAstrolog)
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'chatgpt'`).Scan(&totalChatgpt)
+    analyticsDB.QueryRow(`SELECT COUNT(DISTINCT device_id) FROM api_calls`).Scan(&totalUniqueUsers)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "current_period": map[string]interface{}{
+            "month": currentMonth,
+            "year":  currentYear,
+        },
+        "monthly": map[string]interface{}{
+            "astrolog_calls":     astrologMonthly,
+            "chatgpt_calls":      chatgptMonthly,
+            "unique_users":       uniqueUsersMonthly,
+            "avg_astrolog_per_user": fmt.Sprintf("%.2f", avgAstrologMonthly),
+            "avg_chatgpt_per_user":  fmt.Sprintf("%.2f", avgChatgptMonthly),
+        },
+        "yearly": map[string]interface{}{
+            "astrolog_calls":     astrologYearly,
+            "chatgpt_calls":      chatgptYearly,
+            "unique_users":       uniqueUsersYearly,
+            "avg_astrolog_per_user": fmt.Sprintf("%.2f", avgAstrologYearly),
+            "avg_chatgpt_per_user":  fmt.Sprintf("%.2f", avgChatgptYearly),
+        },
+        "all_time": map[string]interface{}{
+            "total_astrolog_calls": totalAstrolog,
+            "total_chatgpt_calls":  totalChatgpt,
+            "total_unique_users":   totalUniqueUsers,
+        },
+        "max_usage": map[string]interface{}{
+            "astrolog": map[string]interface{}{
+                "device_id": maxAstrologUser,
+                "calls":     maxAstrologCalls,
+            },
+            "chatgpt": map[string]interface{}{
+                "device_id": maxChatgptUser,
+                "calls":     maxChatgptCalls,
+            },
+        },
+        "monthly_breakdown": monthlyData,
+        "model_usage":       modelUsage,
+    })
+}
+
 func main() {
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
@@ -2373,6 +2626,14 @@ func main() {
         log.Fatalf("Failed to initialize database: %v", err)
     }
     defer db.Close()
+
+    // Initialize analytics database
+    if err := initAnalyticsDB(); err != nil {
+        log.Printf("⚠️ Warning: Analytics database failed to initialize: %v", err)
+        // Continue anyway - analytics is optional
+    } else {
+        defer analyticsDB.Close()
+    }
 
     router := mux.NewRouter()
 
@@ -2394,6 +2655,7 @@ func main() {
     router.HandleFunc("/api/admin/grant-subscription", adminGrantSubscription).Methods("POST")
     router.HandleFunc("/api/admin/users", adminListUsers).Methods("GET")
     router.HandleFunc("/api/admin/toggle-super", adminToggleSuper).Methods("POST")
+    router.HandleFunc("/api/admin/analytics", adminGetAnalytics).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
@@ -2404,6 +2666,7 @@ func main() {
     log.Println("  [ADMIN]     POST /api/admin/grant-subscription - Grant subscription (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
     log.Println("  [ADMIN]     POST /api/admin/toggle-super - Toggle super tier (admin only)")
+    log.Println("  [ADMIN]     GET  /api/admin/analytics - Get usage analytics (admin only)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
