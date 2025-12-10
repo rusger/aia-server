@@ -57,7 +57,8 @@ var (
 
 // JWT Claims structure
 type JWTClaims struct {
-    DeviceID           string `json:"device_id"`
+    Email              string `json:"email"`               // Primary user identity
+    DeviceID           string `json:"device_id,omitempty"` // Optional device tracking
     SubscriptionType   string `json:"subscription_type"`
     SubscriptionLength string `json:"subscription_length"`
     TokenType          string `json:"token_type"` // "access" or "refresh"
@@ -277,62 +278,47 @@ func initDB() error {
         return fmt.Errorf("failed to open database: %v", err)
     }
 
-    // Create users table with device_id as primary key (basic structure)
+    // NEW SCHEMA: email is the primary identity
+    // Migration: Create new table structure with email as primary key
     createTableSQL := `
-    CREATE TABLE IF NOT EXISTS users (
-        device_id TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS users_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
         subscription_type TEXT NOT NULL DEFAULT 'free',
         subscription_length TEXT NOT NULL DEFAULT 'monthly',
+        subscription_expiry DATETIME,
+        is_super INTEGER DEFAULT 0,
+        current_device_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE INDEX IF NOT EXISTS idx_subscription ON users(subscription_type, subscription_length);
+    CREATE INDEX IF NOT EXISTS idx_users_v2_subscription ON users_v2(subscription_type);
+    CREATE INDEX IF NOT EXISTS idx_users_v2_device ON users_v2(current_device_id);
     `
 
     _, err = db.Exec(createTableSQL)
     if err != nil {
-        return fmt.Errorf("failed to create users table: %v", err)
+        return fmt.Errorf("failed to create users_v2 table: %v", err)
     }
 
-    // Add email column to existing users table if it doesn't exist
-    // SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
-    var count int
-    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='email'`).Scan(&count)
-    if err == nil && count == 0 {
-        _, err = db.Exec(`ALTER TABLE users ADD COLUMN email TEXT`)
+    // Migrate data from old users table if it exists and users_v2 is empty
+    var oldTableExists, newTableEmpty int
+    db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'`).Scan(&oldTableExists)
+    db.QueryRow(`SELECT COUNT(*) FROM users_v2`).Scan(&newTableEmpty)
+
+    if oldTableExists > 0 && newTableEmpty == 0 {
+        log.Println("🔄 Migrating data from old users table to users_v2...")
+        _, err = db.Exec(`
+            INSERT INTO users_v2 (email, subscription_type, subscription_length, subscription_expiry, is_super, current_device_id, created_at, updated_at)
+            SELECT email, subscription_type, subscription_length, subscription_expiry, COALESCE(is_super, 0), device_id, created_at, updated_at
+            FROM users
+            WHERE email IS NOT NULL AND email != ''
+        `)
         if err != nil {
-            log.Printf("Warning: Could not add email column: %v", err)
+            log.Printf("⚠️ Migration warning: %v", err)
         } else {
-            log.Println("✅ Added email column to users table")
-        }
-    }
-
-    // Create email index (only if email column exists now)
-    _, err = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_email ON users(email) WHERE email IS NOT NULL`)
-    if err != nil {
-        log.Printf("Note: email index may already exist or email column missing: %v", err)
-    }
-
-    // Add subscription_expiry column if it doesn't exist
-    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='subscription_expiry'`).Scan(&count)
-    if err == nil && count == 0 {
-        _, err = db.Exec(`ALTER TABLE users ADD COLUMN subscription_expiry DATETIME`)
-        if err != nil {
-            log.Printf("Warning: Could not add subscription_expiry column: %v", err)
-        } else {
-            log.Println("✅ Added subscription_expiry column to users table")
-        }
-    }
-
-    // Add is_super column for super tier access (more powerful AI model)
-    err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name='is_super'`).Scan(&count)
-    if err == nil && count == 0 {
-        _, err = db.Exec(`ALTER TABLE users ADD COLUMN is_super INTEGER DEFAULT 0`)
-        if err != nil {
-            log.Printf("Warning: Could not add is_super column: %v", err)
-        } else {
-            log.Println("✅ Added is_super column to users table")
+            log.Println("✅ Data migrated successfully")
         }
     }
 
@@ -356,11 +342,30 @@ func initDB() error {
         return fmt.Errorf("failed to create auth_codes table: %v", err)
     }
 
+    // Create login_history table for tracking device logins
+    createLoginHistorySQL := `
+    CREATE TABLE IF NOT EXISTS login_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        device_id TEXT,
+        device_info TEXT,
+        logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_login_history_email ON login_history(email);
+    `
+
+    _, err = db.Exec(createLoginHistorySQL)
+    if err != nil {
+        return fmt.Errorf("failed to create login_history table: %v", err)
+    }
+
     // Create purchase_history table for tracking subscription purchases
     createPurchaseHistorySQL := `
     CREATE TABLE IF NOT EXISTS purchase_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        device_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        device_id TEXT,
         product_id TEXT NOT NULL,
         transaction_id TEXT,
         purchase_date DATETIME NOT NULL,
@@ -368,11 +373,10 @@ func initDB() error {
         subscription_type TEXT NOT NULL,
         subscription_length TEXT NOT NULL,
         store TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (device_id) REFERENCES users(device_id)
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE INDEX IF NOT EXISTS idx_purchase_device ON purchase_history(device_id);
+    CREATE INDEX IF NOT EXISTS idx_purchase_email ON purchase_history(email);
     CREATE INDEX IF NOT EXISTS idx_purchase_date ON purchase_history(purchase_date);
     `
 
@@ -381,7 +385,7 @@ func initDB() error {
         return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
-    log.Println("✅ Database initialized successfully")
+    log.Println("✅ Database initialized successfully (v2 schema with email as primary identity)")
     return nil
 }
 
@@ -439,9 +443,10 @@ func getEnv(key, defaultValue string) string {
 }
 
 // Generate JWT access token
-func generateAccessToken(deviceID, subscriptionType, subscriptionLength string) (string, error) {
+func generateAccessToken(email, deviceID, subscriptionType, subscriptionLength string) (string, error) {
     now := time.Now()
     claims := JWTClaims{
+        Email:              email,
         DeviceID:           deviceID,
         SubscriptionType:   subscriptionType,
         SubscriptionLength: subscriptionLength,
@@ -451,7 +456,7 @@ func generateAccessToken(deviceID, subscriptionType, subscriptionLength string) 
             IssuedAt:  jwt.NewNumericDate(now),
             NotBefore: jwt.NewNumericDate(now),
             Issuer:    "astrolog-api",
-            Subject:   deviceID,
+            Subject:   email, // Email is now the subject
         },
     }
 
@@ -460,9 +465,10 @@ func generateAccessToken(deviceID, subscriptionType, subscriptionLength string) 
 }
 
 // Generate JWT refresh token
-func generateRefreshToken(deviceID, subscriptionType, subscriptionLength string) (string, error) {
+func generateRefreshToken(email, deviceID, subscriptionType, subscriptionLength string) (string, error) {
     now := time.Now()
     claims := JWTClaims{
+        Email:              email,
         DeviceID:           deviceID,
         SubscriptionType:   subscriptionType,
         SubscriptionLength: subscriptionLength,
@@ -472,7 +478,7 @@ func generateRefreshToken(deviceID, subscriptionType, subscriptionLength string)
             IssuedAt:  jwt.NewNumericDate(now),
             NotBefore: jwt.NewNumericDate(now),
             Issuer:    "astrolog-api",
-            Subject:   deviceID,
+            Subject:   email, // Email is now the subject
         },
     }
 
@@ -854,131 +860,17 @@ func validateUserRegisterSignature(req UserRegisterRequest) bool {
     return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
 }
 
-// Register or update user by device ID (IDEMPOTENT - safe to call multiple times)
+// DEPRECATED: Register or update user by device ID
+// V2 schema uses email as primary identity. This endpoint now returns an error.
 func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
-    log.Println("🔵 [registerOrUpdateUser] Received request")
+    log.Println("⚠️ [registerOrUpdateUser] DEPRECATED endpoint called - use email auth instead")
     w.Header().Set("Content-Type", "application/json")
 
-    // Parse request
-    var req UserRegisterRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("❌ [registerOrUpdateUser] Failed to parse request: %v", err)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Invalid request format",
-        })
-        return
-    }
-
-    // Validate device_id
-    if req.DeviceID == "" {
-        log.Printf("❌ [registerOrUpdateUser] Missing device_id")
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "device_id is required",
-        })
-        return
-    }
-
-    // Validate signature
-    if !validateUserRegisterSignature(req) {
-        log.Printf("❌ [registerOrUpdateUser] Invalid signature")
-        w.WriteHeader(http.StatusForbidden)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Invalid signature or expired timestamp",
-        })
-        return
-    }
-
-    log.Printf("🔵 [registerOrUpdateUser] Device ID: %s, type=%s, length=%s",
-        req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
-
-    // Validate subscription_type
-    if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
-        req.SubscriptionType = "free" // Default to free
-    }
-
-    // Validate subscription_length
-    if req.SubscriptionLength != "monthly" && req.SubscriptionLength != "yearly" {
-        req.SubscriptionLength = "monthly" // Default to monthly
-    }
-
-    // Use transaction to ensure atomicity
-    tx, err := db.Begin()
-    if err != nil {
-        log.Printf("❌ [registerOrUpdateUser] Transaction error: %v", err)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Database error",
-        })
-        return
-    }
-    defer tx.Rollback()
-
-    // INSERT OR REPLACE - this is idempotent and safe
-    // If device_id exists, it updates. If not, it inserts.
-    query := `INSERT INTO users (device_id, subscription_type, subscription_length, updated_at)
-              VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-              ON CONFLICT(device_id) DO UPDATE SET
-                  subscription_type = excluded.subscription_type,
-                  subscription_length = excluded.subscription_length,
-                  updated_at = CURRENT_TIMESTAMP`
-
-    log.Printf("🔵 [registerOrUpdateUser] Upserting into database...")
-
-    _, err = tx.Exec(query, req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
-    if err != nil {
-        log.Printf("❌ [registerOrUpdateUser] Database error: %v", err)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Failed to register user",
-        })
-        return
-    }
-
-    // Commit transaction
-    log.Printf("🔵 [registerOrUpdateUser] Committing transaction...")
-    if err = tx.Commit(); err != nil {
-        log.Printf("❌ [registerOrUpdateUser] Transaction commit error: %v", err)
-        json.NewEncoder(w).Encode(UserRegisterResponse{
-            Success: false,
-            Error:   "Failed to register user",
-        })
-        return
-    }
-
-    log.Printf("✅ [registerOrUpdateUser] User registered/updated: device=%s (type: %s, length: %s)",
-        req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
-
-    // Generate JWT tokens
-    accessToken, err := generateAccessToken(req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
-    if err != nil {
-        log.Printf("❌ [registerOrUpdateUser] Failed to generate access token: %v", err)
-        json.NewEncoder(w).Encode(AuthTokensResponse{
-            Success: false,
-            Error:   "Failed to generate token",
-        })
-        return
-    }
-
-    refreshToken, err := generateRefreshToken(req.DeviceID, req.SubscriptionType, req.SubscriptionLength)
-    if err != nil {
-        log.Printf("❌ [registerOrUpdateUser] Failed to generate refresh token: %v", err)
-        json.NewEncoder(w).Encode(AuthTokensResponse{
-            Success: false,
-            Error:   "Failed to generate token",
-        })
-        return
-    }
-
-    // Return tokens
-    json.NewEncoder(w).Encode(AuthTokensResponse{
-        Success:      true,
-        AccessToken:  accessToken,
-        RefreshToken: refreshToken,
-        ExpiresIn:    int64(ACCESS_TOKEN_EXP.Seconds()),
-        Message:      "User registered successfully",
+    // Return error indicating email auth is required
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":       false,
+        "error":         "Device registration is deprecated. Please use email authentication.",
+        "require_email": true,
     })
 }
 
@@ -1012,15 +904,27 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Verify device still exists in database and get current subscription status
+    // V2 SCHEMA: Verify user exists by EMAIL and get current subscription status
+    email := claims.Email
+    if email == "" {
+        // Old token without email - require re-login
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "Please login again to refresh your session",
+        })
+        return
+    }
+
     var subscriptionType, subscriptionLength string
-    query := `SELECT subscription_type, subscription_length FROM users WHERE device_id = ?`
-    err = db.QueryRow(query, claims.DeviceID).Scan(&subscriptionType, &subscriptionLength)
+    var subscriptionExpiry sql.NullString
+    query := `SELECT subscription_type, subscription_length, subscription_expiry FROM users_v2 WHERE email = ?`
+    err = db.QueryRow(query, email).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry)
     if err == sql.ErrNoRows {
         w.WriteHeader(http.StatusUnauthorized)
         json.NewEncoder(w).Encode(AuthTokensResponse{
             Success: false,
-            Error:   "Device not registered",
+            Error:   "User not found",
         })
         return
     } else if err != nil {
@@ -1032,8 +936,16 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Check if subscription is expired
+    if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
+        expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
+        if err == nil && time.Now().After(expiryTime) {
+            subscriptionType = "free" // Subscription expired
+        }
+    }
+
     // Generate new access token with current subscription status
-    accessToken, err := generateAccessToken(claims.DeviceID, subscriptionType, subscriptionLength)
+    accessToken, err := generateAccessToken(email, claims.DeviceID, subscriptionType, subscriptionLength)
     if err != nil {
         log.Printf("Failed to generate access token: %v", err)
         json.NewEncoder(w).Encode(AuthTokensResponse{
@@ -1044,7 +956,7 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
     }
 
     // Optionally generate new refresh token (token rotation for better security)
-    newRefreshToken, err := generateRefreshToken(claims.DeviceID, subscriptionType, subscriptionLength)
+    newRefreshToken, err := generateRefreshToken(email, claims.DeviceID, subscriptionType, subscriptionLength)
     if err != nil {
         log.Printf("Failed to generate refresh token: %v", err)
         json.NewEncoder(w).Encode(AuthTokensResponse{
@@ -1054,7 +966,7 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("🔄 Token refreshed for device: %s", claims.DeviceID)
+    log.Printf("🔄 Token refreshed for user: %s", email)
 
     // Return new tokens
     json.NewEncoder(w).Encode(AuthTokensResponse{
@@ -1263,7 +1175,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-// Get user subscription info by device_id
+// Get user subscription info by EMAIL (v2 schema)
 func getUserInfo(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
@@ -1278,18 +1190,27 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Use device_id from JWT claims (more secure than trusting query params)
-    deviceID := claims.DeviceID
+    // Use EMAIL from JWT claims as primary identity (v2 schema)
+    email := claims.Email
+    if email == "" {
+        // Fallback for old tokens that might not have email
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Please login again to refresh your session",
+        })
+        return
+    }
 
     var subscriptionType, subscriptionLength string
     var createdAt, updatedAt string
     var subscriptionExpiry sql.NullString
     var isSuper int
+    var currentDeviceID sql.NullString
 
-    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at, COALESCE(is_super, 0)
-              FROM users WHERE device_id = ?`
+    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at, COALESCE(is_super, 0), current_device_id
+              FROM users_v2 WHERE email = ?`
 
-    err := db.QueryRow(query, deviceID).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt, &isSuper)
+    err := db.QueryRow(query, email).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt, &isSuper, &currentDeviceID)
     if err == sql.ErrNoRows {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -1316,7 +1237,8 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
 
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success":              true,
-        "device_id":            deviceID,
+        "email":                email,
+        "device_id":            currentDeviceID.String, // For backward compatibility
         "subscription_type":    effectiveSubType,
         "subscription_length":  subscriptionLength,
         "subscription_expiry":  subscriptionExpiry.String,
@@ -1887,24 +1809,21 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         log.Printf("❌ Failed to mark code as used: %v", err)
     }
 
-    // Check if user with this email already exists
-    var existingDeviceID string
+    // NEW V2 SCHEMA: Check if user exists by email in users_v2
     var subscriptionType, subscriptionLength string
+    var subscriptionExpiry sql.NullString
 
-    err = db.QueryRow(`SELECT device_id, subscription_type, subscription_length FROM users WHERE email = ?`, email).
-        Scan(&existingDeviceID, &subscriptionType, &subscriptionLength)
+    err = db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users_v2 WHERE email = ?`, email).
+        Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry)
 
     if err == sql.ErrNoRows {
         // New user - create account with email
         subscriptionType = "free"
         subscriptionLength = "monthly"
 
-        _, err = db.Exec(`INSERT INTO users (device_id, email, subscription_type, subscription_length)
-                          VALUES (?, ?, ?, ?)
-                          ON CONFLICT(device_id) DO UPDATE SET
-                              email = excluded.email,
-                              updated_at = CURRENT_TIMESTAMP`,
-            deviceID, email, subscriptionType, subscriptionLength)
+        _, err = db.Exec(`INSERT INTO users_v2 (email, subscription_type, subscription_length, current_device_id)
+                          VALUES (?, ?, ?, ?)`,
+            email, subscriptionType, subscriptionLength, deviceID)
         if err != nil {
             log.Printf("❌ Failed to create user: %v", err)
             json.NewEncoder(w).Encode(EmailAuthResponse{
@@ -1922,21 +1841,30 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         })
         return
     } else {
-        // Existing user - update device_id if different (user logging in on new device)
-        if existingDeviceID != deviceID {
-            _, err = db.Exec(`UPDATE users SET device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
-                deviceID, email)
-            if err != nil {
-                log.Printf("❌ Failed to update device: %v", err)
-            } else {
-                log.Printf("✅ User %s switched from device %s to %s", email, existingDeviceID, deviceID)
+        // Existing user - update current_device_id (for tracking)
+        _, err = db.Exec(`UPDATE users_v2 SET current_device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+            deviceID, email)
+        if err != nil {
+            log.Printf("⚠️ Failed to update device: %v", err)
+        }
+
+        // Check if subscription is expired
+        if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
+            expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
+            if err == nil && time.Now().After(expiryTime) {
+                subscriptionType = "free" // Subscription expired
+                log.Printf("⚠️ Subscription expired for %s", email)
             }
         }
-        log.Printf("✅ Existing user logged in: %s (device: %s)", email, deviceID)
+
+        log.Printf("✅ Existing user logged in: %s (device: %s, plan: %s)", email, deviceID, subscriptionType)
     }
 
-    // Generate JWT tokens
-    accessToken, err := generateAccessToken(deviceID, subscriptionType, subscriptionLength)
+    // Record login in history
+    db.Exec(`INSERT INTO login_history (email, device_id) VALUES (?, ?)`, email, deviceID)
+
+    // Generate JWT tokens with EMAIL as primary identity
+    accessToken, err := generateAccessToken(email, deviceID, subscriptionType, subscriptionLength)
     if err != nil {
         log.Printf("❌ Failed to generate access token: %v", err)
         json.NewEncoder(w).Encode(EmailAuthResponse{
@@ -1946,7 +1874,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    refreshToken, err := generateRefreshToken(deviceID, subscriptionType, subscriptionLength)
+    refreshToken, err := generateRefreshToken(email, deviceID, subscriptionType, subscriptionLength)
     if err != nil {
         log.Printf("❌ Failed to generate refresh token: %v", err)
         json.NewEncoder(w).Encode(EmailAuthResponse{
@@ -2218,18 +2146,16 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
         subscriptionExpiry = &expiry
     }
 
-    // Check if user exists by email
-    var existingDeviceID string
-    err = db.QueryRow(`SELECT device_id FROM users WHERE email = ?`, targetEmail).Scan(&existingDeviceID)
+    // V2 SCHEMA: Check if user exists by email in users_v2
+    var existingID int
+    err = db.QueryRow(`SELECT id FROM users_v2 WHERE email = ?`, targetEmail).Scan(&existingID)
 
     if err == sql.ErrNoRows {
-        // User doesn't exist - create a placeholder record
-        // They will be properly registered when they sign in
+        // User doesn't exist - create record (they will get tokens when they sign in)
         log.Printf("🔵 [adminGrantSubscription] Creating new user record for %s", targetEmail)
 
-        _, err = db.Exec(`INSERT INTO users (device_id, email, subscription_type, subscription_length, subscription_expiry, updated_at)
-                          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-            "pending-"+targetEmail, // Placeholder device ID until user registers
+        _, err = db.Exec(`INSERT INTO users_v2 (email, subscription_type, subscription_length, subscription_expiry)
+                          VALUES (?, ?, ?, ?)`,
             targetEmail,
             req.SubscriptionType,
             req.SubscriptionLength,
@@ -2254,7 +2180,7 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
         // User exists - update their subscription
         log.Printf("🔵 [adminGrantSubscription] Updating existing user %s", targetEmail)
 
-        _, err = db.Exec(`UPDATE users SET
+        _, err = db.Exec(`UPDATE users_v2 SET
                           subscription_type = ?,
                           subscription_length = ?,
                           subscription_expiry = ?,
@@ -2319,10 +2245,10 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Query all users
-    rows, err := db.Query(`SELECT device_id, email, subscription_type, subscription_length,
-                           subscription_expiry, COALESCE(is_super, 0), created_at, updated_at
-                           FROM users ORDER BY updated_at DESC LIMIT 100`)
+    // V2 SCHEMA: Query all users from users_v2
+    rows, err := db.Query(`SELECT id, email, subscription_type, subscription_length,
+                           subscription_expiry, COALESCE(is_super, 0), current_device_id, created_at, updated_at
+                           FROM users_v2 ORDER BY updated_at DESC LIMIT 100`)
     if err != nil {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -2334,22 +2260,24 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
 
     var users []map[string]interface{}
     for rows.Next() {
-        var deviceID, subType, subLength string
-        var email, subExpiry, createdAt, updatedAt sql.NullString
+        var id int
+        var email, subType, subLength string
+        var subExpiry, currentDeviceID, createdAt, updatedAt sql.NullString
         var isSuper int
 
-        err := rows.Scan(&deviceID, &email, &subType, &subLength, &subExpiry, &isSuper, &createdAt, &updatedAt)
+        err := rows.Scan(&id, &email, &subType, &subLength, &subExpiry, &isSuper, &currentDeviceID, &createdAt, &updatedAt)
         if err != nil {
             continue
         }
 
         user := map[string]interface{}{
-            "device_id":           deviceID,
-            "email":               email.String,
+            "id":                  id,
+            "email":               email,
             "subscription_type":   subType,
             "subscription_length": subLength,
             "subscription_expiry": subExpiry.String,
             "is_super":            isSuper == 1,
+            "current_device_id":   currentDeviceID.String,
             "created_at":          createdAt.String,
             "updated_at":          updatedAt.String,
         }
@@ -2436,23 +2364,12 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
     // Mark code as used
     db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
 
-    // Find user by device_id or email
-    var deviceID string
-    if req.DeviceID != "" {
-        deviceID = req.DeviceID
-    } else if req.Email != "" {
-        err := db.QueryRow(`SELECT device_id FROM users WHERE email = ?`, req.Email).Scan(&deviceID)
-        if err != nil {
-            json.NewEncoder(w).Encode(map[string]interface{}{
-                "success": false,
-                "error":   "User not found by email",
-            })
-            return
-        }
-    } else {
+    // V2 SCHEMA: Find user by email (email is now required)
+    targetEmail := strings.ToLower(strings.TrimSpace(req.Email))
+    if targetEmail == "" {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
-            "error":   "Must provide device_id or email",
+            "error":   "Email is required",
         })
         return
     }
@@ -2463,8 +2380,8 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
         superValue = 1
     }
 
-    result, err := db.Exec(`UPDATE users SET is_super = ?, updated_at = CURRENT_TIMESTAMP WHERE device_id = ?`,
-        superValue, deviceID)
+    result, err := db.Exec(`UPDATE users_v2 SET is_super = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+        superValue, targetEmail)
     if err != nil {
         log.Printf("Error updating super status: %v", err)
         json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2483,13 +2400,13 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("✅ Admin %s toggled super status for device %s to %v", req.AdminEmail, deviceID, req.IsSuper)
+    log.Printf("✅ Admin %s toggled super status for %s to %v", req.AdminEmail, targetEmail, req.IsSuper)
 
     json.NewEncoder(w).Encode(map[string]interface{}{
-        "success":   true,
-        "device_id": deviceID,
-        "is_super":  req.IsSuper,
-        "message":   "Super status updated successfully",
+        "success":  true,
+        "email":    targetEmail,
+        "is_super": req.IsSuper,
+        "message":  "Super status updated successfully",
     })
 }
 
