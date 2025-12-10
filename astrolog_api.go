@@ -1381,18 +1381,59 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
         }
     }
 
+    // Use transaction to ensure atomicity
+    tx, err := db.Begin()
+    if err != nil {
+        log.Printf("Error starting transaction: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database error",
+        })
+        return
+    }
+    defer tx.Rollback()
+
     // Insert purchase record
     query := `INSERT INTO purchase_history
               (device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
-    _, err := db.Exec(query, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
+    _, err = tx.Exec(query, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
     if err != nil {
         log.Printf("Error recording purchase: %v", err)
         w.WriteHeader(http.StatusInternalServerError)
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
             "error":   "Failed to record purchase",
+        })
+        return
+    }
+
+    // Also update user's subscription status in the users table
+    if req.SubscriptionType != "" {
+        updateQuery := `UPDATE users SET
+                        subscription_type = ?,
+                        subscription_length = ?,
+                        subscription_expiry = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                        WHERE device_id = ?`
+        _, err = tx.Exec(updateQuery, req.SubscriptionType, req.SubscriptionLength, expiryDate, deviceID)
+        if err != nil {
+            log.Printf("Error updating user subscription: %v", err)
+            // Continue anyway - purchase record is more important
+        } else {
+            log.Printf("✅ User subscription updated: device=%s, type=%s, length=%s", deviceID, req.SubscriptionType, req.SubscriptionLength)
+        }
+    }
+
+    // Commit transaction
+    if err = tx.Commit(); err != nil {
+        log.Printf("Error committing transaction: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to save purchase",
         })
         return
     }
