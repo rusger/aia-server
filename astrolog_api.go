@@ -278,10 +278,15 @@ func initDB() error {
         return fmt.Errorf("failed to open database: %v", err)
     }
 
-    // NEW SCHEMA: email is the primary identity
-    // Migration: Create new table structure with email as primary key
-    createTableSQL := `
-    CREATE TABLE IF NOT EXISTS users_v2 (
+    // V2 SCHEMA: Clean start with email as primary identity
+    // Drop old tables and create fresh ones
+    db.Exec(`DROP TABLE IF EXISTS users`)
+    db.Exec(`DROP TABLE IF EXISTS purchase_history`)
+    db.Exec(`DROP TABLE IF EXISTS auth_codes`)
+
+    // Main users table - email is the identity
+    createUsersSQL := `
+    CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         subscription_type TEXT NOT NULL DEFAULT 'free',
@@ -292,37 +297,14 @@ func initDB() error {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-
-    CREATE INDEX IF NOT EXISTS idx_users_v2_subscription ON users_v2(subscription_type);
-    CREATE INDEX IF NOT EXISTS idx_users_v2_device ON users_v2(current_device_id);
+    CREATE INDEX IF NOT EXISTS idx_users_subscription ON users(subscription_type);
     `
-
-    _, err = db.Exec(createTableSQL)
+    _, err = db.Exec(createUsersSQL)
     if err != nil {
-        return fmt.Errorf("failed to create users_v2 table: %v", err)
+        return fmt.Errorf("failed to create users table: %v", err)
     }
 
-    // Migrate data from old users table if it exists and users_v2 is empty
-    var oldTableExists, newTableEmpty int
-    db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'`).Scan(&oldTableExists)
-    db.QueryRow(`SELECT COUNT(*) FROM users_v2`).Scan(&newTableEmpty)
-
-    if oldTableExists > 0 && newTableEmpty == 0 {
-        log.Println("🔄 Migrating data from old users table to users_v2...")
-        _, err = db.Exec(`
-            INSERT INTO users_v2 (email, subscription_type, subscription_length, subscription_expiry, is_super, current_device_id, created_at, updated_at)
-            SELECT email, subscription_type, subscription_length, subscription_expiry, COALESCE(is_super, 0), device_id, created_at, updated_at
-            FROM users
-            WHERE email IS NOT NULL AND email != ''
-        `)
-        if err != nil {
-            log.Printf("⚠️ Migration warning: %v", err)
-        } else {
-            log.Println("✅ Data migrated successfully")
-        }
-    }
-
-    // Create auth_codes table for email verification
+    // Auth codes for email verification
     createAuthCodesSQL := `
     CREATE TABLE IF NOT EXISTS auth_codes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,34 +315,29 @@ func initDB() error {
         used INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-
     CREATE INDEX IF NOT EXISTS idx_auth_codes_email ON auth_codes(email, used);
     `
-
     _, err = db.Exec(createAuthCodesSQL)
     if err != nil {
         return fmt.Errorf("failed to create auth_codes table: %v", err)
     }
 
-    // Create login_history table for tracking device logins
+    // Login history for audit
     createLoginHistorySQL := `
     CREATE TABLE IF NOT EXISTS login_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL,
         device_id TEXT,
-        device_info TEXT,
         logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-
     CREATE INDEX IF NOT EXISTS idx_login_history_email ON login_history(email);
     `
-
     _, err = db.Exec(createLoginHistorySQL)
     if err != nil {
         return fmt.Errorf("failed to create login_history table: %v", err)
     }
 
-    // Create purchase_history table for tracking subscription purchases
+    // Purchase history
     createPurchaseHistorySQL := `
     CREATE TABLE IF NOT EXISTS purchase_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -375,17 +352,14 @@ func initDB() error {
         store TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-
     CREATE INDEX IF NOT EXISTS idx_purchase_email ON purchase_history(email);
-    CREATE INDEX IF NOT EXISTS idx_purchase_date ON purchase_history(purchase_date);
     `
-
     _, err = db.Exec(createPurchaseHistorySQL)
     if err != nil {
         return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
-    log.Println("✅ Database initialized successfully (v2 schema with email as primary identity)")
+    log.Println("✅ Database initialized (v2 schema - email as primary identity)")
     return nil
 }
 
@@ -918,7 +892,7 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
 
     var subscriptionType, subscriptionLength string
     var subscriptionExpiry sql.NullString
-    query := `SELECT subscription_type, subscription_length, subscription_expiry FROM users_v2 WHERE email = ?`
+    query := `SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`
     err = db.QueryRow(query, email).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry)
     if err == sql.ErrNoRows {
         w.WriteHeader(http.StatusUnauthorized)
@@ -1208,7 +1182,7 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     var currentDeviceID sql.NullString
 
     query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at, COALESCE(is_super, 0), current_device_id
-              FROM users_v2 WHERE email = ?`
+              FROM users WHERE email = ?`
 
     err := db.QueryRow(query, email).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt, &isSuper, &currentDeviceID)
     if err == sql.ErrNoRows {
@@ -1809,11 +1783,11 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         log.Printf("❌ Failed to mark code as used: %v", err)
     }
 
-    // NEW V2 SCHEMA: Check if user exists by email in users_v2
+    // NEW V2 SCHEMA: Check if user exists by email in users
     var subscriptionType, subscriptionLength string
     var subscriptionExpiry sql.NullString
 
-    err = db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users_v2 WHERE email = ?`, email).
+    err = db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`, email).
         Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry)
 
     if err == sql.ErrNoRows {
@@ -1821,7 +1795,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         subscriptionType = "free"
         subscriptionLength = "monthly"
 
-        _, err = db.Exec(`INSERT INTO users_v2 (email, subscription_type, subscription_length, current_device_id)
+        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, current_device_id)
                           VALUES (?, ?, ?, ?)`,
             email, subscriptionType, subscriptionLength, deviceID)
         if err != nil {
@@ -1842,7 +1816,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         return
     } else {
         // Existing user - update current_device_id (for tracking)
-        _, err = db.Exec(`UPDATE users_v2 SET current_device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+        _, err = db.Exec(`UPDATE users SET current_device_id = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
             deviceID, email)
         if err != nil {
             log.Printf("⚠️ Failed to update device: %v", err)
@@ -2146,15 +2120,15 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
         subscriptionExpiry = &expiry
     }
 
-    // V2 SCHEMA: Check if user exists by email in users_v2
+    // V2 SCHEMA: Check if user exists by email in users
     var existingID int
-    err = db.QueryRow(`SELECT id FROM users_v2 WHERE email = ?`, targetEmail).Scan(&existingID)
+    err = db.QueryRow(`SELECT id FROM users WHERE email = ?`, targetEmail).Scan(&existingID)
 
     if err == sql.ErrNoRows {
         // User doesn't exist - create record (they will get tokens when they sign in)
         log.Printf("🔵 [adminGrantSubscription] Creating new user record for %s", targetEmail)
 
-        _, err = db.Exec(`INSERT INTO users_v2 (email, subscription_type, subscription_length, subscription_expiry)
+        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry)
                           VALUES (?, ?, ?, ?)`,
             targetEmail,
             req.SubscriptionType,
@@ -2180,7 +2154,7 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
         // User exists - update their subscription
         log.Printf("🔵 [adminGrantSubscription] Updating existing user %s", targetEmail)
 
-        _, err = db.Exec(`UPDATE users_v2 SET
+        _, err = db.Exec(`UPDATE users SET
                           subscription_type = ?,
                           subscription_length = ?,
                           subscription_expiry = ?,
@@ -2245,10 +2219,10 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // V2 SCHEMA: Query all users from users_v2
+    // V2 SCHEMA: Query all users from users
     rows, err := db.Query(`SELECT id, email, subscription_type, subscription_length,
                            subscription_expiry, COALESCE(is_super, 0), current_device_id, created_at, updated_at
-                           FROM users_v2 ORDER BY updated_at DESC LIMIT 100`)
+                           FROM users ORDER BY updated_at DESC LIMIT 100`)
     if err != nil {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -2380,7 +2354,7 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
         superValue = 1
     }
 
-    result, err := db.Exec(`UPDATE users_v2 SET is_super = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+    result, err := db.Exec(`UPDATE users SET is_super = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
         superValue, targetEmail)
     if err != nil {
         log.Printf("Error updating super status: %v", err)
