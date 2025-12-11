@@ -834,17 +834,120 @@ func validateUserRegisterSignature(req UserRegisterRequest) bool {
     return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
 }
 
-// DEPRECATED: Register or update user by device ID
-// V2 schema uses email as primary identity. This endpoint now returns an error.
+// Register or update user by device ID
+// Creates an anonymous user account that can be upgraded to email auth later
 func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
-    log.Println("⚠️ [registerOrUpdateUser] DEPRECATED endpoint called - use email auth instead")
     w.Header().Set("Content-Type", "application/json")
 
-    // Return error indicating email auth is required
+    // Parse request
+    var req struct {
+        DeviceID           string `json:"device_id"`
+        SubscriptionType   string `json:"subscription_type"`
+        SubscriptionLength string `json:"subscription_length"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        log.Printf("❌ [registerOrUpdateUser] Invalid request: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid request format",
+        })
+        return
+    }
+
+    if req.DeviceID == "" {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Device ID is required",
+        })
+        return
+    }
+
+    // Default subscription values
+    subscriptionType := req.SubscriptionType
+    if subscriptionType == "" {
+        subscriptionType = "free"
+    }
+    subscriptionLength := req.SubscriptionLength
+    if subscriptionLength == "" {
+        subscriptionLength = "monthly"
+    }
+
+    // Create anonymous email from device ID
+    anonymousEmail := fmt.Sprintf("%s@device.astrolytix.app", req.DeviceID)
+    log.Printf("📱 [registerOrUpdateUser] Device registration: %s", req.DeviceID)
+
+    // Check if user already exists
+    var existingType, existingLength string
+    var subscriptionExpiry sql.NullString
+    err := db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`, anonymousEmail).
+        Scan(&existingType, &existingLength, &subscriptionExpiry)
+
+    if err == sql.ErrNoRows {
+        // New device - create anonymous user
+        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, current_device_id)
+                          VALUES (?, ?, ?, ?)`,
+            anonymousEmail, subscriptionType, subscriptionLength, req.DeviceID)
+        if err != nil {
+            log.Printf("❌ Failed to create anonymous user: %v", err)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Failed to register device",
+            })
+            return
+        }
+        log.Printf("✅ New anonymous user created for device: %s", req.DeviceID)
+    } else if err != nil {
+        log.Printf("❌ Database error: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database error",
+        })
+        return
+    } else {
+        // Existing device - use stored subscription values
+        subscriptionType = existingType
+        subscriptionLength = existingLength
+
+        // Check if subscription is expired
+        if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
+            expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
+            if err == nil && time.Now().After(expiryTime) {
+                subscriptionType = "free"
+                log.Printf("⚠️ Subscription expired for device: %s", req.DeviceID)
+            }
+        }
+
+        log.Printf("✅ Existing device logged in: %s (plan: %s)", req.DeviceID, subscriptionType)
+    }
+
+    // Generate JWT tokens
+    accessToken, err := generateAccessToken(anonymousEmail, req.DeviceID, subscriptionType, subscriptionLength)
+    if err != nil {
+        log.Printf("❌ Failed to generate access token: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to generate token",
+        })
+        return
+    }
+
+    refreshToken, err := generateRefreshToken(anonymousEmail, req.DeviceID, subscriptionType, subscriptionLength)
+    if err != nil {
+        log.Printf("❌ Failed to generate refresh token: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Failed to generate token",
+        })
+        return
+    }
+
+    log.Printf("✅ Device auth successful: %s, tokens generated", req.DeviceID)
+
     json.NewEncoder(w).Encode(map[string]interface{}{
-        "success":       false,
-        "error":         "Device registration is deprecated. Please use email authentication.",
-        "require_email": true,
+        "success":       true,
+        "access_token":  accessToken,
+        "refresh_token": refreshToken,
+        "expires_in":    int64(ACCESS_TOKEN_EXP.Seconds()),
     })
 }
 
