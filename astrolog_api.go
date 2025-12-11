@@ -1358,6 +1358,7 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     }
 
     deviceID := claims.DeviceID
+    email := claims.Email // Get email from JWT (includes anonymous device emails)
 
     var req RecordPurchaseRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1412,10 +1413,10 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
 
     // Insert purchase record
     query := `INSERT INTO purchase_history
-              (device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+              (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-    _, err = tx.Exec(query, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
+    _, err = tx.Exec(query, email, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
     if err != nil {
         log.Printf("Error recording purchase: %v", err)
         w.WriteHeader(http.StatusInternalServerError)
@@ -1433,13 +1434,13 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
                         subscription_length = ?,
                         subscription_expiry = ?,
                         updated_at = CURRENT_TIMESTAMP
-                        WHERE device_id = ?`
-        _, err = tx.Exec(updateQuery, req.SubscriptionType, req.SubscriptionLength, expiryDate, deviceID)
+                        WHERE email = ?`
+        _, err = tx.Exec(updateQuery, req.SubscriptionType, req.SubscriptionLength, expiryDate, email)
         if err != nil {
             log.Printf("Error updating user subscription: %v", err)
             // Continue anyway - purchase record is more important
         } else {
-            log.Printf("✅ User subscription updated: device=%s, type=%s, length=%s", deviceID, req.SubscriptionType, req.SubscriptionLength)
+            log.Printf("✅ User subscription updated: email=%s, type=%s, length=%s", email, req.SubscriptionType, req.SubscriptionLength)
         }
     }
 
