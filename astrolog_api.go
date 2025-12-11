@@ -1203,11 +1203,28 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     // Check if subscription is expired
     effectiveSubType := subscriptionType
     if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
-        expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
+        // Try multiple date formats (Go stores with timezone info)
+        var expiryTime time.Time
+        var err error
+        formats := []string{
+            "2006-01-02 15:04:05.999999999 -0700 MST",
+            "2006-01-02 15:04:05.999999999 +0000 UTC",
+            "2006-01-02 15:04:05",
+            time.RFC3339,
+        }
+        for _, format := range formats {
+            expiryTime, err = time.Parse(format, subscriptionExpiry.String)
+            if err == nil {
+                break
+            }
+        }
         if err == nil && time.Now().After(expiryTime) {
             effectiveSubType = "free" // Subscription expired
         }
     }
+
+    log.Printf("📊 [getUserInfo] email=%s, db_type=%s, effective_type=%s, expiry=%s",
+        email, subscriptionType, effectiveSubType, subscriptionExpiry.String)
 
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success":              true,
