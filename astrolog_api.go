@@ -266,6 +266,101 @@ func (dl *DeviceLimiter) GetLimiter(deviceID string) *rate.Limiter {
 
 var deviceLimiter = NewDeviceLimiter()
 
+// IP rate limiter - protects against attackers using many fake device IDs from same IP
+type IPLimiter struct {
+	limiters map[string]*rate.Limiter
+	mu       sync.RWMutex
+}
+
+func NewIPLimiter() *IPLimiter {
+	return &IPLimiter{
+		limiters: make(map[string]*rate.Limiter),
+	}
+}
+
+func (il *IPLimiter) GetLimiter(ip string) *rate.Limiter {
+	il.mu.Lock()
+	defer il.mu.Unlock()
+
+	limiter, exists := il.limiters[ip]
+	if !exists {
+		// Allow 30 requests per second per IP with burst of 50
+		// Legitimate: 1 user = ~5 req/burst, even 5 users on same WiFi = 25 req
+		// Attack: 100 fake devices from 1 IP hitting limits quickly
+		limiter = rate.NewLimiter(rate.Limit(30), 50)
+		il.limiters[ip] = limiter
+	}
+
+	// Clean old limiters periodically (simple memory management)
+	if len(il.limiters) > 50000 {
+		il.limiters = make(map[string]*rate.Limiter)
+	}
+
+	return limiter
+}
+
+var ipLimiter = NewIPLimiter()
+
+// Registration rate limiter - prevents mass device creation from single IP
+type RegistrationLimiter struct {
+	limiters map[string]*rate.Limiter
+	mu       sync.RWMutex
+}
+
+func NewRegistrationLimiter() *RegistrationLimiter {
+	return &RegistrationLimiter{
+		limiters: make(map[string]*rate.Limiter),
+	}
+}
+
+func (rl *RegistrationLimiter) GetLimiter(ip string) *rate.Limiter {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	limiter, exists := rl.limiters[ip]
+	if !exists {
+		// Allow 10 device registrations per IP per hour (burst of 10, refill 1 every 6 min)
+		// Legitimate: family sharing WiFi might register 3-4 devices
+		// Attack: can only create 10 fake devices per hour per IP
+		limiter = rate.NewLimiter(rate.Every(6*time.Minute), 10)
+		rl.limiters[ip] = limiter
+	}
+
+	// Clean old limiters periodically
+	if len(rl.limiters) > 50000 {
+		rl.limiters = make(map[string]*rate.Limiter)
+	}
+
+	return limiter
+}
+
+var registrationLimiter = NewRegistrationLimiter()
+
+// Helper to extract client IP from request (handles proxies)
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header (set by proxies like Caddy, nginx)
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		// Take first IP (original client)
+		ips := strings.Split(xff, ",")
+		return strings.TrimSpace(ips[0])
+	}
+
+	// Check X-Real-IP header
+	xri := r.Header.Get("X-Real-IP")
+	if xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr (may include port)
+	ip := r.RemoteAddr
+	// Remove port if present
+	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
+		ip = ip[:colonIdx]
+	}
+	return ip
+}
+
 // Global database connections
 var db *sql.DB
 var analyticsDB *sql.DB
@@ -683,13 +778,25 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     // Use device_id from JWT claims (more secure than trusting request body)
     deviceID := claims.DeviceID
 
+    // Check IP rate limit first (protects against mass-device attacks)
+    clientIP := getClientIP(r)
+    ipLim := ipLimiter.GetLimiter(clientIP)
+    if !ipLim.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(AstrologResponse{
+            Success: false,
+            Error:   "Too many requests from your network. Please wait.",
+        })
+        return
+    }
+
     // Check device rate limit
     limiter := deviceLimiter.GetLimiter(deviceID)
     if !limiter.Allow() {
         w.WriteHeader(http.StatusTooManyRequests)
         json.NewEncoder(w).Encode(AstrologResponse{
             Success: false,
-            Error:   "Rate limit exceeded. Please wait 1 second.",
+            Error:   "Rate limit exceeded. Please try again.",
         })
         return
     }
@@ -838,6 +945,18 @@ func validateUserRegisterSignature(req UserRegisterRequest) bool {
 // Creates an anonymous user account that can be upgraded to email auth later
 func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
+
+    // Check IP rate limit for registrations (prevents mass device creation attacks)
+    clientIP := getClientIP(r)
+    regLim := registrationLimiter.GetLimiter(clientIP)
+    if !regLim.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Too many registration attempts. Please try again later.",
+        })
+        return
+    }
 
     // Parse request
     var req struct {
@@ -1115,13 +1234,25 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // Use device_id from JWT claims (more secure than trusting request body)
     deviceID := claims.DeviceID
 
-    // Rate limiting for ChatGPT requests (more restrictive)
+    // Check IP rate limit first (protects against mass-device attacks)
+    clientIP := getClientIP(r)
+    ipLim := ipLimiter.GetLimiter(clientIP)
+    if !ipLim.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+            Success: false,
+            Error:   "Too many requests from your network. Please wait.",
+        })
+        return
+    }
+
+    // Rate limiting for ChatGPT requests per device
     limiter := deviceLimiter.GetLimiter(deviceID)
     if !limiter.Allow() {
         w.WriteHeader(http.StatusTooManyRequests)
         json.NewEncoder(w).Encode(ChatGPTProxyResponse{
             Success: false,
-            Error:   "Rate limit exceeded. Please wait 1 second.",
+            Error:   "Rate limit exceeded. Please try again.",
         })
         return
     }
