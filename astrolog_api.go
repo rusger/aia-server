@@ -505,6 +505,30 @@ func initAnalyticsDB() error {
         return fmt.Errorf("failed to create api_calls table: %v", err)
     }
 
+    // Create analytics_events table for flexible event tracking
+    createEventsTableSQL := `
+    CREATE TABLE IF NOT EXISTS analytics_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_name TEXT NOT NULL,
+        properties TEXT,
+        app_version TEXT,
+        platform TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_device ON analytics_events(device_id);
+    CREATE INDEX IF NOT EXISTS idx_events_type ON analytics_events(event_type);
+    CREATE INDEX IF NOT EXISTS idx_events_name ON analytics_events(event_name);
+    CREATE INDEX IF NOT EXISTS idx_events_date ON analytics_events(created_at);
+    `
+
+    _, err = analyticsDB.Exec(createEventsTableSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create analytics_events table: %v", err)
+    }
+
     log.Println("✅ Analytics database initialized successfully")
     return nil
 }
@@ -521,6 +545,147 @@ func logAPICall(deviceID, callType, model string) {
             log.Printf("⚠️ Failed to log API call: %v", err)
         }
     }()
+}
+
+// ============================================================
+// ANALYTICS EVENT TRACKING
+// ============================================================
+
+// AnalyticsEvent represents a single analytics event
+type AnalyticsEvent struct {
+    DeviceID   string            `json:"device_id"`
+    EventType  string            `json:"event_type"`   // 'session', 'feature', 'screen', 'error', 'action'
+    EventName  string            `json:"event_name"`   // 'app_launched', 'natal_chart_opened', etc.
+    Properties map[string]string `json:"properties"`   // Flexible key-value pairs
+    AppVersion string            `json:"app_version"`
+    Platform   string            `json:"platform"`     // 'android' or 'ios'
+}
+
+// AnalyticsEventsRequest for batch event submission
+type AnalyticsEventsRequest struct {
+    Events []AnalyticsEvent `json:"events"`
+}
+
+// POST /api/analytics/event - Track a single analytics event
+func trackAnalyticsEvent(w http.ResponseWriter, r *http.Request) {
+    if analyticsDB == nil {
+        http.Error(w, "Analytics not available", http.StatusServiceUnavailable)
+        return
+    }
+
+    var event AnalyticsEvent
+    if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
+
+    // Validate required fields
+    if event.DeviceID == "" || event.EventType == "" || event.EventName == "" {
+        http.Error(w, "Missing required fields: device_id, event_type, event_name", http.StatusBadRequest)
+        return
+    }
+
+    // Convert properties to JSON string
+    propertiesJSON := ""
+    if event.Properties != nil {
+        if propsBytes, err := json.Marshal(event.Properties); err == nil {
+            propertiesJSON = string(propsBytes)
+        }
+    }
+
+    // Insert event asynchronously
+    go func() {
+        _, err := analyticsDB.Exec(
+            `INSERT INTO analytics_events (device_id, event_type, event_name, properties, app_version, platform)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            event.DeviceID, event.EventType, event.EventName, propertiesJSON, event.AppVersion, event.Platform)
+        if err != nil {
+            log.Printf("⚠️ Failed to log analytics event: %v", err)
+        }
+    }()
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "message": "Event tracked",
+    })
+}
+
+// POST /api/analytics/events - Track multiple analytics events (batch)
+func trackAnalyticsEvents(w http.ResponseWriter, r *http.Request) {
+    if analyticsDB == nil {
+        http.Error(w, "Analytics not available", http.StatusServiceUnavailable)
+        return
+    }
+
+    var req AnalyticsEventsRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
+
+    if len(req.Events) == 0 {
+        http.Error(w, "No events provided", http.StatusBadRequest)
+        return
+    }
+
+    // Limit batch size to prevent abuse
+    if len(req.Events) > 100 {
+        http.Error(w, "Maximum 100 events per batch", http.StatusBadRequest)
+        return
+    }
+
+    // Insert events asynchronously
+    go func() {
+        tx, err := analyticsDB.Begin()
+        if err != nil {
+            log.Printf("⚠️ Failed to begin transaction for batch events: %v", err)
+            return
+        }
+
+        stmt, err := tx.Prepare(
+            `INSERT INTO analytics_events (device_id, event_type, event_name, properties, app_version, platform)
+             VALUES (?, ?, ?, ?, ?, ?)`)
+        if err != nil {
+            tx.Rollback()
+            log.Printf("⚠️ Failed to prepare statement for batch events: %v", err)
+            return
+        }
+        defer stmt.Close()
+
+        inserted := 0
+        for _, event := range req.Events {
+            if event.DeviceID == "" || event.EventType == "" || event.EventName == "" {
+                continue // Skip invalid events
+            }
+
+            propertiesJSON := ""
+            if event.Properties != nil {
+                if propsBytes, err := json.Marshal(event.Properties); err == nil {
+                    propertiesJSON = string(propsBytes)
+                }
+            }
+
+            _, err := stmt.Exec(event.DeviceID, event.EventType, event.EventName, propertiesJSON, event.AppVersion, event.Platform)
+            if err != nil {
+                log.Printf("⚠️ Failed to insert event: %v", err)
+                continue
+            }
+            inserted++
+        }
+
+        if err := tx.Commit(); err != nil {
+            log.Printf("⚠️ Failed to commit batch events: %v", err)
+            return
+        }
+        log.Printf("📊 Batch inserted %d analytics events", inserted)
+    }()
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "message": fmt.Sprintf("Queued %d events for tracking", len(req.Events)),
+    })
 }
 
 func getEnv(key, defaultValue string) string {
@@ -2811,6 +2976,99 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
     analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE call_type = 'chatgpt'`).Scan(&totalChatgpt)
     analyticsDB.QueryRow(`SELECT COUNT(DISTINCT device_id) FROM api_calls`).Scan(&totalUniqueUsers)
 
+    // ============================================================
+    // EVENT ANALYTICS (from analytics_events table)
+    // ============================================================
+
+    // Total events this month
+    var eventsMonthly int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM analytics_events WHERE strftime('%Y-%m', created_at) = ?`, currentMonth).Scan(&eventsMonthly)
+
+    // Total events this year
+    var eventsYearly int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM analytics_events WHERE strftime('%Y', created_at) = ?`, currentYear).Scan(&eventsYearly)
+
+    // Unique users from events this month
+    var eventUsersMonthly int
+    analyticsDB.QueryRow(`SELECT COUNT(DISTINCT device_id) FROM analytics_events WHERE strftime('%Y-%m', created_at) = ?`, currentMonth).Scan(&eventUsersMonthly)
+
+    // Event type breakdown (this month)
+    eventTypeRows, err := analyticsDB.Query(`
+        SELECT event_type, COUNT(*) as cnt
+        FROM analytics_events
+        WHERE strftime('%Y-%m', created_at) = ?
+        GROUP BY event_type
+        ORDER BY cnt DESC
+    `, currentMonth)
+
+    var eventTypes []map[string]interface{}
+    if err == nil {
+        defer eventTypeRows.Close()
+        for eventTypeRows.Next() {
+            var eventType string
+            var cnt int
+            if err := eventTypeRows.Scan(&eventType, &cnt); err == nil {
+                eventTypes = append(eventTypes, map[string]interface{}{
+                    "event_type": eventType,
+                    "count":      cnt,
+                })
+            }
+        }
+    }
+
+    // Top event names (this month)
+    eventNameRows, err := analyticsDB.Query(`
+        SELECT event_name, COUNT(*) as cnt
+        FROM analytics_events
+        WHERE strftime('%Y-%m', created_at) = ?
+        GROUP BY event_name
+        ORDER BY cnt DESC
+        LIMIT 20
+    `, currentMonth)
+
+    var topEvents []map[string]interface{}
+    if err == nil {
+        defer eventNameRows.Close()
+        for eventNameRows.Next() {
+            var eventName string
+            var cnt int
+            if err := eventNameRows.Scan(&eventName, &cnt); err == nil {
+                topEvents = append(topEvents, map[string]interface{}{
+                    "event_name": eventName,
+                    "count":      cnt,
+                })
+            }
+        }
+    }
+
+    // Platform breakdown (this month)
+    platformRows, err := analyticsDB.Query(`
+        SELECT COALESCE(platform, 'unknown') as platform, COUNT(*) as cnt
+        FROM analytics_events
+        WHERE strftime('%Y-%m', created_at) = ?
+        GROUP BY platform
+        ORDER BY cnt DESC
+    `, currentMonth)
+
+    var platforms []map[string]interface{}
+    if err == nil {
+        defer platformRows.Close()
+        for platformRows.Next() {
+            var platform string
+            var cnt int
+            if err := platformRows.Scan(&platform, &cnt); err == nil {
+                platforms = append(platforms, map[string]interface{}{
+                    "platform": platform,
+                    "count":    cnt,
+                })
+            }
+        }
+    }
+
+    // Total all-time events
+    var totalEvents int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM analytics_events`).Scan(&totalEvents)
+
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success": true,
         "current_period": map[string]interface{}{
@@ -2848,6 +3106,21 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
         },
         "monthly_breakdown": monthlyData,
         "model_usage":       modelUsage,
+        "events": map[string]interface{}{
+            "monthly": map[string]interface{}{
+                "total_events":  eventsMonthly,
+                "unique_users":  eventUsersMonthly,
+            },
+            "yearly": map[string]interface{}{
+                "total_events": eventsYearly,
+            },
+            "all_time": map[string]interface{}{
+                "total_events": totalEvents,
+            },
+            "event_types":    eventTypes,
+            "top_events":     topEvents,
+            "platforms":      platforms,
+        },
     })
 }
 
@@ -2967,6 +3240,10 @@ func main() {
     router.HandleFunc("/api/auth/request-code", requestAuthCode).Methods("POST")
     router.HandleFunc("/api/auth/verify-code", verifyAuthCode).Methods("POST")
 
+    // Analytics endpoints (public - no JWT required for event tracking)
+    router.HandleFunc("/api/analytics/event", trackAnalyticsEvent).Methods("POST")
+    router.HandleFunc("/api/analytics/events", trackAnalyticsEvents).Methods("POST")
+
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
@@ -2987,6 +3264,8 @@ func main() {
     log.Println("  [PUBLIC]    POST /api/auth/refresh - Refresh access token")
     log.Println("  [PUBLIC]    POST /api/auth/request-code - Request email verification code")
     log.Println("  [PUBLIC]    POST /api/auth/verify-code - Verify code and get tokens")
+    log.Println("  [ANALYTICS] POST /api/analytics/event - Track single analytics event")
+    log.Println("  [ANALYTICS] POST /api/analytics/events - Track batch analytics events")
     log.Println("  [ADMIN]     POST /api/admin/request-code - Request admin verification code")
     log.Println("  [ADMIN]     POST /api/admin/grant-subscription - Grant subscription (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
