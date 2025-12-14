@@ -3124,6 +3124,103 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Admin endpoint to get API calls for a specific user/device
+func adminGetUserCalls(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Get admin credentials from query params
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+    deviceId := r.URL.Query().Get("device_id")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    if deviceId == "" {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "device_id is required",
+        })
+        return
+    }
+
+    if analyticsDB == nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Analytics database not initialized",
+        })
+        return
+    }
+
+    // Get the last 100 API calls for this device
+    rows, err := analyticsDB.Query(`
+        SELECT call_type, model, created_at
+        FROM api_calls
+        WHERE device_id = ?
+        ORDER BY created_at DESC
+        LIMIT 100
+    `, deviceId)
+
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database query error",
+        })
+        return
+    }
+    defer rows.Close()
+
+    var calls []map[string]interface{}
+    for rows.Next() {
+        var callType string
+        var model sql.NullString
+        var createdAt string
+        if err := rows.Scan(&callType, &model, &createdAt); err == nil {
+            call := map[string]interface{}{
+                "call_type": callType,
+                "timestamp": createdAt,
+            }
+            if model.Valid {
+                call["model"] = model.String
+            } else {
+                call["model"] = ""
+            }
+            calls = append(calls, call)
+        }
+    }
+
+    // Get summary stats for this user
+    var totalAstrolog, totalChatgpt int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE device_id = ? AND call_type = 'astrolog'`, deviceId).Scan(&totalAstrolog)
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE device_id = ? AND call_type = 'chatgpt'`, deviceId).Scan(&totalChatgpt)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "calls":   calls,
+        "summary": map[string]interface{}{
+            "total_astrolog": totalAstrolog,
+            "total_chatgpt":  totalChatgpt,
+            "total_calls":    totalAstrolog + totalChatgpt,
+        },
+    })
+}
+
 // Admin endpoint to download the main database (requires 2FA verification code)
 func adminDownloadDB(w http.ResponseWriter, r *http.Request) {
     // Get admin credentials from query params
@@ -3257,6 +3354,7 @@ func main() {
     router.HandleFunc("/api/admin/users", adminListUsers).Methods("GET")
     router.HandleFunc("/api/admin/toggle-super", adminToggleSuper).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGetAnalytics).Methods("GET")
+    router.HandleFunc("/api/admin/user-calls", adminGetUserCalls).Methods("GET")
     router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
 
     log.Println("✓ Registered routes:")
@@ -3271,6 +3369,7 @@ func main() {
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
     log.Println("  [ADMIN]     POST /api/admin/toggle-super - Toggle super tier (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/analytics - Get usage analytics (admin only)")
+    log.Println("  [ADMIN]     GET  /api/admin/user-calls - Get user API call history (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
