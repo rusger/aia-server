@@ -454,6 +454,23 @@ func initDB() error {
         return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
+    // MIGRATION: Copy any data from users_v2 to users if users_v2 exists
+    // This handles legacy data that was accidentally saved to wrong table
+    migrateSQL := `
+    INSERT OR REPLACE INTO users (email, subscription_type, subscription_length, subscription_expiry, is_super, current_device_id, created_at, updated_at)
+    SELECT email, subscription_type, subscription_length, subscription_expiry, is_super, current_device_id, created_at, updated_at
+    FROM users_v2
+    WHERE email NOT LIKE '%@device.astrolytix.app'
+    AND NOT EXISTS (SELECT 1 FROM users WHERE users.email = users_v2.email AND users.subscription_type = 'paid')
+    `
+    result, err := db.Exec(migrateSQL)
+    if err == nil {
+        if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
+            log.Printf("✅ Migrated %d users from users_v2 to users table", rowsAffected)
+        }
+    }
+    // Ignore error if users_v2 doesn't exist - that's expected for fresh installs
+
     log.Println("✅ Database initialized (v2 schema - email as primary identity)")
     return nil
 }
