@@ -3392,6 +3392,7 @@ func adminGetUserCalls(w http.ResponseWriter, r *http.Request) {
     adminEmail := r.URL.Query().Get("admin_email")
     adminSecret := r.URL.Query().Get("admin_secret")
     deviceId := r.URL.Query().Get("device_id")
+    userEmail := r.URL.Query().Get("user_email") // Email of the user to look up
 
     if !isAdminEmail(adminEmail) {
         w.WriteHeader(http.StatusForbidden)
@@ -3411,19 +3412,54 @@ func adminGetUserCalls(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Get login history from main database (by email)
+    var loginHistory []map[string]interface{}
+    if userEmail != "" {
+        loginRows, err := db.Query(`
+            SELECT device_id, device_info, logged_in_at
+            FROM login_history
+            WHERE email = ?
+            ORDER BY logged_in_at DESC
+            LIMIT 50
+        `, userEmail)
+        if err == nil {
+            defer loginRows.Close()
+            for loginRows.Next() {
+                var loginDeviceId sql.NullString
+                var deviceInfo sql.NullString
+                var loggedInAt string
+                if err := loginRows.Scan(&loginDeviceId, &deviceInfo, &loggedInAt); err == nil {
+                    loginHistory = append(loginHistory, map[string]interface{}{
+                        "device_id":    loginDeviceId.String,
+                        "device_info":  deviceInfo.String,
+                        "logged_in_at": loggedInAt,
+                    })
+                }
+            }
+        }
+    }
+
+    // If no device_id provided but we have login history, return just that
     if deviceId == "" {
-        w.WriteHeader(http.StatusBadRequest)
         json.NewEncoder(w).Encode(map[string]interface{}{
-            "success": false,
-            "error":   "device_id is required",
+            "success":       true,
+            "calls":         []interface{}{},
+            "login_history": loginHistory,
+            "summary": map[string]interface{}{
+                "total_astrolog": 0,
+                "total_chatgpt":  0,
+                "total_calls":    0,
+                "login_count":    len(loginHistory),
+            },
         })
         return
     }
 
     if analyticsDB == nil {
         json.NewEncoder(w).Encode(map[string]interface{}{
-            "success": false,
-            "error":   "Analytics database not initialized",
+            "success":       false,
+            "error":         "Analytics database not initialized",
+            "login_history": loginHistory,
         })
         return
     }
@@ -3439,8 +3475,9 @@ func adminGetUserCalls(w http.ResponseWriter, r *http.Request) {
 
     if err != nil {
         json.NewEncoder(w).Encode(map[string]interface{}{
-            "success": false,
-            "error":   "Database query error",
+            "success":       false,
+            "error":         "Database query error",
+            "login_history": loginHistory,
         })
         return
     }
@@ -3471,12 +3508,14 @@ func adminGetUserCalls(w http.ResponseWriter, r *http.Request) {
     analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls WHERE device_id = ? AND call_type = 'chatgpt'`, deviceId).Scan(&totalChatgpt)
 
     json.NewEncoder(w).Encode(map[string]interface{}{
-        "success": true,
-        "calls":   calls,
+        "success":       true,
+        "calls":         calls,
+        "login_history": loginHistory,
         "summary": map[string]interface{}{
             "total_astrolog": totalAstrolog,
             "total_chatgpt":  totalChatgpt,
             "total_calls":    totalAstrolog + totalChatgpt,
+            "login_count":    len(loginHistory),
         },
     })
 }
