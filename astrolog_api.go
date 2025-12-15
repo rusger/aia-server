@@ -53,6 +53,11 @@ var (
     SMTP_PASSWORD      = getEnv("SMTP_PASSWORD", "")
     SMTP_FROM          = getEnv("SMTP_FROM", "Astrolytix <noreply@astrolytix.com>")
     AUTH_CODE_EXP      = 10 * time.Minute // Auth codes expire in 10 minutes
+
+    // Google Play In-App Purchase verification
+    GOOGLE_PLAY_PACKAGE_NAME     = getEnv("GOOGLE_PLAY_PACKAGE_NAME", "com.astrolytix.app")
+    GOOGLE_PLAY_CREDENTIALS_FILE = getEnv("GOOGLE_PLAY_CREDENTIALS_FILE", "") // Path to service account JSON
+    GOOGLE_PLAY_VERIFY_PURCHASES = getEnv("GOOGLE_PLAY_VERIFY_PURCHASES", "false") == "true"
 )
 
 // JWT Claims structure
@@ -216,6 +221,7 @@ type AdminRequestCodeRequest struct {
 type RecordPurchaseRequest struct {
     ProductID          string `json:"product_id"`
     TransactionID      string `json:"transaction_id"`
+    PurchaseToken      string `json:"purchase_token"` // Google Play purchase token for verification
     PurchaseDate       string `json:"purchase_date"`
     ExpiryDate         string `json:"expiry_date"`
     SubscriptionType   string `json:"subscription_type"`
@@ -1657,6 +1663,233 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// ============================================
+// GOOGLE PLAY IN-APP PURCHASE VERIFICATION
+// ============================================
+
+// GooglePlayCredentials holds service account credentials
+type GooglePlayCredentials struct {
+    Type                    string `json:"type"`
+    ProjectID               string `json:"project_id"`
+    PrivateKeyID            string `json:"private_key_id"`
+    PrivateKey              string `json:"private_key"`
+    ClientEmail             string `json:"client_email"`
+    ClientID                string `json:"client_id"`
+    AuthURI                 string `json:"auth_uri"`
+    TokenURI                string `json:"token_uri"`
+    AuthProviderX509CertURL string `json:"auth_provider_x509_cert_url"`
+    ClientX509CertURL       string `json:"client_x509_cert_url"`
+}
+
+// GooglePlayPurchaseResponse is the response from Google Play API
+type GooglePlayPurchaseResponse struct {
+    // For subscriptions
+    Kind                        string `json:"kind"`
+    StartTimeMillis             string `json:"startTimeMillis"`
+    ExpiryTimeMillis            string `json:"expiryTimeMillis"`
+    AutoRenewing                bool   `json:"autoRenewing"`
+    PriceCurrencyCode           string `json:"priceCurrencyCode"`
+    PriceAmountMicros           string `json:"priceAmountMicros"`
+    PaymentState                int    `json:"paymentState"` // 0=pending, 1=received, 2=free trial, 3=deferred
+    CancelReason                int    `json:"cancelReason"`
+    OrderID                     string `json:"orderId"`
+    AcknowledgementState        int    `json:"acknowledgementState"` // 0=not acknowledged, 1=acknowledged
+    // For one-time products
+    PurchaseState               int    `json:"purchaseState"` // 0=purchased, 1=canceled, 2=pending
+    ConsumptionState            int    `json:"consumptionState"` // 0=not consumed, 1=consumed
+    PurchaseTimeMillis          string `json:"purchaseTimeMillis"`
+    // Error fields
+    Error                       *GooglePlayError `json:"error,omitempty"`
+}
+
+type GooglePlayError struct {
+    Code    int    `json:"code"`
+    Message string `json:"message"`
+    Status  string `json:"status"`
+}
+
+var googlePlayAccessToken string
+var googlePlayTokenExpiry time.Time
+var googlePlayCredentials *GooglePlayCredentials
+var googlePlayTokenMutex sync.Mutex
+
+// loadGooglePlayCredentials loads the service account credentials from file
+func loadGooglePlayCredentials() error {
+    if GOOGLE_PLAY_CREDENTIALS_FILE == "" {
+        return fmt.Errorf("GOOGLE_PLAY_CREDENTIALS_FILE not set")
+    }
+
+    data, err := os.ReadFile(GOOGLE_PLAY_CREDENTIALS_FILE)
+    if err != nil {
+        return fmt.Errorf("failed to read credentials file: %v", err)
+    }
+
+    googlePlayCredentials = &GooglePlayCredentials{}
+    if err := json.Unmarshal(data, googlePlayCredentials); err != nil {
+        return fmt.Errorf("failed to parse credentials: %v", err)
+    }
+
+    log.Println("✅ Google Play credentials loaded")
+    return nil
+}
+
+// getGooglePlayAccessToken gets a valid OAuth2 access token for Google Play API
+func getGooglePlayAccessToken() (string, error) {
+    googlePlayTokenMutex.Lock()
+    defer googlePlayTokenMutex.Unlock()
+
+    // Return cached token if still valid
+    if googlePlayAccessToken != "" && time.Now().Before(googlePlayTokenExpiry.Add(-5*time.Minute)) {
+        return googlePlayAccessToken, nil
+    }
+
+    if googlePlayCredentials == nil {
+        if err := loadGooglePlayCredentials(); err != nil {
+            return "", err
+        }
+    }
+
+    // Create JWT for service account
+    now := time.Now()
+    claims := jwt.MapClaims{
+        "iss":   googlePlayCredentials.ClientEmail,
+        "scope": "https://www.googleapis.com/auth/androidpublisher",
+        "aud":   "https://oauth2.googleapis.com/token",
+        "iat":   now.Unix(),
+        "exp":   now.Add(time.Hour).Unix(),
+    }
+
+    // Parse private key
+    token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+
+    // Parse PEM private key
+    privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(googlePlayCredentials.PrivateKey))
+    if err != nil {
+        return "", fmt.Errorf("failed to parse private key: %v", err)
+    }
+
+    signedJWT, err := token.SignedString(privateKey)
+    if err != nil {
+        return "", fmt.Errorf("failed to sign JWT: %v", err)
+    }
+
+    // Exchange JWT for access token
+    resp, err := http.PostForm("https://oauth2.googleapis.com/token", map[string][]string{
+        "grant_type": {"urn:ietf:params:oauth:grant-type:jwt-bearer"},
+        "assertion":  {signedJWT},
+    })
+    if err != nil {
+        return "", fmt.Errorf("token exchange failed: %v", err)
+    }
+    defer resp.Body.Close()
+
+    var tokenResp struct {
+        AccessToken string `json:"access_token"`
+        ExpiresIn   int    `json:"expires_in"`
+        TokenType   string `json:"token_type"`
+    }
+
+    if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+        return "", fmt.Errorf("failed to decode token response: %v", err)
+    }
+
+    if tokenResp.AccessToken == "" {
+        body, _ := io.ReadAll(resp.Body)
+        return "", fmt.Errorf("no access token in response: %s", string(body))
+    }
+
+    googlePlayAccessToken = tokenResp.AccessToken
+    googlePlayTokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+
+    log.Println("✅ Google Play access token refreshed")
+    return googlePlayAccessToken, nil
+}
+
+// verifyGooglePlayPurchase verifies a purchase with Google Play API
+// Returns (isValid, expiryTime, error)
+func verifyGooglePlayPurchase(productID, purchaseToken string, isSubscription bool) (bool, *time.Time, error) {
+    if !GOOGLE_PLAY_VERIFY_PURCHASES {
+        log.Println("⚠️ Google Play verification disabled, skipping verification")
+        return true, nil, nil
+    }
+
+    accessToken, err := getGooglePlayAccessToken()
+    if err != nil {
+        return false, nil, fmt.Errorf("failed to get access token: %v", err)
+    }
+
+    var apiURL string
+    if isSubscription {
+        apiURL = fmt.Sprintf(
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/%s/purchases/subscriptions/%s/tokens/%s",
+            GOOGLE_PLAY_PACKAGE_NAME, productID, purchaseToken,
+        )
+    } else {
+        // One-time purchase (lifetime)
+        apiURL = fmt.Sprintf(
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/%s/purchases/products/%s/tokens/%s",
+            GOOGLE_PLAY_PACKAGE_NAME, productID, purchaseToken,
+        )
+    }
+
+    req, err := http.NewRequest("GET", apiURL, nil)
+    if err != nil {
+        return false, nil, err
+    }
+    req.Header.Set("Authorization", "Bearer "+accessToken)
+
+    client := &http.Client{Timeout: 10 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        return false, nil, fmt.Errorf("API request failed: %v", err)
+    }
+    defer resp.Body.Close()
+
+    body, _ := io.ReadAll(resp.Body)
+    log.Printf("🔍 Google Play API response (%d): %s", resp.StatusCode, string(body))
+
+    if resp.StatusCode != 200 {
+        return false, nil, fmt.Errorf("Google Play API error: %s", string(body))
+    }
+
+    var purchaseResp GooglePlayPurchaseResponse
+    if err := json.Unmarshal(body, &purchaseResp); err != nil {
+        return false, nil, fmt.Errorf("failed to parse response: %v", err)
+    }
+
+    if isSubscription {
+        // For subscriptions, check payment state
+        // PaymentState: 0=pending, 1=received, 2=free trial, 3=deferred
+        if purchaseResp.PaymentState != 1 && purchaseResp.PaymentState != 2 {
+            log.Printf("⚠️ Subscription payment not received, state: %d", purchaseResp.PaymentState)
+            return false, nil, nil
+        }
+
+        // Parse expiry time
+        if purchaseResp.ExpiryTimeMillis != "" {
+            expiryMillis, _ := strconv.ParseInt(purchaseResp.ExpiryTimeMillis, 10, 64)
+            expiryTime := time.Unix(0, expiryMillis*int64(time.Millisecond))
+            if time.Now().After(expiryTime) {
+                log.Printf("⚠️ Subscription expired at %v", expiryTime)
+                return false, &expiryTime, nil
+            }
+            log.Printf("✅ Subscription valid until %v", expiryTime)
+            return true, &expiryTime, nil
+        }
+    } else {
+        // For one-time products, check purchase state
+        // PurchaseState: 0=purchased, 1=canceled, 2=pending
+        if purchaseResp.PurchaseState != 0 {
+            log.Printf("⚠️ One-time purchase not valid, state: %d", purchaseResp.PurchaseState)
+            return false, nil, nil
+        }
+        log.Println("✅ One-time purchase verified")
+        return true, nil, nil
+    }
+
+    return true, nil, nil
+}
+
 // Record a purchase in the purchase history
 func recordPurchase(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -1711,6 +1944,33 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
         if err == nil {
             expiryDate = &parsed
         }
+    }
+
+    // Verify Google Play purchase if enabled and it's a Google purchase
+    if req.Store == "google" && req.PurchaseToken != "" {
+        // Determine if it's a subscription or one-time purchase
+        isSubscription := req.SubscriptionLength == "monthly" || req.SubscriptionLength == "yearly"
+
+        isValid, verifiedExpiry, err := verifyGooglePlayPurchase(req.ProductID, req.PurchaseToken, isSubscription)
+        if err != nil {
+            log.Printf("⚠️ Google Play verification error (continuing anyway): %v", err)
+            // Don't fail the purchase if verification has issues - log and continue
+            // This allows purchases to work even if Google API is temporarily unavailable
+        } else if !isValid {
+            log.Printf("❌ Google Play purchase verification failed for product %s", req.ProductID)
+            w.WriteHeader(http.StatusBadRequest)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Purchase verification failed",
+            })
+            return
+        } else if verifiedExpiry != nil {
+            // Use the verified expiry time from Google
+            log.Printf("✅ Using verified expiry from Google: %v", verifiedExpiry)
+            expiryDate = verifiedExpiry
+        }
+    } else if req.Store == "google" && req.PurchaseToken == "" && GOOGLE_PLAY_VERIFY_PURCHASES {
+        log.Printf("⚠️ Google purchase without token, verification enabled - this may indicate an issue")
     }
 
     // Use transaction to ensure atomicity
