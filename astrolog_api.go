@@ -381,11 +381,9 @@ func initDB() error {
         return fmt.Errorf("failed to open database: %v", err)
     }
 
-    // V2 SCHEMA: Clean start with email as primary identity
-    // Drop old tables and create fresh ones
-    db.Exec(`DROP TABLE IF EXISTS users`)
-    db.Exec(`DROP TABLE IF EXISTS purchase_history`)
-    db.Exec(`DROP TABLE IF EXISTS auth_codes`)
+    // V2 SCHEMA: email as primary identity
+    // IMPORTANT: Do NOT drop tables - this would delete all user data on restart!
+    // Use CREATE TABLE IF NOT EXISTS to preserve existing data
 
     // Main users table - email is the identity
     createUsersSQL := `
@@ -462,26 +460,7 @@ func initDB() error {
         return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
-    // MIGRATION: Copy any data from users_v2 to users, then drop users_v2
-    // This cleans up legacy table confusion - only 'users' table should exist
-    migrateSQL := `
-    INSERT OR REPLACE INTO users (email, subscription_type, subscription_length, subscription_expiry, is_super, current_device_id, created_at, updated_at)
-    SELECT email, subscription_type, subscription_length, subscription_expiry, is_super, current_device_id, created_at, updated_at
-    FROM users_v2
-    WHERE email NOT LIKE '%@device.astrolytix.app'
-    `
-    result, err := db.Exec(migrateSQL)
-    if err == nil {
-        if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
-            log.Printf("✅ Migrated %d users from users_v2 to users table", rowsAffected)
-        }
-        // Drop the legacy table after successful migration
-        db.Exec("DROP TABLE IF EXISTS users_v2")
-        log.Println("✅ Dropped legacy users_v2 table")
-    }
-    // Ignore error if users_v2 doesn't exist - that's expected for fresh installs
-
-    log.Println("✅ Database initialized (v2 schema - email as primary identity)")
+    log.Println("✅ Database initialized (email as primary identity)")
     return nil
 }
 
