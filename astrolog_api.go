@@ -257,8 +257,10 @@ func (dl *DeviceLimiter) GetLimiter(deviceID string) *rate.Limiter {
 
     limiter, exists := dl.limiters[deviceID]
     if !exists {
-        // Allow burst of 5 requests (natal + navamsha + transit + tithi + chatgpt), then 2 requests per second
-        limiter = rate.NewLimiter(rate.Every(500*time.Millisecond), 5)
+        // Allow burst of 20 requests for Power Periods feature (needs ~5-10 per batch)
+        // Then 10 requests per second for sustained use
+        // Still protected by IP limiter (30/sec) against mass-device attacks
+        limiter = rate.NewLimiter(rate.Limit(10), 20)
         dl.limiters[deviceID] = limiter
     }
 
