@@ -874,7 +874,7 @@ func sanitizeDate(date string) (string, error) {
     day, _ := strconv.Atoi(parts[1])
     year, _ := strconv.Atoi(parts[2])
 
-    if month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100 {
+    if month < 1 || month > 12 || day < 1 || day > 31 || year < 1800 || year > 2100 {
         return "", fmt.Errorf("date out of range")
     }
 
