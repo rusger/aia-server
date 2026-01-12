@@ -1096,6 +1096,7 @@ type TransitYearRequest struct {
     Timezone  string  `json:"timezone"`
     Longitude string  `json:"longitude"`
     Latitude  string  `json:"latitude"`
+    Months    []int   `json:"months,omitempty"` // Optional: specific months (1-12) to calculate
 }
 
 // TransitYearResponse contains all transit data for a year
@@ -1183,7 +1184,21 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("[TransitYear] Starting batch calculation for year %d (user: %s)", req.Year, claims.Email)
+    // Build set of months to calculate (default: all 12)
+    monthsToCalc := make(map[int]bool)
+    if len(req.Months) > 0 {
+        for _, m := range req.Months {
+            if m >= 1 && m <= 12 {
+                monthsToCalc[m] = true
+            }
+        }
+        log.Printf("[TransitYear] Starting batch calculation for year %d, months %v (user: %s)", req.Year, req.Months, claims.Email)
+    } else {
+        for m := 1; m <= 12; m++ {
+            monthsToCalc[m] = true
+        }
+        log.Printf("[TransitYear] Starting batch calculation for year %d (all months) (user: %s)", req.Year, claims.Email)
+    }
     startTime := time.Now()
 
     // Calculate all days in parallel with worker pool
@@ -1258,9 +1273,13 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
         }()
     }
 
-    // Send jobs
+    // Send jobs (only for selected months)
+    jobCount := 0
     for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
-        jobs <- job{date: d}
+        if monthsToCalc[int(d.Month())] {
+            jobs <- job{date: d}
+            jobCount++
+        }
     }
     close(jobs)
 
@@ -1268,8 +1287,8 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
     wg.Wait()
 
     elapsed := time.Since(startTime)
-    log.Printf("[TransitYear] Completed year %d: %d days in %v (user: %s)",
-        req.Year, len(results), elapsed, claims.Email)
+    log.Printf("[TransitYear] Completed year %d: %d days (requested %d) in %v (user: %s)",
+        req.Year, len(results), jobCount, elapsed, claims.Email)
 
     // Log API call
     logAPICall(claims.DeviceID, "transit-year", fmt.Sprintf("%d", req.Year))
