@@ -1090,6 +1090,197 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// TransitYearRequest for batch transit calculation
+type TransitYearRequest struct {
+    Year      int     `json:"year"`
+    Timezone  string  `json:"timezone"`
+    Longitude string  `json:"longitude"`
+    Latitude  string  `json:"latitude"`
+}
+
+// TransitYearResponse contains all transit data for a year
+type TransitYearResponse struct {
+    Success bool              `json:"success"`
+    Year    int               `json:"year"`
+    Data    map[string]string `json:"data"` // date -> chart output
+    Error   string            `json:"error,omitempty"`
+}
+
+// calculateTransitYear generates transit data for all days in a year
+// This is much faster than 365 individual API calls
+func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    // Get claims from JWT middleware
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Unauthorized",
+        })
+        return
+    }
+
+    // Parse request
+    var req TransitYearRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Invalid request format",
+        })
+        return
+    }
+
+    // Validate year
+    if req.Year < 1900 || req.Year > 2100 {
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Invalid year (must be 1900-2100)",
+        })
+        return
+    }
+
+    // Check IP rate limit (more lenient for batch - only 2 per minute per IP)
+    clientIP := getClientIP(r)
+    // Use a separate rate limiter for batch requests (stricter)
+    // For now, just check IP limiter - batch counts as many requests
+    ipLim := ipLimiter.GetLimiter(clientIP)
+    if !ipLim.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Too many requests. Please wait.",
+        })
+        return
+    }
+
+    // Sanitize inputs
+    timezone, err := sanitizeTimezone(req.Timezone)
+    if err != nil {
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Invalid timezone: " + err.Error(),
+        })
+        return
+    }
+
+    longitude, err := sanitizeCoordinate(req.Longitude, false)
+    if err != nil {
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Invalid longitude: " + err.Error(),
+        })
+        return
+    }
+
+    latitude, err := sanitizeCoordinate(req.Latitude, true)
+    if err != nil {
+        json.NewEncoder(w).Encode(TransitYearResponse{
+            Success: false,
+            Error:   "Invalid latitude: " + err.Error(),
+        })
+        return
+    }
+
+    log.Printf("[TransitYear] Starting batch calculation for year %d (user: %s)", req.Year, claims.Email)
+    startTime := time.Now()
+
+    // Calculate all days in parallel with worker pool
+    results := make(map[string]string)
+    var resultsMu sync.Mutex
+    var wg sync.WaitGroup
+
+    // Determine days in year
+    startDate := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
+    endDate := time.Date(req.Year, 12, 31, 0, 0, 0, 0, time.UTC)
+
+    // Create job channel
+    type job struct {
+        date time.Time
+    }
+    jobs := make(chan job, 366)
+
+    // Invert timezone and longitude for Astrolog
+    tzFloat, _ := strconv.ParseFloat(timezone, 64)
+    lonFloat, _ := strconv.ParseFloat(longitude, 64)
+    invertedTz := -tzFloat
+    invertedLon := -lonFloat
+
+    // Start workers (10 parallel workers)
+    numWorkers := 10
+    for i := 0; i < numWorkers; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for j := range jobs {
+                dateStr := fmt.Sprintf("%d %d %d", j.date.Month(), j.date.Day(), j.date.Year())
+
+                args := []string{
+                    "-qa",
+                    fmt.Sprintf("%d", j.date.Month()),
+                    fmt.Sprintf("%d", j.date.Day()),
+                    fmt.Sprintf("%d", j.date.Year()),
+                    "12:00", // Noon for transit
+                    fmt.Sprintf("%g", invertedTz),
+                    fmt.Sprintf("%g", invertedLon),
+                    latitude,
+                    "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31",
+                }
+
+                ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+                cmd := exec.CommandContext(ctx, "./astrolog", args...)
+                cmd.Dir = "/home/ruslan/aia"
+
+                output, err := cmd.Output()
+                cancel()
+
+                if err != nil {
+                    resultsMu.Lock()
+                    results[dateStr] = "" // Empty string for failed dates
+                    resultsMu.Unlock()
+                    continue
+                }
+
+                // Filter output
+                lines := strings.Split(string(output), "\n")
+                var filtered []string
+                for _, line := range lines {
+                    if !strings.Contains(line, "Midh") && !strings.HasPrefix(line, "House cusp") {
+                        filtered = append(filtered, line)
+                    }
+                }
+
+                resultsMu.Lock()
+                results[dateStr] = strings.Join(filtered, "\n")
+                resultsMu.Unlock()
+            }
+        }()
+    }
+
+    // Send jobs
+    for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+        jobs <- job{date: d}
+    }
+    close(jobs)
+
+    // Wait for completion
+    wg.Wait()
+
+    elapsed := time.Since(startTime)
+    log.Printf("[TransitYear] Completed year %d: %d days in %v (user: %s)",
+        req.Year, len(results), elapsed, claims.Email)
+
+    // Log API call
+    logAPICall(claims.DeviceID, "transit-year", fmt.Sprintf("%d", req.Year))
+
+    json.NewEncoder(w).Encode(TransitYearResponse{
+        Success: true,
+        Year:    req.Year,
+        Data:    results,
+    })
+}
+
 // Validate signature for user registration requests
 func validateUserRegisterSignature(req UserRegisterRequest) bool {
     currentTime := time.Now().Unix()
@@ -3623,6 +3814,7 @@ func main() {
 
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
+    router.HandleFunc("/api/transit-year", jwtAuthMiddleware(calculateTransitYear)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
@@ -3652,6 +3844,7 @@ func main() {
     log.Println("  [ADMIN]     GET  /api/admin/user-calls - Get user API call history (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
+    log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
     log.Println("  [PROTECTED] POST /api/user/purchases - Record purchase (JWT required)")
