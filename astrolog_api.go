@@ -1133,11 +1133,11 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Validate year
-    if req.Year < 1900 || req.Year > 2100 {
+    // Validate year (same range as individual astrolog endpoint: 1800-2100)
+    if req.Year < 1800 || req.Year > 2100 {
         json.NewEncoder(w).Encode(TransitYearResponse{
             Success: false,
-            Error:   "Invalid year (must be 1900-2100)",
+            Error:   "Invalid year (must be 1800-2100)",
         })
         return
     }
