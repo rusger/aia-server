@@ -67,7 +67,13 @@ if [[ "$HAS_DOMAIN" =~ ^[Yy]$ ]]; then
     sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
 # Astrolog API - Production with Domain
 $DOMAIN {
-    reverse_proxy localhost:8080
+    # Reverse proxy with extended timeout for AI models (o1 is slow)
+    reverse_proxy localhost:8080 {
+        transport http {
+            read_timeout 180s
+            write_timeout 180s
+        }
+    }
 
     # Optional: Enable compression
     encode gzip
@@ -91,7 +97,13 @@ else
     sudo tee /etc/caddy/Caddyfile > /dev/null <<EOF
 # Astrolog API - Using IP address with self-signed certificate
 https://$SERVER_IP {
-    reverse_proxy localhost:8080
+    # Reverse proxy with extended timeout for AI models (o1 is slow)
+    reverse_proxy localhost:8080 {
+        transport http {
+            read_timeout 180s
+            write_timeout 180s
+        }
+    }
 
     # Use existing SSL certificates
     tls $CERT_PATH $KEY_PATH
