@@ -1640,17 +1640,46 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 
     log.Printf("🤖 Proxying ChatGPT request for device: %s, model: %s", deviceID, req.Model)
 
-    // Prepare OpenAI API request
-    openAIRequest := map[string]interface{}{
-        "model":       req.Model,
-        "messages":    req.Messages,
+    // Check if this is an o1 model (has different API requirements)
+    isO1Model := req.Model == "o1" || strings.HasPrefix(req.Model, "o1-")
+
+    // Process messages for o1 model (convert system messages to user messages)
+    messages := req.Messages
+    if isO1Model {
+        processedMessages := make([]map[string]string, 0, len(req.Messages))
+        for _, msg := range req.Messages {
+            if msg["role"] == "system" {
+                // o1 doesn't support system role - convert to user
+                processedMessages = append(processedMessages, map[string]string{
+                    "role":    "user",
+                    "content": msg["content"],
+                })
+            } else {
+                processedMessages = append(processedMessages, msg)
+            }
+        }
+        messages = processedMessages
+        log.Printf("🤖 o1 model detected - converted %d messages (system→user)", len(messages))
     }
 
-    if req.Temperature > 0 {
+    // Prepare OpenAI API request
+    openAIRequest := map[string]interface{}{
+        "model":    req.Model,
+        "messages": messages,
+    }
+
+    // o1 models don't support temperature parameter
+    if req.Temperature > 0 && !isO1Model {
         openAIRequest["temperature"] = req.Temperature
     }
+
+    // o1 models use max_completion_tokens instead of max_tokens
     if req.MaxTokens > 0 {
-        openAIRequest["max_tokens"] = req.MaxTokens
+        if isO1Model {
+            openAIRequest["max_completion_tokens"] = req.MaxTokens
+        } else {
+            openAIRequest["max_tokens"] = req.MaxTokens
+        }
     }
 
     requestBody, err := json.Marshal(openAIRequest)
@@ -1662,8 +1691,12 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Call OpenAI API
-    client := &http.Client{Timeout: 120 * time.Second}
+    // Call OpenAI API (o1 models are slower, need longer timeout)
+    timeout := 120 * time.Second
+    if isO1Model {
+        timeout = 180 * time.Second
+    }
+    client := &http.Client{Timeout: timeout}
     openAIReq, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(requestBody))
     if err != nil {
         json.NewEncoder(w).Encode(ChatGPTProxyResponse{
