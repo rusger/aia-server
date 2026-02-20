@@ -4841,12 +4841,14 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 				dayCost = dc[d]
 			}
 			dailyArr = append(dailyArr, map[string]interface{}{
-				"date":           d,
-				"calls":          day.Calls,
-				"astrolog_calls": day.AstrologCalls,
-				"chatgpt_calls":  day.ChatgptCalls,
-				"tokens":         day.TotalTokens,
-				"cost":           fmt.Sprintf("$%.4f", dayCost),
+				"date":             d,
+				"calls":            day.Calls,
+				"astrolog_calls":   day.AstrologCalls,
+				"chatgpt_calls":    day.ChatgptCalls,
+				"prompt_tokens":    day.PromptTokens,
+				"completion_tokens": day.CompletionTokens,
+				"tokens":           day.TotalTokens,
+				"cost":             fmt.Sprintf("$%.4f", dayCost),
 			})
 		}
 
@@ -4905,6 +4907,304 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Admin endpoint to proxy OpenAI Costs & Usage APIs (key is never stored)
+func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var reqBody struct {
+		AdminEmail    string `json:"admin_email"`
+		AdminSecret   string `json:"admin_secret"`
+		OpenAIKey     string `json:"openai_admin_key"`
+		StartDate     string `json:"start_date"`
+		EndDate       string `json:"end_date"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid request body",
+		})
+		return
+	}
+
+	if !isAdminEmail(reqBody.AdminEmail) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Unauthorized",
+		})
+		return
+	}
+
+	if ADMIN_SECRET_KEY != "" && reqBody.AdminSecret != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid admin secret",
+		})
+		return
+	}
+
+	if reqBody.OpenAIKey == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "OpenAI admin API key is required",
+		})
+		return
+	}
+
+	// Parse date range (default: last 30 days)
+	endTime := time.Now()
+	startTime := endTime.AddDate(0, 0, -30)
+
+	if reqBody.StartDate != "" {
+		if t, err := time.Parse("2006-01-02", reqBody.StartDate); err == nil {
+			startTime = t
+		}
+	}
+	if reqBody.EndDate != "" {
+		if t, err := time.Parse("2006-01-02", reqBody.EndDate); err == nil {
+			endTime = t.Add(24 * time.Hour) // include the end date
+		}
+	}
+
+	startUnix := startTime.Unix()
+	endUnix := endTime.Unix()
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	// Helper to fetch paginated OpenAI API data
+	fetchOpenAI := func(baseURL string) ([]json.RawMessage, error) {
+		var allBuckets []json.RawMessage
+		nextPage := ""
+
+		for {
+			url := fmt.Sprintf("%s?start_time=%d&end_time=%d&bucket_width=1d&limit=30",
+				baseURL, startUnix, endUnix)
+			if nextPage != "" {
+				url += "&page=" + nextPage
+			}
+
+			req, err := http.NewRequest("GET", url, nil)
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("Authorization", "Bearer "+reqBody.OpenAIKey)
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, fmt.Errorf("request failed: %v", err)
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return nil, fmt.Errorf("failed to read response: %v", err)
+			}
+
+			if resp.StatusCode != 200 {
+				return nil, fmt.Errorf("OpenAI API returned %d: %s", resp.StatusCode, string(body))
+			}
+
+			var page struct {
+				Data     []json.RawMessage `json:"data"`
+				HasMore  bool              `json:"has_more"`
+				NextPage string            `json:"next_page"`
+			}
+			if err := json.Unmarshal(body, &page); err != nil {
+				return nil, fmt.Errorf("failed to parse response: %v", err)
+			}
+
+			allBuckets = append(allBuckets, page.Data...)
+			if !page.HasMore || page.NextPage == "" {
+				break
+			}
+			nextPage = page.NextPage
+		}
+		return allBuckets, nil
+	}
+
+	// Fetch Costs API
+	costsBuckets, costsErr := fetchOpenAI("https://api.openai.com/v1/organization/costs")
+
+	// Fetch Usage API (completions, grouped by model)
+	usageBuckets, usageErr := fetchOpenAI("https://api.openai.com/v1/organization/usage/completions")
+
+	if costsErr != nil && usageErr != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to fetch OpenAI data. Costs: %v | Usage: %v", costsErr, usageErr),
+		})
+		return
+	}
+
+	// Parse costs data into daily breakdown
+	type dailyCost struct {
+		Date      string             `json:"date"`
+		Total     float64            `json:"total"`
+		ByModel   map[string]float64 `json:"by_model"`
+	}
+
+	costsByDate := make(map[string]*dailyCost)
+	var totalActualCost float64
+
+	if costsErr == nil {
+		for _, raw := range costsBuckets {
+			var bucket struct {
+				StartTime int64 `json:"start_time"`
+				Results   []struct {
+					Amount   struct {
+						Value    float64 `json:"value"`
+						Currency string  `json:"currency"`
+					} `json:"amount"`
+					LineItem string `json:"line_item"`
+				} `json:"results"`
+			}
+			if err := json.Unmarshal(raw, &bucket); err != nil {
+				continue
+			}
+			date := time.Unix(bucket.StartTime, 0).UTC().Format("2006-01-02")
+			if _, ok := costsByDate[date]; !ok {
+				costsByDate[date] = &dailyCost{Date: date, ByModel: make(map[string]float64)}
+			}
+			for _, r := range bucket.Results {
+				costsByDate[date].Total += r.Amount.Value
+				costsByDate[date].ByModel[r.LineItem] += r.Amount.Value
+				totalActualCost += r.Amount.Value
+			}
+		}
+	}
+
+	// Parse usage data into daily + model breakdown
+	type dailyUsage struct {
+		Date          string         `json:"date"`
+		InputTokens   int64          `json:"input_tokens"`
+		OutputTokens  int64          `json:"output_tokens"`
+		Requests      int64          `json:"requests"`
+		ByModel       map[string]map[string]int64 `json:"by_model"`
+	}
+
+	usageByDate := make(map[string]*dailyUsage)
+	modelTotals := make(map[string]map[string]int64) // model -> {input_tokens, output_tokens, requests}
+	var totalInputTokens, totalOutputTokens, totalRequests int64
+
+	if usageErr == nil {
+		for _, raw := range usageBuckets {
+			var bucket struct {
+				StartTime int64 `json:"start_time"`
+				Results   []struct {
+					InputTokens      int64  `json:"input_tokens"`
+					OutputTokens     int64  `json:"output_tokens"`
+					NumModelRequests int64  `json:"num_model_requests"`
+					Model            string `json:"model"`
+				} `json:"results"`
+			}
+			if err := json.Unmarshal(raw, &bucket); err != nil {
+				continue
+			}
+			date := time.Unix(bucket.StartTime, 0).UTC().Format("2006-01-02")
+			if _, ok := usageByDate[date]; !ok {
+				usageByDate[date] = &dailyUsage{Date: date, ByModel: make(map[string]map[string]int64)}
+			}
+			for _, r := range bucket.Results {
+				usageByDate[date].InputTokens += r.InputTokens
+				usageByDate[date].OutputTokens += r.OutputTokens
+				usageByDate[date].Requests += r.NumModelRequests
+				totalInputTokens += r.InputTokens
+				totalOutputTokens += r.OutputTokens
+				totalRequests += r.NumModelRequests
+
+				if _, ok := usageByDate[date].ByModel[r.Model]; !ok {
+					usageByDate[date].ByModel[r.Model] = make(map[string]int64)
+				}
+				usageByDate[date].ByModel[r.Model]["input_tokens"] += r.InputTokens
+				usageByDate[date].ByModel[r.Model]["output_tokens"] += r.OutputTokens
+				usageByDate[date].ByModel[r.Model]["requests"] += r.NumModelRequests
+
+				if _, ok := modelTotals[r.Model]; !ok {
+					modelTotals[r.Model] = make(map[string]int64)
+				}
+				modelTotals[r.Model]["input_tokens"] += r.InputTokens
+				modelTotals[r.Model]["output_tokens"] += r.OutputTokens
+				modelTotals[r.Model]["requests"] += r.NumModelRequests
+			}
+		}
+	}
+
+	// Build combined daily array
+	allDates := make(map[string]bool)
+	for d := range costsByDate {
+		allDates[d] = true
+	}
+	for d := range usageByDate {
+		allDates[d] = true
+	}
+
+	var dateKeys []string
+	for d := range allDates {
+		dateKeys = append(dateKeys, d)
+	}
+	sort.Strings(dateKeys)
+
+	var dailyData []map[string]interface{}
+	for _, d := range dateKeys {
+		entry := map[string]interface{}{"date": d}
+		if c, ok := costsByDate[d]; ok {
+			entry["actual_cost"] = fmt.Sprintf("$%.4f", c.Total)
+			entry["actual_cost_raw"] = c.Total
+			entry["cost_by_model"] = c.ByModel
+		}
+		if u, ok := usageByDate[d]; ok {
+			entry["input_tokens"] = u.InputTokens
+			entry["output_tokens"] = u.OutputTokens
+			entry["requests"] = u.Requests
+			entry["usage_by_model"] = u.ByModel
+		}
+		dailyData = append(dailyData, entry)
+	}
+
+	// Build model summary
+	var modelSummary []map[string]interface{}
+	for model, totals := range modelTotals {
+		ms := map[string]interface{}{
+			"model":         model,
+			"input_tokens":  totals["input_tokens"],
+			"output_tokens": totals["output_tokens"],
+			"requests":      totals["requests"],
+		}
+		modelSummary = append(modelSummary, ms)
+	}
+	sort.Slice(modelSummary, func(i, j int) bool {
+		ri := modelSummary[i]["requests"].(int64)
+		rj := modelSummary[j]["requests"].(int64)
+		return ri > rj
+	})
+
+	log.Printf("✅ Admin %s fetched OpenAI costs (%d days, $%.4f total)", reqBody.AdminEmail, len(dailyData), totalActualCost)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"costs": map[string]interface{}{
+			"daily":        dailyData,
+			"models":       modelSummary,
+			"totals": map[string]interface{}{
+				"actual_cost":   fmt.Sprintf("$%.4f", totalActualCost),
+				"input_tokens":  totalInputTokens,
+				"output_tokens": totalOutputTokens,
+				"requests":      totalRequests,
+			},
+			"start_date": startTime.Format("2006-01-02"),
+			"end_date":   endTime.Add(-1 * time.Second).Format("2006-01-02"),
+		},
+		"errors": map[string]interface{}{
+			"costs_error": func() string { if costsErr != nil { return costsErr.Error() }; return "" }(),
+			"usage_error": func() string { if usageErr != nil { return usageErr.Error() }; return "" }(),
+		},
+	})
+}
+
 func main() {
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
@@ -4957,6 +5257,7 @@ func main() {
     router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
     router.HandleFunc("/api/admin/model-usage-by-user", adminModelUsageByUser).Methods("GET")
     router.HandleFunc("/api/admin/usage-report", adminUsageReport).Methods("GET")
+    router.HandleFunc("/api/admin/openai-costs", adminOpenAICosts).Methods("POST")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
@@ -4975,6 +5276,7 @@ func main() {
     log.Println("  [ADMIN]     GET  /api/admin/historical-data - Get aggregated historical data (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/usage-report - Detailed usage report by email & date (2FA required)")
+    log.Println("  [ADMIN]     POST /api/admin/openai-costs - Proxy OpenAI Costs & Usage APIs (key not stored)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
