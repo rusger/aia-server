@@ -4073,14 +4073,15 @@ func adminModelUsageByUser(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2: Get all api_calls grouped by device_id and model
 	allModels := make(map[string]bool)
+	modelCategories := make(map[string]string) // model -> category (call_type)
 	emailModelCounts := make(map[string]map[string]int)
 	emailTotals := make(map[string]int)
 	globalModelTotals := make(map[string]int)
 
 	callRows, err := analyticsDB.Query(`
-		SELECT device_id, COALESCE(model, 'unknown') as model, COUNT(*) as cnt
+		SELECT device_id, call_type, COALESCE(model, 'unknown') as model, COUNT(*) as cnt
 		FROM api_calls
-		GROUP BY device_id, model
+		GROUP BY device_id, call_type, model
 	`)
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -4092,10 +4093,11 @@ func adminModelUsageByUser(w http.ResponseWriter, r *http.Request) {
 	defer callRows.Close()
 
 	for callRows.Next() {
-		var deviceId, model string
+		var deviceId, callType, model string
 		var cnt int
-		if err := callRows.Scan(&deviceId, &model, &cnt); err == nil {
+		if err := callRows.Scan(&deviceId, &callType, &model, &cnt); err == nil {
 			allModels[model] = true
+			modelCategories[model] = callType
 			globalModelTotals[model] += cnt
 
 			// Attribute to all emails associated with this device
@@ -4166,11 +4168,12 @@ func adminModelUsageByUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":      true,
-		"users":        usersResult,
-		"models":       modelList,
-		"model_totals": globalModelTotals,
-		"total_users":  len(userUsages),
+		"success":          true,
+		"users":            usersResult,
+		"models":           modelList,
+		"model_totals":     globalModelTotals,
+		"model_categories": modelCategories,
+		"total_users":      len(userUsages),
 	})
 }
 
