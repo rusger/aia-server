@@ -4975,13 +4975,16 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Helper to fetch paginated OpenAI API data
-	fetchOpenAI := func(baseURL string) ([]json.RawMessage, error) {
+	fetchOpenAI := func(baseURL string, extraParams string) ([]json.RawMessage, error) {
 		var allBuckets []json.RawMessage
 		nextPage := ""
 
 		for {
 			url := fmt.Sprintf("%s?start_time=%d&end_time=%d&bucket_width=1d&limit=30",
 				baseURL, startUnix, endUnix)
+			if extraParams != "" {
+				url += "&" + extraParams
+			}
 			if nextPage != "" {
 				url += "&page=" + nextPage
 			}
@@ -5055,10 +5058,10 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch Costs API
-	costsBuckets, costsErr := fetchOpenAI("https://api.openai.com/v1/organization/costs")
+	costsBuckets, costsErr := fetchOpenAI("https://api.openai.com/v1/organization/costs", "")
 
 	// Fetch Usage API (completions, grouped by model)
-	usageBuckets, usageErr := fetchOpenAI("https://api.openai.com/v1/organization/usage/completions")
+	usageBuckets, usageErr := fetchOpenAI("https://api.openai.com/v1/organization/usage/completions", "group_by[]=model")
 
 	if costsErr != nil && usageErr != nil {
 		// Both failed — show the more useful error (they're usually the same)
@@ -5080,30 +5083,53 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 	var totalActualCost float64
 
 	if costsErr == nil {
-		for _, raw := range costsBuckets {
-			var bucket struct {
-				StartTime int64 `json:"start_time"`
-				Results   []struct {
-					Amount   struct {
-						Value    float64 `json:"value"`
-						Currency string  `json:"currency"`
-					} `json:"amount"`
-					LineItem string `json:"line_item"`
-				} `json:"results"`
+		log.Printf("📊 Costs API returned %d buckets", len(costsBuckets))
+		for i, raw := range costsBuckets {
+			if i == 0 {
+				// Log first bucket raw for debugging
+				log.Printf("📊 Costs bucket[0] raw: %s", string(raw))
 			}
+			// Try flexible parsing — amount could be struct or number
+			var bucket map[string]interface{}
 			if err := json.Unmarshal(raw, &bucket); err != nil {
+				log.Printf("📊 Costs bucket parse error: %v", err)
 				continue
 			}
-			date := time.Unix(bucket.StartTime, 0).UTC().Format("2006-01-02")
+			startTimeVal, _ := bucket["start_time"].(float64)
+			date := time.Unix(int64(startTimeVal), 0).UTC().Format("2006-01-02")
 			if _, ok := costsByDate[date]; !ok {
 				costsByDate[date] = &dailyCost{Date: date, ByModel: make(map[string]float64)}
 			}
-			for _, r := range bucket.Results {
-				costsByDate[date].Total += r.Amount.Value
-				costsByDate[date].ByModel[r.LineItem] += r.Amount.Value
-				totalActualCost += r.Amount.Value
+
+			results, ok := bucket["results"].([]interface{})
+			if !ok {
+				log.Printf("📊 Costs bucket has no results array, keys: %v", func() []string {
+					keys := make([]string, 0, len(bucket))
+					for k := range bucket { keys = append(keys, k) }
+					return keys
+				}())
+				continue
+			}
+			for _, r := range results {
+				result, ok := r.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				lineItem, _ := result["line_item"].(string)
+				var costValue float64
+				// Handle amount as struct {value, currency} or as direct number
+				switch amt := result["amount"].(type) {
+				case map[string]interface{}:
+					costValue, _ = amt["value"].(float64)
+				case float64:
+					costValue = amt
+				}
+				costsByDate[date].Total += costValue
+				costsByDate[date].ByModel[lineItem] += costValue
+				totalActualCost += costValue
 			}
 		}
+		log.Printf("📊 Costs parsed: %d dates, total=$%.4f", len(costsByDate), totalActualCost)
 	}
 
 	// Parse usage data into daily + model breakdown
