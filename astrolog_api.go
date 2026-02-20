@@ -5217,20 +5217,63 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 			entry["requests"] = u.Requests
 			entry["usage_by_model"] = u.ByModel
 		}
+		if cc, ok := dailyCalculatedCost[d]; ok {
+			entry["calculated_cost"] = fmt.Sprintf("$%.4f", cc)
+			entry["calculated_cost_raw"] = cc
+		}
 		dailyData = append(dailyData, entry)
 	}
 
-	// Build model summary
+	// Calculate cost from Usage API tokens using per-model pricing
+	estimateModelCost := func(model string, inputToks, outputToks int64) float64 {
+		inF := float64(inputToks) / 1000000.0
+		outF := float64(outputToks) / 1000000.0
+		// Pricing per 1M tokens (input / output)
+		switch {
+		case strings.Contains(model, "gpt-4o-mini"):
+			return inF*0.15 + outF*0.60
+		case strings.Contains(model, "gpt-4o"):
+			return inF*2.50 + outF*10.00
+		case strings.Contains(model, "gpt-4-turbo"):
+			return inF*10.00 + outF*30.00
+		case strings.Contains(model, "gpt-4"):
+			return inF*30.00 + outF*60.00
+		case strings.Contains(model, "gpt-3.5-turbo"):
+			return inF*0.50 + outF*1.50
+		case strings.Contains(model, "o1-mini"):
+			return inF*1.10 + outF*4.40
+		case strings.Contains(model, "o1"):
+			return inF*15.00 + outF*60.00
+		default:
+			return inF*2.50 + outF*10.00 // default to gpt-4o pricing
+		}
+	}
+
+	var totalCalculatedCost float64
+	dailyCalculatedCost := make(map[string]float64)
+
+	// Build model summary with calculated costs
 	var modelSummary []map[string]interface{}
 	for model, totals := range modelTotals {
+		modelCost := estimateModelCost(model, totals["input_tokens"], totals["output_tokens"])
+		totalCalculatedCost += modelCost
 		ms := map[string]interface{}{
-			"model":         model,
-			"input_tokens":  totals["input_tokens"],
-			"output_tokens": totals["output_tokens"],
-			"requests":      totals["requests"],
+			"model":          model,
+			"input_tokens":   totals["input_tokens"],
+			"output_tokens":  totals["output_tokens"],
+			"requests":       totals["requests"],
+			"calculated_cost": fmt.Sprintf("$%.4f", modelCost),
 		}
 		modelSummary = append(modelSummary, ms)
 	}
+
+	// Calculate per-day costs from usage data
+	for d, u := range usageByDate {
+		for model, toks := range u.ByModel {
+			dailyCalculatedCost[d] += estimateModelCost(model, toks["input_tokens"], toks["output_tokens"])
+		}
+	}
+
 	sort.Slice(modelSummary, func(i, j int) bool {
 		ri := modelSummary[i]["requests"].(int64)
 		rj := modelSummary[j]["requests"].(int64)
@@ -5245,10 +5288,11 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 			"daily":        dailyData,
 			"models":       modelSummary,
 			"totals": map[string]interface{}{
-				"actual_cost":   fmt.Sprintf("$%.4f", totalActualCost),
-				"input_tokens":  totalInputTokens,
-				"output_tokens": totalOutputTokens,
-				"requests":      totalRequests,
+				"actual_cost":      fmt.Sprintf("$%.4f", totalActualCost),
+				"calculated_cost":  fmt.Sprintf("$%.4f", totalCalculatedCost),
+				"input_tokens":     totalInputTokens,
+				"output_tokens":    totalOutputTokens,
+				"requests":         totalRequests,
 			},
 			"start_date": startTime.Format("2006-01-02"),
 			"end_date":   endTime.Add(-1 * time.Second).Format("2006-01-02"),
