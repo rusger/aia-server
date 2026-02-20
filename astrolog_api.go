@@ -5005,7 +5005,35 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if resp.StatusCode != 200 {
-				return nil, fmt.Errorf("OpenAI API returned %d: %s", resp.StatusCode, string(body))
+				// Parse and sanitize error — never leak API key in response
+				var errObj struct {
+					Error interface{} `json:"error"`
+				}
+				errMsg := ""
+				if json.Unmarshal(body, &errObj) == nil {
+					switch e := errObj.Error.(type) {
+					case string:
+						errMsg = e
+					case map[string]interface{}:
+						if msg, ok := e["message"].(string); ok {
+							errMsg = msg
+						}
+					}
+				}
+				switch resp.StatusCode {
+				case 401:
+					return nil, fmt.Errorf("Invalid API key. Use an Admin key (sk-admin-...) from platform.openai.com > API Keys")
+				case 403:
+					if strings.Contains(errMsg, "api.usage.read") {
+						return nil, fmt.Errorf("Key missing 'api.usage.read' scope. Edit your key at platform.openai.com > API Keys and enable Usage read permission (or use a key with All permissions)")
+					}
+					return nil, fmt.Errorf("Access denied (403). Your key needs admin/usage permissions")
+				default:
+					if errMsg != "" {
+						return nil, fmt.Errorf("OpenAI error (%d): %s", resp.StatusCode, errMsg)
+					}
+					return nil, fmt.Errorf("OpenAI error (HTTP %d)", resp.StatusCode)
+				}
 			}
 
 			var page struct {
@@ -5033,9 +5061,10 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 	usageBuckets, usageErr := fetchOpenAI("https://api.openai.com/v1/organization/usage/completions")
 
 	if costsErr != nil && usageErr != nil {
+		// Both failed — show the more useful error (they're usually the same)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error":   fmt.Sprintf("Failed to fetch OpenAI data. Costs: %v | Usage: %v", costsErr, usageErr),
+			"error":   costsErr.Error(),
 		})
 		return
 	}
