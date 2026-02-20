@@ -5188,42 +5188,6 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build combined daily array
-	allDates := make(map[string]bool)
-	for d := range costsByDate {
-		allDates[d] = true
-	}
-	for d := range usageByDate {
-		allDates[d] = true
-	}
-
-	var dateKeys []string
-	for d := range allDates {
-		dateKeys = append(dateKeys, d)
-	}
-	sort.Strings(dateKeys)
-
-	var dailyData []map[string]interface{}
-	for _, d := range dateKeys {
-		entry := map[string]interface{}{"date": d}
-		if c, ok := costsByDate[d]; ok {
-			entry["actual_cost"] = fmt.Sprintf("$%.4f", c.Total)
-			entry["actual_cost_raw"] = c.Total
-			entry["cost_by_model"] = c.ByModel
-		}
-		if u, ok := usageByDate[d]; ok {
-			entry["input_tokens"] = u.InputTokens
-			entry["output_tokens"] = u.OutputTokens
-			entry["requests"] = u.Requests
-			entry["usage_by_model"] = u.ByModel
-		}
-		if cc, ok := dailyCalculatedCost[d]; ok {
-			entry["calculated_cost"] = fmt.Sprintf("$%.4f", cc)
-			entry["calculated_cost_raw"] = cc
-		}
-		dailyData = append(dailyData, entry)
-	}
-
 	// Calculate cost from Usage API tokens using per-model pricing
 	estimateModelCost := func(model string, inputToks, outputToks int64) float64 {
 		inF := float64(inputToks) / 1000000.0
@@ -5279,6 +5243,42 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 		rj := modelSummary[j]["requests"].(int64)
 		return ri > rj
 	})
+
+	// Build combined daily array
+	allDates := make(map[string]bool)
+	for d := range costsByDate {
+		allDates[d] = true
+	}
+	for d := range usageByDate {
+		allDates[d] = true
+	}
+
+	var dateKeys []string
+	for d := range allDates {
+		dateKeys = append(dateKeys, d)
+	}
+	sort.Strings(dateKeys)
+
+	var dailyData []map[string]interface{}
+	for _, d := range dateKeys {
+		entry := map[string]interface{}{"date": d}
+		if c, ok := costsByDate[d]; ok {
+			entry["actual_cost"] = fmt.Sprintf("$%.4f", c.Total)
+			entry["actual_cost_raw"] = c.Total
+			entry["cost_by_model"] = c.ByModel
+		}
+		if u, ok := usageByDate[d]; ok {
+			entry["input_tokens"] = u.InputTokens
+			entry["output_tokens"] = u.OutputTokens
+			entry["requests"] = u.Requests
+			entry["usage_by_model"] = u.ByModel
+		}
+		if cc, ok := dailyCalculatedCost[d]; ok {
+			entry["calculated_cost"] = fmt.Sprintf("$%.4f", cc)
+			entry["calculated_cost_raw"] = cc
+		}
+		dailyData = append(dailyData, entry)
+	}
 
 	log.Printf("✅ Admin %s fetched OpenAI costs (%d days, $%.4f total)", reqBody.AdminEmail, len(dailyData), totalActualCost)
 
