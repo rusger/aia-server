@@ -54,6 +54,11 @@ var (
     SMTP_FROM          = getEnv("SMTP_FROM", "Astrolytix <noreply@astrolytix.com>")
     AUTH_CODE_EXP      = 10 * time.Minute // Auth codes expire in 10 minutes
 
+    // AI Model Configuration (server-controlled, changeable without app rebuild)
+    MODEL_SUPER   = getEnv("MODEL_SUPER", "gpt-4.1")       // Super tier (was o1)
+    MODEL_PREMIUM = getEnv("MODEL_PREMIUM", "gpt-4.1-mini") // Paid/trial tier (was gpt-4o)
+    MODEL_ECONOMY = getEnv("MODEL_ECONOMY", "gpt-4o-mini")  // Free tier after trial
+
     // Google Play In-App Purchase verification
     GOOGLE_PLAY_PACKAGE_NAME     = getEnv("GOOGLE_PLAY_PACKAGE_NAME", "com.astrolytix.app")
     GOOGLE_PLAY_CREDENTIALS_FILE = getEnv("GOOGLE_PLAY_CREDENTIALS_FILE", "") // Path to service account JSON
@@ -1994,6 +1999,9 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         "is_super":             isSuper == 1,
         "created_at":           createdAt,
         "updated_at":           updatedAt,
+        "model_super":          MODEL_SUPER,
+        "model_premium":        MODEL_PREMIUM,
+        "model_economy":        MODEL_ECONOMY,
     })
 }
 
