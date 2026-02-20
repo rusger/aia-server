@@ -4460,6 +4460,451 @@ func adminDownloadDB(w http.ResponseWriter, r *http.Request) {
     w.Write(data)
 }
 
+// Admin endpoint to get detailed usage report by email and date (requires 2FA verification code)
+func adminUsageReport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	adminEmail := r.URL.Query().Get("admin_email")
+	adminSecret := r.URL.Query().Get("admin_secret")
+	verificationCode := r.URL.Query().Get("verification_code")
+
+	if !isAdminEmail(adminEmail) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Unauthorized",
+		})
+		return
+	}
+
+	if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid admin secret",
+		})
+		return
+	}
+
+	// Verify the email code (2FA required)
+	if verificationCode == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Verification code required",
+		})
+		return
+	}
+
+	var codeID int
+	var expiresAt time.Time
+	err := db.QueryRow(`SELECT id, expires_at FROM auth_codes WHERE email = ? AND code = ? AND used = 0`,
+		adminEmail, verificationCode).Scan(&codeID, &expiresAt)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid or expired verification code",
+		})
+		return
+	}
+
+	if time.Now().After(expiresAt) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Verification code has expired",
+		})
+		return
+	}
+
+	// Mark code as used
+	db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
+
+	if analyticsDB == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Analytics database not initialized",
+		})
+		return
+	}
+
+	// Parse query params
+	startDate := r.URL.Query().Get("start_date")
+	endDate := r.URL.Query().Get("end_date")
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "daily"
+	}
+
+	// Step 1: Build email -> set of device_ids mapping
+	emailDevices := make(map[string]map[string]bool)
+	emailInfo := make(map[string]map[string]interface{})
+
+	userRows, err := db.Query(`SELECT email, subscription_type, is_super, current_device_id FROM users`)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to query users",
+		})
+		return
+	}
+	defer userRows.Close()
+
+	for userRows.Next() {
+		var email, subType string
+		var isSuper int
+		var deviceId sql.NullString
+		if err := userRows.Scan(&email, &subType, &isSuper, &deviceId); err == nil {
+			if _, ok := emailDevices[email]; !ok {
+				emailDevices[email] = make(map[string]bool)
+			}
+			if deviceId.Valid && deviceId.String != "" {
+				emailDevices[email][deviceId.String] = true
+			}
+			emailInfo[email] = map[string]interface{}{
+				"subscription_type": subType,
+				"is_super":          isSuper == 1,
+			}
+		}
+	}
+
+	// Also gather device_ids from login_history
+	loginRows, err := db.Query(`SELECT DISTINCT email, device_id FROM login_history WHERE device_id IS NOT NULL AND device_id != ''`)
+	if err == nil {
+		defer loginRows.Close()
+		for loginRows.Next() {
+			var email, deviceId string
+			if err := loginRows.Scan(&email, &deviceId); err == nil {
+				if _, ok := emailDevices[email]; !ok {
+					emailDevices[email] = make(map[string]bool)
+				}
+				emailDevices[email][deviceId] = true
+			}
+		}
+	}
+
+	// Build reverse mapping: device_id -> emails
+	deviceToEmails := make(map[string][]string)
+	for email, devices := range emailDevices {
+		for deviceId := range devices {
+			deviceToEmails[deviceId] = append(deviceToEmails[deviceId], email)
+		}
+	}
+
+	// Step 2: Query api_calls grouped by device_id, date, call_type, model with token sums
+	dateFormat := "date(created_at)"
+	if period == "monthly" {
+		dateFormat = "strftime('%Y-%m', created_at)"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT device_id, %s as period_date, call_type, COALESCE(model, 'unknown') as model,
+		       COUNT(*) as cnt,
+		       SUM(COALESCE(prompt_tokens, 0)) as prompt_toks,
+		       SUM(COALESCE(completion_tokens, 0)) as completion_toks,
+		       SUM(COALESCE(total_tokens, 0)) as total_toks
+		FROM api_calls
+		WHERE 1=1
+	`, dateFormat)
+
+	var args []interface{}
+	if startDate != "" {
+		query += " AND date(created_at) >= ?"
+		args = append(args, startDate)
+	}
+	if endDate != "" {
+		query += " AND date(created_at) <= ?"
+		args = append(args, endDate)
+	}
+	query += fmt.Sprintf(" GROUP BY device_id, %s, call_type, model ORDER BY period_date", dateFormat)
+
+	callRows, err := analyticsDB.Query(query, args...)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to query api calls: " + err.Error(),
+		})
+		return
+	}
+	defer callRows.Close()
+
+	// Step 3: Aggregate data per email per date
+	type dailyEntry struct {
+		Calls           int
+		AstrologCalls   int
+		ChatgptCalls    int
+		PromptTokens    int64
+		CompletionTokens int64
+		TotalTokens     int64
+		Models          map[string]int
+	}
+
+	type emailData struct {
+		TotalCalls       int
+		AstrologCalls    int
+		ChatgptCalls     int
+		PromptTokens     int64
+		CompletionTokens int64
+		TotalTokens      int64
+		ModelsUsed       map[string]int
+		Daily            map[string]*dailyEntry
+	}
+
+	emailStats := make(map[string]*emailData)
+
+	// Also track by-date aggregates
+	type dateAggregate struct {
+		TotalCalls       int
+		UniqueUsers      map[string]bool
+		PromptTokens     int64
+		CompletionTokens int64
+		TotalTokens      int64
+	}
+	dateStats := make(map[string]*dateAggregate)
+
+	for callRows.Next() {
+		var deviceId, periodDate, callType, model string
+		var cnt int
+		var promptToks, completionToks, totalToks int64
+		if err := callRows.Scan(&deviceId, &periodDate, &callType, &model, &cnt, &promptToks, &completionToks, &totalToks); err != nil {
+			continue
+		}
+
+		emails := deviceToEmails[deviceId]
+		for _, email := range emails {
+			if _, ok := emailStats[email]; !ok {
+				emailStats[email] = &emailData{
+					ModelsUsed: make(map[string]int),
+					Daily:      make(map[string]*dailyEntry),
+				}
+			}
+			ed := emailStats[email]
+			ed.TotalCalls += cnt
+			ed.PromptTokens += promptToks
+			ed.CompletionTokens += completionToks
+			ed.TotalTokens += totalToks
+			ed.ModelsUsed[model] += cnt
+
+			if callType == "astrolog" {
+				ed.AstrologCalls += cnt
+			} else {
+				ed.ChatgptCalls += cnt
+			}
+
+			if _, ok := ed.Daily[periodDate]; !ok {
+				ed.Daily[periodDate] = &dailyEntry{Models: make(map[string]int)}
+			}
+			day := ed.Daily[periodDate]
+			day.Calls += cnt
+			day.PromptTokens += promptToks
+			day.CompletionTokens += completionToks
+			day.TotalTokens += totalToks
+			day.Models[model] += cnt
+			if callType == "astrolog" {
+				day.AstrologCalls += cnt
+			} else {
+				day.ChatgptCalls += cnt
+			}
+
+			// Track date aggregates
+			if _, ok := dateStats[periodDate]; !ok {
+				dateStats[periodDate] = &dateAggregate{UniqueUsers: make(map[string]bool)}
+			}
+			dateStats[periodDate].UniqueUsers[email] = true
+		}
+
+		// Date aggregates (count once per device, not per email)
+		if _, ok := dateStats[periodDate]; !ok {
+			dateStats[periodDate] = &dateAggregate{UniqueUsers: make(map[string]bool)}
+		}
+		dateStats[periodDate].TotalCalls += cnt
+		dateStats[periodDate].PromptTokens += promptToks
+		dateStats[periodDate].CompletionTokens += completionToks
+		dateStats[periodDate].TotalTokens += totalToks
+	}
+
+	// Helper: estimate cost based on model pricing
+	estimateCost := func(model string, promptToks, completionToks int64) float64 {
+		switch model {
+		case "gpt-4o":
+			return (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+		case "gpt-4o-mini":
+			return (float64(promptToks) * 0.15 / 1000000) + (float64(completionToks) * 0.60 / 1000000)
+		case "o1":
+			return (float64(promptToks) * 15.00 / 1000000) + (float64(completionToks) * 60.00 / 1000000)
+		case "o1-mini":
+			return (float64(promptToks) * 1.10 / 1000000) + (float64(completionToks) * 4.40 / 1000000)
+		default:
+			return (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+		}
+	}
+
+	// Step 4: We need per-model token breakdown for cost. Re-query per email won't work since we aggregated.
+	// Instead, query model-level token breakdown per device per date for cost estimation.
+	costQuery := fmt.Sprintf(`
+		SELECT device_id, %s as period_date, COALESCE(model, 'unknown') as model,
+		       SUM(COALESCE(prompt_tokens, 0)) as prompt_toks,
+		       SUM(COALESCE(completion_tokens, 0)) as completion_toks
+		FROM api_calls
+		WHERE 1=1
+	`, dateFormat)
+
+	var costArgs []interface{}
+	if startDate != "" {
+		costQuery += " AND date(created_at) >= ?"
+		costArgs = append(costArgs, startDate)
+	}
+	if endDate != "" {
+		costQuery += " AND date(created_at) <= ?"
+		costArgs = append(costArgs, endDate)
+	}
+	costQuery += fmt.Sprintf(" GROUP BY device_id, %s, model", dateFormat)
+
+	costRows, err := analyticsDB.Query(costQuery, costArgs...)
+
+	// email -> total cost, email -> date -> cost
+	emailCost := make(map[string]float64)
+	emailDailyCost := make(map[string]map[string]float64)
+	dateCost := make(map[string]float64)
+
+	if err == nil {
+		defer costRows.Close()
+		for costRows.Next() {
+			var deviceId, periodDate, model string
+			var promptToks, completionToks int64
+			if err := costRows.Scan(&deviceId, &periodDate, &model, &promptToks, &completionToks); err != nil {
+				continue
+			}
+			cost := estimateCost(model, promptToks, completionToks)
+
+			emails := deviceToEmails[deviceId]
+			for _, email := range emails {
+				emailCost[email] += cost
+				if _, ok := emailDailyCost[email]; !ok {
+					emailDailyCost[email] = make(map[string]float64)
+				}
+				emailDailyCost[email][periodDate] += cost
+			}
+			dateCost[periodDate] += cost
+		}
+	}
+
+	// Step 5: Build response
+	// by_user array
+	type userResult struct {
+		Email string
+		Total int
+	}
+	var userOrder []userResult
+	for email, ed := range emailStats {
+		userOrder = append(userOrder, userResult{Email: email, Total: ed.TotalCalls})
+	}
+	sort.Slice(userOrder, func(i, j int) bool {
+		return userOrder[i].Total > userOrder[j].Total
+	})
+
+	var byUser []map[string]interface{}
+	var grandTotalCalls int
+	var grandTotalTokens int64
+	var grandTotalCost float64
+	uniqueEmails := make(map[string]bool)
+
+	for _, ur := range userOrder {
+		email := ur.Email
+		ed := emailStats[email]
+		uniqueEmails[email] = true
+		grandTotalCalls += ed.TotalCalls
+		grandTotalTokens += ed.TotalTokens
+		grandTotalCost += emailCost[email]
+
+		subType := "free"
+		isSuper := false
+		if info, ok := emailInfo[email]; ok {
+			if st, ok := info["subscription_type"].(string); ok {
+				subType = st
+			}
+			if is, ok := info["is_super"].(bool); ok {
+				isSuper = is
+			}
+		}
+
+		// Build daily breakdown sorted by date
+		var dates []string
+		for d := range ed.Daily {
+			dates = append(dates, d)
+		}
+		sort.Strings(dates)
+
+		var dailyArr []map[string]interface{}
+		for _, d := range dates {
+			day := ed.Daily[d]
+			dayCost := float64(0)
+			if dc, ok := emailDailyCost[email]; ok {
+				dayCost = dc[d]
+			}
+			dailyArr = append(dailyArr, map[string]interface{}{
+				"date":           d,
+				"calls":          day.Calls,
+				"astrolog_calls": day.AstrologCalls,
+				"chatgpt_calls":  day.ChatgptCalls,
+				"tokens":         day.TotalTokens,
+				"cost":           fmt.Sprintf("$%.4f", dayCost),
+			})
+		}
+
+		byUser = append(byUser, map[string]interface{}{
+			"email":             email,
+			"type":              subType,
+			"is_super":          isSuper,
+			"total_calls":       ed.TotalCalls,
+			"astrolog_calls":    ed.AstrologCalls,
+			"chatgpt_calls":     ed.ChatgptCalls,
+			"prompt_tokens":     ed.PromptTokens,
+			"completion_tokens": ed.CompletionTokens,
+			"total_tokens":      ed.TotalTokens,
+			"estimated_cost":    fmt.Sprintf("$%.4f", emailCost[email]),
+			"models_used":       ed.ModelsUsed,
+			"daily":             dailyArr,
+		})
+	}
+
+	// by_date array
+	var dateKeys []string
+	for d := range dateStats {
+		dateKeys = append(dateKeys, d)
+	}
+	sort.Strings(dateKeys)
+
+	var byDate []map[string]interface{}
+	for _, d := range dateKeys {
+		ds := dateStats[d]
+		byDate = append(byDate, map[string]interface{}{
+			"date":         d,
+			"total_calls":  ds.TotalCalls,
+			"unique_users": len(ds.UniqueUsers),
+			"tokens":       ds.TotalTokens,
+			"cost":         fmt.Sprintf("$%.4f", dateCost[d]),
+		})
+	}
+
+	log.Printf("✅ Admin %s generated usage report (%d users, %d dates)", adminEmail, len(byUser), len(byDate))
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"report": map[string]interface{}{
+			"by_user": byUser,
+			"by_date": byDate,
+			"totals": map[string]interface{}{
+				"calls":  grandTotalCalls,
+				"users":  len(uniqueEmails),
+				"tokens": grandTotalTokens,
+				"cost":   fmt.Sprintf("$%.4f", grandTotalCost),
+			},
+			"period":     period,
+			"start_date": startDate,
+			"end_date":   endDate,
+		},
+	})
+}
+
 func main() {
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
@@ -4511,6 +4956,7 @@ func main() {
     router.HandleFunc("/api/admin/historical-data", adminGetHistoricalData).Methods("GET")
     router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
     router.HandleFunc("/api/admin/model-usage-by-user", adminModelUsageByUser).Methods("GET")
+    router.HandleFunc("/api/admin/usage-report", adminUsageReport).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
@@ -4528,6 +4974,7 @@ func main() {
     log.Println("  [ADMIN]     POST /api/admin/analytics-cleanup - Run retention cleanup (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/historical-data - Get aggregated historical data (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
+    log.Println("  [ADMIN]     GET  /api/admin/usage-report - Detailed usage report by email & date (2FA required)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
