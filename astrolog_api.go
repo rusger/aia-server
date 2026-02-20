@@ -492,6 +492,42 @@ func initAnalyticsDB() error {
         return fmt.Errorf("failed to create api_calls table: %v", err)
     }
 
+    // Add token columns if they don't exist (migration for existing databases)
+    tokenColumnSQL := `
+    ALTER TABLE api_calls ADD COLUMN prompt_tokens INTEGER DEFAULT 0;
+    ALTER TABLE api_calls ADD COLUMN completion_tokens INTEGER DEFAULT 0;
+    ALTER TABLE api_calls ADD COLUMN total_tokens INTEGER DEFAULT 0;
+    `
+    // Ignore errors - columns may already exist
+    analyticsDB.Exec(tokenColumnSQL)
+
+    // Create monthly aggregates table for historical data retention
+    createMonthlyTableSQL := `
+    CREATE TABLE IF NOT EXISTS api_calls_monthly (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        year_month TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        call_type TEXT NOT NULL,
+        model TEXT,
+        total_calls INTEGER DEFAULT 0,
+        total_prompt_tokens INTEGER DEFAULT 0,
+        total_completion_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(year_month, device_id, call_type, model)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_monthly_date ON api_calls_monthly(year_month);
+    CREATE INDEX IF NOT EXISTS idx_monthly_device ON api_calls_monthly(device_id);
+    `
+    _, err = analyticsDB.Exec(createMonthlyTableSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create api_calls_monthly table: %v", err)
+    }
+
+    // Run retention cleanup on startup (async)
+    go cleanupOldAnalyticsData(12) // Keep 12 months of detailed data
+
     // Create analytics_events table for flexible event tracking
     createEventsTableSQL := `
     CREATE TABLE IF NOT EXISTS analytics_events (
@@ -520,18 +556,77 @@ func initAnalyticsDB() error {
     return nil
 }
 
-// Log an API call to analytics database
+// Log an API call to analytics database (without token tracking)
 func logAPICall(deviceID, callType, model string) {
+    logAPICallWithTokens(deviceID, callType, model, 0, 0, 0)
+}
+
+// Log an API call with token usage for cost tracking
+func logAPICallWithTokens(deviceID, callType, model string, promptTokens, completionTokens, totalTokens int) {
     if analyticsDB == nil {
         return
     }
     go func() {
-        _, err := analyticsDB.Exec(`INSERT INTO api_calls (device_id, call_type, model) VALUES (?, ?, ?)`,
-            deviceID, callType, model)
+        _, err := analyticsDB.Exec(
+            `INSERT INTO api_calls (device_id, call_type, model, prompt_tokens, completion_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?)`,
+            deviceID, callType, model, promptTokens, completionTokens, totalTokens)
         if err != nil {
             log.Printf("⚠️ Failed to log API call: %v", err)
         }
     }()
+}
+
+// Cleanup old analytics data by aggregating into monthly summaries
+func cleanupOldAnalyticsData(retentionMonths int) {
+    if analyticsDB == nil {
+        return
+    }
+
+    cutoffDate := fmt.Sprintf("-%d months", retentionMonths)
+
+    // First, aggregate old data into monthly table
+    aggregateSQL := `
+    INSERT OR REPLACE INTO api_calls_monthly (year_month, device_id, call_type, model, total_calls, total_prompt_tokens, total_completion_tokens, total_tokens)
+    SELECT
+        strftime('%Y-%m', created_at) as year_month,
+        device_id,
+        call_type,
+        model,
+        COUNT(*) as total_calls,
+        SUM(COALESCE(prompt_tokens, 0)) as total_prompt_tokens,
+        SUM(COALESCE(completion_tokens, 0)) as total_completion_tokens,
+        SUM(COALESCE(total_tokens, 0)) as total_tokens
+    FROM api_calls
+    WHERE created_at < date('now', ?)
+    GROUP BY strftime('%Y-%m', created_at), device_id, call_type, model
+    ON CONFLICT(year_month, device_id, call_type, model) DO UPDATE SET
+        total_calls = excluded.total_calls,
+        total_prompt_tokens = excluded.total_prompt_tokens,
+        total_completion_tokens = excluded.total_completion_tokens,
+        total_tokens = excluded.total_tokens;
+    `
+
+    _, err := analyticsDB.Exec(aggregateSQL, cutoffDate)
+    if err != nil {
+        log.Printf("⚠️ Failed to aggregate old analytics data: %v", err)
+        return
+    }
+
+    // Then delete the old detailed records
+    deleteSQL := `DELETE FROM api_calls WHERE created_at < date('now', ?)`
+    result, err := analyticsDB.Exec(deleteSQL, cutoffDate)
+    if err != nil {
+        log.Printf("⚠️ Failed to delete old analytics data: %v", err)
+        return
+    }
+
+    rowsDeleted, _ := result.RowsAffected()
+    if rowsDeleted > 0 {
+        log.Printf("🧹 Analytics cleanup: aggregated and removed %d old records (older than %d months)", rowsDeleted, retentionMonths)
+
+        // Vacuum to reclaim space
+        analyticsDB.Exec("VACUUM")
+    }
 }
 
 // ============================================================
@@ -1785,10 +1880,25 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    log.Printf("✅ ChatGPT request successful, response length: %d", len(content))
+    // Extract token usage from response
+    var promptTokens, completionTokens, totalTokens int
+    if usage, ok := openAIResp["usage"].(map[string]interface{}); ok {
+        if pt, ok := usage["prompt_tokens"].(float64); ok {
+            promptTokens = int(pt)
+        }
+        if ct, ok := usage["completion_tokens"].(float64); ok {
+            completionTokens = int(ct)
+        }
+        if tt, ok := usage["total_tokens"].(float64); ok {
+            totalTokens = int(tt)
+        }
+    }
 
-    // Log API call for analytics
-    logAPICall(deviceID, "chatgpt", req.Model)
+    log.Printf("✅ ChatGPT request successful, response length: %d, tokens: %d prompt + %d completion = %d total",
+        len(content), promptTokens, completionTokens, totalTokens)
+
+    // Log API call with token usage for analytics
+    logAPICallWithTokens(deviceID, "chatgpt", req.Model, promptTokens, completionTokens, totalTokens)
 
     // Return success response
     json.NewEncoder(w).Encode(ChatGPTProxyResponse{
@@ -3553,6 +3663,115 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
     var totalEvents int
     analyticsDB.QueryRow(`SELECT COUNT(*) FROM analytics_events`).Scan(&totalEvents)
 
+    // ============================================================
+    // TOKEN USAGE STATISTICS (for cost analysis)
+    // ============================================================
+
+    // Token totals this month
+    var monthlyPromptTokens, monthlyCompletionTokens, monthlyTotalTokens int64
+    analyticsDB.QueryRow(`
+        SELECT COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0), COALESCE(SUM(total_tokens), 0)
+        FROM api_calls WHERE call_type = 'chatgpt' AND strftime('%Y-%m', created_at) = ?
+    `, currentMonth).Scan(&monthlyPromptTokens, &monthlyCompletionTokens, &monthlyTotalTokens)
+
+    // Token totals this year
+    var yearlyPromptTokens, yearlyCompletionTokens, yearlyTotalTokens int64
+    analyticsDB.QueryRow(`
+        SELECT COALESCE(SUM(prompt_tokens), 0), COALESCE(SUM(completion_tokens), 0), COALESCE(SUM(total_tokens), 0)
+        FROM api_calls WHERE call_type = 'chatgpt' AND strftime('%Y', created_at) = ?
+    `, currentYear).Scan(&yearlyPromptTokens, &yearlyCompletionTokens, &yearlyTotalTokens)
+
+    // Token usage by model (this month)
+    tokenModelRows, err := analyticsDB.Query(`
+        SELECT model,
+               COUNT(*) as calls,
+               COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+               COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+               COALESCE(SUM(total_tokens), 0) as total_tokens
+        FROM api_calls
+        WHERE call_type = 'chatgpt' AND model IS NOT NULL AND model != ''
+          AND strftime('%Y-%m', created_at) = ?
+        GROUP BY model
+        ORDER BY total_tokens DESC
+    `, currentMonth)
+
+    var tokenByModel []map[string]interface{}
+    if err == nil {
+        defer tokenModelRows.Close()
+        for tokenModelRows.Next() {
+            var model string
+            var calls int
+            var promptToks, completionToks, totalToks int64
+            if err := tokenModelRows.Scan(&model, &calls, &promptToks, &completionToks, &totalToks); err == nil {
+                // Calculate estimated cost based on model pricing (as of 2024)
+                var estimatedCost float64
+                switch model {
+                case "gpt-4o":
+                    estimatedCost = (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+                case "gpt-4o-mini":
+                    estimatedCost = (float64(promptToks) * 0.15 / 1000000) + (float64(completionToks) * 0.60 / 1000000)
+                case "o1":
+                    estimatedCost = (float64(promptToks) * 15.00 / 1000000) + (float64(completionToks) * 60.00 / 1000000)
+                case "o1-mini":
+                    estimatedCost = (float64(promptToks) * 1.10 / 1000000) + (float64(completionToks) * 4.40 / 1000000)
+                default:
+                    // Default to gpt-4o pricing
+                    estimatedCost = (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+                }
+
+                tokenByModel = append(tokenByModel, map[string]interface{}{
+                    "model":             model,
+                    "calls":             calls,
+                    "prompt_tokens":     promptToks,
+                    "completion_tokens": completionToks,
+                    "total_tokens":      totalToks,
+                    "estimated_cost":    fmt.Sprintf("$%.4f", estimatedCost),
+                })
+            }
+        }
+    }
+
+    // Daily token usage for last 7 days
+    dailyTokenRows, err := analyticsDB.Query(`
+        SELECT date(created_at) as day,
+               COUNT(*) as calls,
+               COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
+               COALESCE(SUM(completion_tokens), 0) as completion_tokens,
+               COALESCE(SUM(total_tokens), 0) as total_tokens
+        FROM api_calls
+        WHERE call_type = 'chatgpt' AND created_at >= date('now', '-7 days')
+        GROUP BY day
+        ORDER BY day DESC
+    `)
+
+    var dailyTokens []map[string]interface{}
+    if err == nil {
+        defer dailyTokenRows.Close()
+        for dailyTokenRows.Next() {
+            var day string
+            var calls int
+            var promptToks, completionToks, totalToks int64
+            if err := dailyTokenRows.Scan(&day, &calls, &promptToks, &completionToks, &totalToks); err == nil {
+                dailyTokens = append(dailyTokens, map[string]interface{}{
+                    "date":              day,
+                    "calls":             calls,
+                    "prompt_tokens":     promptToks,
+                    "completion_tokens": completionToks,
+                    "total_tokens":      totalToks,
+                })
+            }
+        }
+    }
+
+    // Database size info
+    var dbPageCount, dbPageSize int
+    analyticsDB.QueryRow(`SELECT page_count, page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&dbPageCount, &dbPageSize)
+    dbSizeBytes := dbPageCount * dbPageSize
+
+    // Count of aggregated monthly records
+    var monthlyAggregateCount int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls_monthly`).Scan(&monthlyAggregateCount)
+
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success": true,
         "current_period": map[string]interface{}{
@@ -3604,6 +3823,26 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
             "event_types":    eventTypes,
             "top_events":     topEvents,
             "platforms":      platforms,
+        },
+        "token_usage": map[string]interface{}{
+            "monthly": map[string]interface{}{
+                "prompt_tokens":     monthlyPromptTokens,
+                "completion_tokens": monthlyCompletionTokens,
+                "total_tokens":      monthlyTotalTokens,
+            },
+            "yearly": map[string]interface{}{
+                "prompt_tokens":     yearlyPromptTokens,
+                "completion_tokens": yearlyCompletionTokens,
+                "total_tokens":      yearlyTotalTokens,
+            },
+            "by_model":    tokenByModel,
+            "daily_usage": dailyTokens,
+        },
+        "database": map[string]interface{}{
+            "size_bytes":              dbSizeBytes,
+            "size_mb":                 fmt.Sprintf("%.2f", float64(dbSizeBytes)/1024/1024),
+            "monthly_aggregate_count": monthlyAggregateCount,
+            "retention_months":        12,
         },
     })
 }
@@ -3935,6 +4174,201 @@ func adminModelUsageByUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Admin endpoint to run analytics cleanup/aggregation manually
+func adminAnalyticsCleanup(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+    retentionStr := r.URL.Query().Get("retention_months")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    if analyticsDB == nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Analytics database not initialized",
+        })
+        return
+    }
+
+    // Default to 12 months retention
+    retentionMonths := 12
+    if retentionStr != "" {
+        if months, err := strconv.Atoi(retentionStr); err == nil && months > 0 {
+            retentionMonths = months
+        }
+    }
+
+    // Get stats before cleanup
+    var beforeCount int
+    var beforeSizeBytes int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls`).Scan(&beforeCount)
+    analyticsDB.QueryRow(`SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&beforeSizeBytes)
+
+    // Run cleanup
+    cleanupOldAnalyticsData(retentionMonths)
+
+    // Get stats after cleanup
+    var afterCount int
+    var afterSizeBytes int
+    var aggregateCount int
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls`).Scan(&afterCount)
+    analyticsDB.QueryRow(`SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()`).Scan(&afterSizeBytes)
+    analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls_monthly`).Scan(&aggregateCount)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":          true,
+        "retention_months": retentionMonths,
+        "before": map[string]interface{}{
+            "record_count": beforeCount,
+            "size_mb":      fmt.Sprintf("%.2f", float64(beforeSizeBytes)/1024/1024),
+        },
+        "after": map[string]interface{}{
+            "record_count":    afterCount,
+            "size_mb":         fmt.Sprintf("%.2f", float64(afterSizeBytes)/1024/1024),
+            "aggregate_count": aggregateCount,
+        },
+        "records_removed": beforeCount - afterCount,
+    })
+}
+
+// Admin endpoint to view historical aggregated data
+func adminGetHistoricalData(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Unauthorized",
+        })
+        return
+    }
+
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Invalid admin secret",
+        })
+        return
+    }
+
+    if analyticsDB == nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Analytics database not initialized",
+        })
+        return
+    }
+
+    // Get aggregated historical data
+    rows, err := analyticsDB.Query(`
+        SELECT year_month, call_type, model,
+               SUM(total_calls) as calls,
+               SUM(total_prompt_tokens) as prompt_tokens,
+               SUM(total_completion_tokens) as completion_tokens,
+               SUM(total_tokens) as total_tokens
+        FROM api_calls_monthly
+        GROUP BY year_month, call_type, model
+        ORDER BY year_month DESC, call_type, model
+    `)
+
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Database query error",
+        })
+        return
+    }
+    defer rows.Close()
+
+    var data []map[string]interface{}
+    for rows.Next() {
+        var yearMonth, callType string
+        var model sql.NullString
+        var calls int
+        var promptTokens, completionTokens, totalTokens int64
+
+        if err := rows.Scan(&yearMonth, &callType, &model, &calls, &promptTokens, &completionTokens, &totalTokens); err == nil {
+            entry := map[string]interface{}{
+                "year_month":        yearMonth,
+                "call_type":         callType,
+                "calls":             calls,
+                "prompt_tokens":     promptTokens,
+                "completion_tokens": completionTokens,
+                "total_tokens":      totalTokens,
+            }
+            if model.Valid {
+                entry["model"] = model.String
+            } else {
+                entry["model"] = ""
+            }
+            data = append(data, entry)
+        }
+    }
+
+    // Summary by month
+    summaryRows, err := analyticsDB.Query(`
+        SELECT year_month,
+               SUM(total_calls) as calls,
+               SUM(total_prompt_tokens) as prompt_tokens,
+               SUM(total_completion_tokens) as completion_tokens,
+               SUM(total_tokens) as total_tokens,
+               COUNT(DISTINCT device_id) as unique_users
+        FROM api_calls_monthly
+        GROUP BY year_month
+        ORDER BY year_month DESC
+    `)
+
+    var monthlySummary []map[string]interface{}
+    if err == nil {
+        defer summaryRows.Close()
+        for summaryRows.Next() {
+            var yearMonth string
+            var calls, uniqueUsers int
+            var promptTokens, completionTokens, totalTokens int64
+
+            if err := summaryRows.Scan(&yearMonth, &calls, &promptTokens, &completionTokens, &totalTokens, &uniqueUsers); err == nil {
+                monthlySummary = append(monthlySummary, map[string]interface{}{
+                    "year_month":        yearMonth,
+                    "total_calls":       calls,
+                    "unique_users":      uniqueUsers,
+                    "prompt_tokens":     promptTokens,
+                    "completion_tokens": completionTokens,
+                    "total_tokens":      totalTokens,
+                })
+            }
+        }
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":         true,
+        "data":            data,
+        "monthly_summary": monthlySummary,
+    })
+}
+
 // Admin endpoint to download the main database (requires 2FA verification code)
 func adminDownloadDB(w http.ResponseWriter, r *http.Request) {
     // Get admin credentials from query params
@@ -4070,6 +4504,8 @@ func main() {
     router.HandleFunc("/api/admin/toggle-super", adminToggleSuper).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGetAnalytics).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGetUserCalls).Methods("GET")
+    router.HandleFunc("/api/admin/analytics-cleanup", adminAnalyticsCleanup).Methods("POST")
+    router.HandleFunc("/api/admin/historical-data", adminGetHistoricalData).Methods("GET")
     router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
     router.HandleFunc("/api/admin/model-usage-by-user", adminModelUsageByUser).Methods("GET")
 
@@ -4084,8 +4520,10 @@ func main() {
     log.Println("  [ADMIN]     POST /api/admin/grant-subscription - Grant subscription (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
     log.Println("  [ADMIN]     POST /api/admin/toggle-super - Toggle super tier (admin only)")
-    log.Println("  [ADMIN]     GET  /api/admin/analytics - Get usage analytics (admin only)")
+    log.Println("  [ADMIN]     GET  /api/admin/analytics - Get usage analytics with token stats (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/user-calls - Get user API call history (admin only)")
+    log.Println("  [ADMIN]     POST /api/admin/analytics-cleanup - Run retention cleanup (admin only)")
+    log.Println("  [ADMIN]     GET  /api/admin/historical-data - Get aggregated historical data (admin only)")
     log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
