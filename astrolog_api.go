@@ -3744,6 +3744,197 @@ func adminGetUserCalls(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Admin endpoint to get aggregated model usage per user
+func adminModelUsageByUser(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	adminEmail := r.URL.Query().Get("admin_email")
+	adminSecret := r.URL.Query().Get("admin_secret")
+
+	if !isAdminEmail(adminEmail) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Unauthorized",
+		})
+		return
+	}
+
+	if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Invalid admin secret",
+		})
+		return
+	}
+
+	if analyticsDB == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Analytics database not initialized",
+		})
+		return
+	}
+
+	// Step 1: Build email -> set of device_ids mapping from both users table and login_history
+	emailDevices := make(map[string]map[string]bool)
+	emailInfo := make(map[string]map[string]interface{})
+
+	userRows, err := db.Query(`SELECT email, subscription_type, is_super, current_device_id FROM users`)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to query users",
+		})
+		return
+	}
+	defer userRows.Close()
+
+	for userRows.Next() {
+		var email, subType string
+		var isSuper int
+		var deviceId sql.NullString
+		if err := userRows.Scan(&email, &subType, &isSuper, &deviceId); err == nil {
+			if _, ok := emailDevices[email]; !ok {
+				emailDevices[email] = make(map[string]bool)
+			}
+			if deviceId.Valid && deviceId.String != "" {
+				emailDevices[email][deviceId.String] = true
+			}
+			emailInfo[email] = map[string]interface{}{
+				"subscription_type": subType,
+				"is_super":          isSuper == 1,
+			}
+		}
+	}
+
+	// Also gather device_ids from login_history
+	loginRows, err := db.Query(`SELECT DISTINCT email, device_id FROM login_history WHERE device_id IS NOT NULL AND device_id != ''`)
+	if err == nil {
+		defer loginRows.Close()
+		for loginRows.Next() {
+			var email, deviceId string
+			if err := loginRows.Scan(&email, &deviceId); err == nil {
+				if _, ok := emailDevices[email]; !ok {
+					emailDevices[email] = make(map[string]bool)
+				}
+				emailDevices[email][deviceId] = true
+			}
+		}
+	}
+
+	// Build reverse mapping: device_id -> emails
+	deviceToEmails := make(map[string][]string)
+	for email, devices := range emailDevices {
+		for deviceId := range devices {
+			deviceToEmails[deviceId] = append(deviceToEmails[deviceId], email)
+		}
+	}
+
+	// Step 2: Get all api_calls grouped by device_id and model
+	allModels := make(map[string]bool)
+	emailModelCounts := make(map[string]map[string]int)
+	emailTotals := make(map[string]int)
+	globalModelTotals := make(map[string]int)
+
+	callRows, err := analyticsDB.Query(`
+		SELECT device_id, COALESCE(model, 'unknown') as model, COUNT(*) as cnt
+		FROM api_calls
+		GROUP BY device_id, model
+	`)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Failed to query api calls",
+		})
+		return
+	}
+	defer callRows.Close()
+
+	for callRows.Next() {
+		var deviceId, model string
+		var cnt int
+		if err := callRows.Scan(&deviceId, &model, &cnt); err == nil {
+			allModels[model] = true
+			globalModelTotals[model] += cnt
+
+			// Attribute to all emails associated with this device
+			emails := deviceToEmails[deviceId]
+			for _, email := range emails {
+				if _, ok := emailModelCounts[email]; !ok {
+					emailModelCounts[email] = make(map[string]int)
+				}
+				emailModelCounts[email][model] += cnt
+				emailTotals[email] += cnt
+			}
+		}
+	}
+
+	// Step 3: Build sorted result
+	type userUsage struct {
+		Email   string
+		Type    string
+		IsSuper bool
+		Models  map[string]int
+		Total   int
+	}
+
+	var userUsages []userUsage
+	for email, models := range emailModelCounts {
+		subType := "free"
+		isSuper := false
+		if info, ok := emailInfo[email]; ok {
+			if st, ok := info["subscription_type"].(string); ok {
+				subType = st
+			}
+			if is, ok := info["is_super"].(bool); ok {
+				isSuper = is
+			}
+		}
+		userUsages = append(userUsages, userUsage{
+			Email:   email,
+			Type:    subType,
+			IsSuper: isSuper,
+			Models:  models,
+			Total:   emailTotals[email],
+		})
+	}
+
+	sort.Slice(userUsages, func(i, j int) bool {
+		return userUsages[i].Total > userUsages[j].Total
+	})
+
+	// Build model list sorted by global usage descending
+	modelList := make([]string, 0, len(allModels))
+	for m := range allModels {
+		modelList = append(modelList, m)
+	}
+	sort.Slice(modelList, func(i, j int) bool {
+		return globalModelTotals[modelList[i]] > globalModelTotals[modelList[j]]
+	})
+
+	// Build response
+	usersResult := make([]map[string]interface{}, len(userUsages))
+	for i, u := range userUsages {
+		usersResult[i] = map[string]interface{}{
+			"email":    u.Email,
+			"type":     u.Type,
+			"is_super": u.IsSuper,
+			"models":   u.Models,
+			"total":    u.Total,
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"users":        usersResult,
+		"models":       modelList,
+		"model_totals": globalModelTotals,
+		"total_users":  len(userUsages),
+	})
+}
+
 // Admin endpoint to download the main database (requires 2FA verification code)
 func adminDownloadDB(w http.ResponseWriter, r *http.Request) {
     // Get admin credentials from query params
@@ -3880,6 +4071,7 @@ func main() {
     router.HandleFunc("/api/admin/analytics", adminGetAnalytics).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGetUserCalls).Methods("GET")
     router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
+    router.HandleFunc("/api/admin/model-usage-by-user", adminModelUsageByUser).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
