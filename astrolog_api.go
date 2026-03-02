@@ -216,6 +216,17 @@ type AdminGrantSubscriptionRequest struct {
     VerificationCode   string `json:"verification_code"`   // 6-digit code sent to admin email
 }
 
+// Bot grant subscription request (no 2FA - authenticated via BOT_API_SECRET)
+type BotGrantSubscriptionRequest struct {
+    BotSecret          string `json:"bot_secret"`
+    Email              string `json:"email"`
+    SubscriptionType   string `json:"subscription_type"`   // "paid" or "free"
+    SubscriptionLength string `json:"subscription_length"` // "monthly", "yearly", "lifetime"
+    DurationDays       int    `json:"duration_days"`
+    TransactionID      string `json:"transaction_id"`
+    PaymentMethod      string `json:"payment_method"` // "yookassa", "stars", "crypto"
+}
+
 // Admin code request (step 1)
 type AdminRequestCodeRequest struct {
     AdminEmail  string `json:"admin_email"`
@@ -243,6 +254,10 @@ var ADMIN_EMAILS = []string{
 // Admin secret key (REQUIRED - set via environment variable)
 // Generate with: openssl rand -hex 32
 var ADMIN_SECRET_KEY = getEnv("ADMIN_SECRET_KEY", "")
+
+// Bot API secret key - used by Telegram bot to grant subscriptions without 2FA
+// Generate with: openssl rand -hex 32
+var BOT_API_SECRET = getEnv("BOT_API_SECRET", "")
 
 // Device rate limiter
 type DeviceLimiter struct {
@@ -3231,6 +3246,136 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Bot endpoint: check if email exists in users table (no 2FA, uses BOT_API_SECRET)
+func botCheckEmail(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    botSecret := r.URL.Query().Get("bot_secret")
+    email := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("email")))
+
+    if BOT_API_SECRET == "" || botSecret != BOT_API_SECRET {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+
+    if email == "" || !isValidEmail(email) {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid email"})
+        return
+    }
+
+    var id int
+    err := db.QueryRow(`SELECT id FROM users WHERE email = ?`, email).Scan(&id)
+    if err == sql.ErrNoRows {
+        w.WriteHeader(http.StatusNotFound)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Email not found"})
+        return
+    } else if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+        return
+    }
+
+    log.Printf("✅ [botCheckEmail] Email found: %s", email)
+    json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "email": email})
+}
+
+// Bot endpoint: grant subscription (no 2FA, authenticated via BOT_API_SECRET)
+func botGrantSubscription(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    log.Println("🤖 [botGrantSubscription] Received request")
+
+    var req BotGrantSubscriptionRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid request format"})
+        return
+    }
+
+    if BOT_API_SECRET == "" || req.BotSecret != BOT_API_SECRET {
+        log.Println("❌ [botGrantSubscription] Invalid bot secret")
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+
+    targetEmail := strings.ToLower(strings.TrimSpace(req.Email))
+    if targetEmail == "" || !isValidEmail(targetEmail) {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid email"})
+        return
+    }
+
+    if req.SubscriptionType != "free" && req.SubscriptionType != "paid" {
+        req.SubscriptionType = "paid"
+    }
+    if req.SubscriptionLength != "monthly" && req.SubscriptionLength != "yearly" && req.SubscriptionLength != "lifetime" {
+        req.SubscriptionLength = "monthly"
+    }
+
+    var subscriptionExpiry *time.Time
+    if req.DurationDays > 0 {
+        expiry := time.Now().AddDate(0, 0, req.DurationDays)
+        subscriptionExpiry = &expiry
+    } else if req.SubscriptionLength == "lifetime" {
+        expiry := time.Now().AddDate(100, 0, 0)
+        subscriptionExpiry = &expiry
+    } else if req.SubscriptionLength == "yearly" {
+        expiry := time.Now().AddDate(1, 0, 0)
+        subscriptionExpiry = &expiry
+    } else {
+        expiry := time.Now().AddDate(0, 1, 0)
+        subscriptionExpiry = &expiry
+    }
+
+    var existingID int
+    err := db.QueryRow(`SELECT id FROM users WHERE email = ?`, targetEmail).Scan(&existingID)
+    if err == sql.ErrNoRows {
+        log.Printf("🔵 [botGrantSubscription] Creating new user record for %s", targetEmail)
+        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry) VALUES (?, ?, ?, ?)`,
+            targetEmail, req.SubscriptionType, req.SubscriptionLength, subscriptionExpiry)
+        if err != nil {
+            log.Printf("❌ [botGrantSubscription] Failed to create user: %v", err)
+            w.WriteHeader(http.StatusInternalServerError)
+            json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to create user record"})
+            return
+        }
+    } else if err != nil {
+        log.Printf("❌ [botGrantSubscription] Database error: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+        return
+    } else {
+        log.Printf("🔵 [botGrantSubscription] Updating existing user %s", targetEmail)
+        _, err = db.Exec(`UPDATE users SET subscription_type = ?, subscription_length = ?, subscription_expiry = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+            req.SubscriptionType, req.SubscriptionLength, subscriptionExpiry, targetEmail)
+        if err != nil {
+            log.Printf("❌ [botGrantSubscription] Failed to update user: %v", err)
+            w.WriteHeader(http.StatusInternalServerError)
+            json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to update subscription"})
+            return
+        }
+    }
+
+    expiryStr := "never"
+    if subscriptionExpiry != nil {
+        expiryStr = subscriptionExpiry.Format("2006-01-02")
+    }
+
+    log.Printf("✅ [botGrantSubscription] Granted %s %s to %s via %s (expires: %s, txn: %s)",
+        req.SubscriptionLength, req.SubscriptionType, targetEmail, req.PaymentMethod, expiryStr, req.TransactionID)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":             true,
+        "message":             fmt.Sprintf("Subscription granted to %s", targetEmail),
+        "email":               targetEmail,
+        "subscription_type":   req.SubscriptionType,
+        "subscription_length": req.SubscriptionLength,
+        "subscription_expiry": expiryStr,
+    })
+}
+
 // Admin endpoint to list all users with subscriptions
 func adminListUsers(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -5352,6 +5497,10 @@ func main() {
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
 
+    // Bot endpoints (BOT_API_SECRET required - no 2FA)
+    router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
+    router.HandleFunc("/api/bot/grant-subscription", botGrantSubscription).Methods("POST")
+
     // Admin endpoints (admin email + secret + verification code required)
     router.HandleFunc("/api/admin/request-code", adminRequestCode).Methods("POST")
     router.HandleFunc("/api/admin/grant-subscription", adminGrantSubscription).Methods("POST")
@@ -5373,6 +5522,8 @@ func main() {
     log.Println("  [PUBLIC]    POST /api/auth/verify-code - Verify code and get tokens")
     log.Println("  [ANALYTICS] POST /api/analytics/event - Track single analytics event")
     log.Println("  [ANALYTICS] POST /api/analytics/events - Track batch analytics events")
+    log.Println("  [BOT]       GET  /api/bot/check-email - Check if email exists (BOT_API_SECRET)")
+    log.Println("  [BOT]       POST /api/bot/grant-subscription - Grant subscription from bot (BOT_API_SECRET)")
     log.Println("  [ADMIN]     POST /api/admin/request-code - Request admin verification code")
     log.Println("  [ADMIN]     POST /api/admin/grant-subscription - Grant subscription (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/users - List users (admin only)")
