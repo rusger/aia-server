@@ -2702,6 +2702,21 @@ func requestAuthCode(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Apple Review test account — fixed code, no email sent
+    if email == "astrolytix.tester2@gmail.com" {
+        code := "000000"
+        expiresAt := time.Now().Add(AUTH_CODE_EXP)
+        db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND used = 0`, email)
+        db.Exec(`INSERT INTO auth_codes (email, code, device_id, expires_at) VALUES (?, ?, ?, ?)`,
+            email, code, req.DeviceID, expiresAt)
+        log.Printf("✅ Apple Review test account — code %s stored for %s", code, email)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: true,
+            Message: "Verification code sent to your email",
+        })
+        return
+    }
+
     // Generate 6-digit code
     code := generateAuthCode()
     expiresAt := time.Now().Add(AUTH_CODE_EXP)
