@@ -2460,6 +2460,88 @@ func getPurchaseHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // ============================================================================
+// GDPR: DELETE USER DATA
+// ============================================================================
+
+// Delete all user data (GDPR Right to Erasure)
+func deleteUserData(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get claims from JWT middleware
+	claims, ok := r.Context().Value("claims").(*JWTClaims)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Unauthorized",
+		})
+		return
+	}
+
+	email := claims.Email
+	deviceID := claims.DeviceID
+
+	log.Printf("[GDPR] Data deletion requested for email=%s, device_id=%s", email, deviceID)
+
+	// Delete from main database (keep purchase_history for tax/legal compliance)
+	deletions := []struct {
+		table string
+		query string
+		args  []interface{}
+	}{
+		{"auth_codes", "DELETE FROM auth_codes WHERE email = ?", []interface{}{email}},
+		{"login_history", "DELETE FROM login_history WHERE email = ?", []interface{}{email}},
+		{"users", "DELETE FROM users WHERE email = ?", []interface{}{email}},
+	}
+
+	deletedTables := []string{}
+	for _, d := range deletions {
+		result, err := db.Exec(d.query, d.args...)
+		if err != nil {
+			log.Printf("[GDPR] Error deleting from %s: %v", d.table, err)
+			continue
+		}
+		rows, _ := result.RowsAffected()
+		if rows > 0 {
+			deletedTables = append(deletedTables, d.table)
+		}
+		log.Printf("[GDPR] Deleted %d rows from %s", rows, d.table)
+	}
+
+	// Delete from analytics database
+	analyticsDeletions := []struct {
+		table string
+		query string
+		args  []interface{}
+	}{
+		{"api_calls", "DELETE FROM api_calls WHERE device_id = ?", []interface{}{deviceID}},
+		{"api_calls_monthly", "DELETE FROM api_calls_monthly WHERE device_id = ?", []interface{}{deviceID}},
+		{"analytics_events", "DELETE FROM analytics_events WHERE device_id = ?", []interface{}{deviceID}},
+	}
+
+	for _, d := range analyticsDeletions {
+		result, err := analyticsDB.Exec(d.query, d.args...)
+		if err != nil {
+			log.Printf("[GDPR] Error deleting from analytics.%s: %v", d.table, err)
+			continue
+		}
+		rows, _ := result.RowsAffected()
+		if rows > 0 {
+			deletedTables = append(deletedTables, "analytics."+d.table)
+		}
+		log.Printf("[GDPR] Deleted %d rows from analytics.%s", rows, d.table)
+	}
+
+	log.Printf("[GDPR] Data deletion complete for %s. Affected tables: %v", email, deletedTables)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":        true,
+		"message":        "All personal data has been deleted",
+		"deleted_tables": deletedTables,
+	})
+}
+
+// ============================================================================
 // EMAIL AUTHENTICATION
 // ============================================================================
 
@@ -5511,6 +5593,7 @@ func main() {
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
+    router.HandleFunc("/api/user/data", jwtAuthMiddleware(deleteUserData)).Methods("DELETE")
 
     // Bot endpoints (BOT_API_SECRET required - no 2FA)
     router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
