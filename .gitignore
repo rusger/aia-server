@@ -13,6 +13,8 @@ jwt_secret.key
 
 # Environment
 .env
+.env.backup
+.env.*
 
 # IDE
 .vscode/
