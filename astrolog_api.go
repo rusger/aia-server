@@ -1183,10 +1183,14 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     }
 
     // Process output (apply sed filters)
+    // The Midh (Midheaven) line is intentionally KEPT — clients use it as
+    // the natal MC longitude for the T2.1 natal-aspect notification
+    // detector. Older clients that don't recognise the row simply ignore
+    // it (their parser regex enumerates allowed planet keys).
     lines := strings.Split(string(output), "\n")
     var filtered []string
     for _, line := range lines {
-        if !strings.Contains(line, "Midh") && !strings.HasPrefix(line, "House cusp") {
+        if !strings.HasPrefix(line, "House cusp") {
             filtered = append(filtered, line)
         }
     }
@@ -1372,11 +1376,12 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
                     continue
                 }
 
-                // Filter output
+                // Filter output (mirrors the single-chart endpoint — Midh
+                // is kept for parity, House cusp lines are still dropped).
                 lines := strings.Split(string(output), "\n")
                 var filtered []string
                 for _, line := range lines {
-                    if !strings.Contains(line, "Midh") && !strings.HasPrefix(line, "House cusp") {
+                    if !strings.HasPrefix(line, "House cusp") {
                         filtered = append(filtered, line)
                     }
                 }
