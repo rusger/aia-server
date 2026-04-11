@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["LUY77SVN7G.com.astrolytix.app"],
+        "components": [
+          {
+            "/": "/i/*",
+            "comment": "Partner invite deep links (T2.B)"
+          }
+        ]
+      }
+    ]
+  }
+}
