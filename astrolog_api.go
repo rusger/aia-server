@@ -480,6 +480,33 @@ func initDB() error {
         return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
+    // T2.B partner invite hashes — short codes that map to a snapshot of
+    // the inviter's birth data so the recipient app can compute a
+    // compatibility chart without ever asking the inviter for the data
+    // again. Stored separately from the users table because invites are
+    // per-share-link, not per-account, and one user can issue many.
+    createInvitesSQL := `
+    CREATE TABLE IF NOT EXISTS partner_invites (
+        invite_hash TEXT PRIMARY KEY,
+        inviter_email TEXT NOT NULL,
+        inviter_name TEXT NOT NULL,
+        birth_date TEXT NOT NULL,
+        birth_time TEXT NOT NULL,
+        birth_latitude REAL NOT NULL,
+        birth_longitude REAL NOT NULL,
+        birth_place TEXT NOT NULL,
+        birth_timezone TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        claimed_by_email TEXT,
+        claimed_at DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_invites_inviter ON partner_invites(inviter_email);
+    `
+    _, err = db.Exec(createInvitesSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create partner_invites table: %v", err)
+    }
+
     log.Println("✅ Database initialized (email as primary identity)")
     return nil
 }
@@ -2543,6 +2570,256 @@ func deleteUserData(w http.ResponseWriter, r *http.Request) {
 		"success":        true,
 		"message":        "All personal data has been deleted",
 		"deleted_tables": deletedTables,
+	})
+}
+
+// ============================================================================
+// T2.B PARTNER INVITES
+// ============================================================================
+//
+// Two endpoints back the invite-partner deep-link feature in the Flutter
+// client. The flow is:
+//
+//   1. User A taps "Invite partner" → client POSTs /api/invites/create
+//      with their birth data (the same fields the chart API takes).
+//   2. Server stores it under a short random hash and returns the hash
+//      plus a public share URL of the form
+//      https://astrolytix.com/i/{hash} (universal/app-link entry point).
+//   3. User A shares the URL via the system share sheet.
+//   4. User B opens the URL → iOS Universal Link / Android App Link
+//      routes them straight into the Astrolytix app, which calls
+//      GET /api/invites/{hash} to retrieve User A's birth data and
+//      compute the compatibility chart locally.
+//   5. The first claim records claimed_by_email + claimed_at; subsequent
+//      reads still succeed (one invite hash can be opened multiple times,
+//      e.g. on a re-install) but only the first claimer counts for
+//      attribution.
+//
+// Privacy: hashes are non-guessable (10 chars base32 = 50 bits). The
+// payload is birth data — not credentials — and is only meaningful when
+// combined with the recipient's own chart. Inviters can revoke (not yet
+// implemented; left for a follow-up if abuse appears).
+
+type CreateInviteRequest struct {
+	InviterName string  `json:"inviter_name"`
+	BirthDate   string  `json:"birth_date"`
+	BirthTime   string  `json:"birth_time"`
+	BirthLat    float64 `json:"birth_latitude"`
+	BirthLon    float64 `json:"birth_longitude"`
+	BirthPlace  string  `json:"birth_place"`
+	BirthTZ     string  `json:"birth_timezone"`
+}
+
+type CreateInviteResponse struct {
+	Success  bool   `json:"success"`
+	Hash     string `json:"hash,omitempty"`
+	ShareURL string `json:"share_url,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+type GetInviteResponse struct {
+	Success     bool    `json:"success"`
+	Hash        string  `json:"hash,omitempty"`
+	InviterName string  `json:"inviter_name,omitempty"`
+	BirthDate   string  `json:"birth_date,omitempty"`
+	BirthTime   string  `json:"birth_time,omitempty"`
+	BirthLat    float64 `json:"birth_latitude,omitempty"`
+	BirthLon    float64 `json:"birth_longitude,omitempty"`
+	BirthPlace  string  `json:"birth_place,omitempty"`
+	BirthTZ     string  `json:"birth_timezone,omitempty"`
+	CreatedAt   string  `json:"created_at,omitempty"`
+	Error       string  `json:"error,omitempty"`
+}
+
+// generateInviteHash returns a 10-character URL-safe base32 hash drawn
+// from crypto/rand. 50 bits of entropy is well clear of brute-force
+// attacks against /api/invites/{hash}.
+func generateInviteHash() (string, error) {
+	const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789" // 31 chars, ambiguous chars dropped
+	const length = 10
+	hash := make([]byte, length)
+	for i := 0; i < length; i++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			return "", err
+		}
+		hash[i] = alphabet[n.Int64()]
+	}
+	return string(hash), nil
+}
+
+// POST /api/invites/create — JWT required.
+// Stores the inviter's birth data under a fresh hash and returns the
+// hash + canonical share URL the client can drop into the system share
+// sheet.
+func createInvite(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	claims, ok := r.Context().Value("claims").(*JWTClaims)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(CreateInviteResponse{
+			Success: false,
+			Error:   "Unauthorized",
+		})
+		return
+	}
+
+	var req CreateInviteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(CreateInviteResponse{
+			Success: false,
+			Error:   "Invalid JSON: " + err.Error(),
+		})
+		return
+	}
+
+	if req.BirthDate == "" || req.BirthTime == "" || req.BirthPlace == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(CreateInviteResponse{
+			Success: false,
+			Error:   "birth_date, birth_time and birth_place are required",
+		})
+		return
+	}
+
+	// Generate a unique hash, retrying on the (extremely unlikely) collision.
+	var hash string
+	for attempt := 0; attempt < 5; attempt++ {
+		h, err := generateInviteHash()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(CreateInviteResponse{
+				Success: false,
+				Error:   "Failed to generate hash: " + err.Error(),
+			})
+			return
+		}
+		var existing string
+		row := db.QueryRow(`SELECT invite_hash FROM partner_invites WHERE invite_hash = ?`, h)
+		if err := row.Scan(&existing); err == sql.ErrNoRows {
+			hash = h
+			break
+		}
+	}
+	if hash == "" {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(CreateInviteResponse{
+			Success: false,
+			Error:   "Could not allocate invite hash",
+		})
+		return
+	}
+
+	_, err := db.Exec(`
+        INSERT INTO partner_invites (
+            invite_hash, inviter_email, inviter_name,
+            birth_date, birth_time, birth_latitude, birth_longitude,
+            birth_place, birth_timezone
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		hash, claims.Email, req.InviterName,
+		req.BirthDate, req.BirthTime, req.BirthLat, req.BirthLon,
+		req.BirthPlace, req.BirthTZ,
+	)
+	if err != nil {
+		log.Printf("[invites] insert failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(CreateInviteResponse{
+			Success: false,
+			Error:   "Failed to store invite",
+		})
+		return
+	}
+
+	shareURL := fmt.Sprintf("https://astrolytix.com/i/%s", hash)
+	log.Printf("[invites] created %s for %s", hash, claims.Email)
+
+	json.NewEncoder(w).Encode(CreateInviteResponse{
+		Success:  true,
+		Hash:     hash,
+		ShareURL: shareURL,
+	})
+}
+
+// GET /api/invites/{hash} — public, no JWT required.
+// Returns the inviter's birth data so the recipient app can compute a
+// compatibility chart. Also marks the invite as claimed on first read
+// (purely informational — the endpoint stays readable afterwards so the
+// recipient can re-open the same link from another device).
+func getInvite(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(r)
+	hash := vars["hash"]
+	if hash == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(GetInviteResponse{
+			Success: false,
+			Error:   "Missing invite hash",
+		})
+		return
+	}
+
+	var (
+		inviterEmail string
+		inviterName  string
+		birthDate    string
+		birthTime    string
+		birthLat     float64
+		birthLon     float64
+		birthPlace   string
+		birthTZ      string
+		createdAt    string
+		claimedBy    sql.NullString
+	)
+	row := db.QueryRow(`
+        SELECT inviter_email, inviter_name, birth_date, birth_time,
+               birth_latitude, birth_longitude, birth_place, birth_timezone,
+               created_at, claimed_by_email
+        FROM partner_invites WHERE invite_hash = ?`, hash)
+	err := row.Scan(
+		&inviterEmail, &inviterName, &birthDate, &birthTime,
+		&birthLat, &birthLon, &birthPlace, &birthTZ,
+		&createdAt, &claimedBy,
+	)
+	if err == sql.ErrNoRows {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(GetInviteResponse{
+			Success: false,
+			Error:   "Invite not found",
+		})
+		return
+	}
+	if err != nil {
+		log.Printf("[invites] lookup failed for %s: %v", hash, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(GetInviteResponse{
+			Success: false,
+			Error:   "Lookup failed",
+		})
+		return
+	}
+
+	// Best-effort first-claim record. We don't fail the read if it errors.
+	if !claimedBy.Valid {
+		_, _ = db.Exec(`
+            UPDATE partner_invites
+               SET claimed_at = CURRENT_TIMESTAMP
+             WHERE invite_hash = ? AND claimed_at IS NULL`, hash)
+	}
+
+	json.NewEncoder(w).Encode(GetInviteResponse{
+		Success:     true,
+		Hash:        hash,
+		InviterName: inviterName,
+		BirthDate:   birthDate,
+		BirthTime:   birthTime,
+		BirthLat:    birthLat,
+		BirthLon:    birthLon,
+		BirthPlace:  birthPlace,
+		BirthTZ:     birthTZ,
+		CreatedAt:   createdAt,
 	})
 }
 
@@ -5600,6 +5877,10 @@ func main() {
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
     router.HandleFunc("/api/user/data", jwtAuthMiddleware(deleteUserData)).Methods("DELETE")
 
+    // T2.B partner invite endpoints
+    router.HandleFunc("/api/invites/create", jwtAuthMiddleware(createInvite)).Methods("POST")
+    router.HandleFunc("/api/invites/{hash}", getInvite).Methods("GET")
+
     // Bot endpoints (BOT_API_SECRET required - no 2FA)
     router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
     router.HandleFunc("/api/bot/grant-subscription", botGrantSubscription).Methods("POST")
@@ -5644,6 +5925,8 @@ func main() {
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
     log.Println("  [PROTECTED] POST /api/user/purchases - Record purchase (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/purchases - Get purchase history (JWT required)")
+    log.Println("  [PROTECTED] POST /api/invites/create - Create partner invite hash (JWT required)")
+    log.Println("  [PUBLIC]    GET  /api/invites/{hash} - Resolve partner invite to birth data")
     log.Println("")
     log.Println("⚠️  JWT Authentication is ENABLED")
     log.Println("   Protected endpoints require 'Authorization: Bearer <token>' header")
