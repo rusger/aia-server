@@ -1,6 +1,12 @@
 # Binaries
 astrolog-api
+astrolog_api
+astrolog_server
+admin_cli
 *.exe
+
+# Local certs
+server.crt
 
 # Database
 users.db

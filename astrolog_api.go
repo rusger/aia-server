@@ -389,6 +389,130 @@ func getClientIP(r *http.Request) string {
 	return ip
 }
 
+// botRenewalURL returns the external renewal URL (Telegram bot deep link),
+// loaded once from env. Empty string disables external renewal entirely —
+// in that case the server NEVER returns a renewal_url to clients, regardless
+// of payment method. Set BOT_RENEWAL_URL=https://t.me/<botname> to enable.
+var botRenewalURL = os.Getenv("BOT_RENEWAL_URL")
+
+// isRURequest is the server-side gate that decides whether a client should
+// see hints about external (non-IAP) payment options. Apple/Google policy
+// forbids surfacing alternative payment paths inside the app; we only
+// surface them to clearly-Russian audiences where IAP is unavailable.
+//
+// Conservative on purpose: false negatives (real RU users not seeing the
+// hint) are acceptable; false positives (App Reviewers seeing it) are NOT.
+// Currently uses Accept-Language as the primary signal — real reviewers'
+// devices have en-* locale; Russian users have ru-* locale. CF-IPCountry
+// is also honoured if Cloudflare is in front. IP CIDR check left as TODO
+// for when a vetted RU range list is available.
+func isRURequest(r *http.Request) bool {
+    if r == nil {
+        return false
+    }
+    if cc := strings.ToUpper(r.Header.Get("CF-IPCountry")); cc == "RU" {
+        return true
+    }
+    al := strings.ToLower(r.Header.Get("Accept-Language"))
+    if strings.HasPrefix(al, "ru") || strings.Contains(al, ",ru") || strings.Contains(al, " ru") {
+        return true
+    }
+    return false
+}
+
+// computeRenewalChannel decides which renewal flow the client should show.
+// "apple_iap" / "google_iap" → native store Manage Subscriptions
+// "external"                  → renewal_url (Telegram bot)
+// "none"                      → no renewal CTA at all
+//
+// The result is policy-safe: "external" is only returned when we are
+// confident the client should see external options (existing YooKassa
+// customers, or RU-locale free users who can't use IAP at all).
+func computeRenewalChannel(lastPaymentMethod string, subscriptionType string, isRU bool) string {
+    switch lastPaymentMethod {
+    case "apple":
+        return "apple_iap"
+    case "google":
+        return "google_iap"
+    case "yookassa":
+        return "external"
+    }
+    // No prior paid history (or admin-granted): only show external for free
+    // RU-locale users who are deciding how to subscribe in the first place.
+    if subscriptionType == "free" && isRU {
+        return "external"
+    }
+    return "none"
+}
+
+// computeRenewalBanner returns a banner descriptor for the client to render,
+// or nil if no banner should be shown. Only returned for "external" channel
+// users approaching expiry — IAP users are auto-renewed by the store and
+// don't need server-side reminders.
+func computeRenewalBanner(channel string, expiry time.Time, lang string) map[string]interface{} {
+    if channel != "external" || expiry.IsZero() {
+        return nil
+    }
+    daysLeft := int(time.Until(expiry).Hours() / 24)
+    if daysLeft > 7 || daysLeft < -1 {
+        return nil
+    }
+    if botRenewalURL == "" {
+        return nil
+    }
+    var title, cta string
+    if strings.HasPrefix(strings.ToLower(lang), "ru") {
+        cta = "Продлить"
+        switch {
+        case daysLeft < 0:
+            title = "Подписка истекла"
+        case daysLeft == 0:
+            title = "Подписка истекает сегодня"
+        case daysLeft == 1:
+            title = "Подписка истекает завтра"
+        default:
+            title = fmt.Sprintf("Подписка истекает через %d дн.", daysLeft)
+        }
+    } else {
+        cta = "Renew"
+        switch {
+        case daysLeft < 0:
+            title = "Subscription expired"
+        case daysLeft == 0:
+            title = "Subscription expires today"
+        case daysLeft == 1:
+            title = "Subscription expires tomorrow"
+        default:
+            title = fmt.Sprintf("Subscription expires in %d days", daysLeft)
+        }
+    }
+    return map[string]interface{}{
+        "show":     true,
+        "title":    title,
+        "cta_text": cta,
+        "cta_url":  botRenewalURL,
+    }
+}
+
+// parseDBTime parses a timestamp string from SQLite that may have been stored
+// in any of several formats — Go's default time.String() form (with nanoseconds
+// + timezone), RFC3339, or the bare "YYYY-MM-DD HH:MM:SS" form.
+func parseDBTime(s string) (time.Time, error) {
+    formats := []string{
+        "2006-01-02 15:04:05.999999999 -0700 MST",
+        "2006-01-02 15:04:05.999999999Z07:00",
+        time.RFC3339Nano,
+        time.RFC3339,
+        "2006-01-02 15:04:05",
+    }
+    for _, f := range formats {
+        if t, err := time.Parse(f, s); err == nil {
+            return t, nil
+        }
+    }
+    return time.Time{}, fmt.Errorf("unrecognized time format: %q", s)
+}
+
 // Global database connections
 var db *sql.DB
 var analyticsDB *sql.DB
@@ -423,6 +547,32 @@ func initDB() error {
     _, err = db.Exec(createUsersSQL)
     if err != nil {
         return fmt.Errorf("failed to create users table: %v", err)
+    }
+
+    // Migration: add last_payment_method column (idempotent — sqlite errors if exists, we ignore)
+    if _, mErr := db.Exec(`ALTER TABLE users ADD COLUMN last_payment_method TEXT`); mErr != nil {
+        if !strings.Contains(mErr.Error(), "duplicate column") {
+            log.Printf("ℹ️ users.last_payment_method migration note: %v", mErr)
+        }
+    }
+    // Backfill last_payment_method from latest purchase_history row per email.
+    // Idempotent: only updates rows where the column is still NULL.
+    if _, bErr := db.Exec(`
+        UPDATE users SET last_payment_method = (
+            SELECT store FROM purchase_history
+             WHERE purchase_history.email = users.email
+             ORDER BY purchase_date DESC LIMIT 1
+        )
+        WHERE last_payment_method IS NULL`); bErr != nil {
+        log.Printf("⚠️ Backfill last_payment_method failed: %v", bErr)
+    }
+    // Paid users still NULL after the join are by definition admin-granted
+    // (no purchase row exists). Tag them so the client knows no self-serve
+    // renewal channel applies.
+    if _, bErr := db.Exec(`
+        UPDATE users SET last_payment_method = 'admin'
+         WHERE subscription_type = 'paid' AND last_payment_method IS NULL`); bErr != nil {
+        log.Printf("⚠️ Backfill admin-granted users failed: %v", bErr)
     }
 
     // Auth codes for email verification
@@ -537,6 +687,24 @@ func initAnalyticsDB() error {
     _, err = analyticsDB.Exec(createTableSQL)
     if err != nil {
         return fmt.Errorf("failed to create api_calls table: %v", err)
+    }
+
+    // Renewal funnel: track every time the server tells a client to surface
+    // an external (non-IAP) renewal CTA. Joined later against purchase_history
+    // (store='yookassa') to compute exposure → conversion rate.
+    _, err = analyticsDB.Exec(`
+        CREATE TABLE IF NOT EXISTS renewal_impressions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            days_left INTEGER,
+            had_banner INTEGER DEFAULT 0,
+            shown_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_renewal_email ON renewal_impressions(email);
+        CREATE INDEX IF NOT EXISTS idx_renewal_shown_at ON renewal_impressions(shown_at);`)
+    if err != nil {
+        return fmt.Errorf("failed to create renewal_impressions table: %v", err)
     }
 
     // Add token columns if they don't exist (migration for existing databases)
@@ -1662,9 +1830,12 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
 
     // Check if subscription is expired
     if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
-        expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
-        if err == nil && time.Now().After(expiryTime) {
-            subscriptionType = "free" // Subscription expired
+        expiryTime, perr := parseDBTime(subscriptionExpiry.String)
+        if perr != nil {
+            log.Printf("⚠️ Could not parse subscription_expiry for %s: %v (raw=%q)", email, perr, subscriptionExpiry.String)
+        } else if time.Now().After(expiryTime) {
+            log.Printf("⚠️ Subscription expired for %s on %s — downgrading to free", email, expiryTime.Format(time.RFC3339))
+            subscriptionType = "free"
         }
     }
 
@@ -1990,11 +2161,12 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     var subscriptionExpiry sql.NullString
     var isSuper int
     var currentDeviceID sql.NullString
+    var lastPaymentMethod sql.NullString
 
-    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at, COALESCE(is_super, 0), current_device_id
+    query := `SELECT subscription_type, subscription_length, subscription_expiry, created_at, updated_at, COALESCE(is_super, 0), current_device_id, last_payment_method
               FROM users WHERE email = ?`
 
-    err := db.QueryRow(query, email).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt, &isSuper, &currentDeviceID)
+    err := db.QueryRow(query, email).Scan(&subscriptionType, &subscriptionLength, &subscriptionExpiry, &createdAt, &updatedAt, &isSuper, &currentDeviceID, &lastPaymentMethod)
     if err == sql.ErrNoRows {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
@@ -2036,6 +2208,44 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
     log.Printf("📊 [getUserInfo] email=%s, db_type=%s, effective_type=%s, expiry=%s",
         email, subscriptionType, effectiveSubType, subscriptionExpiry.String)
 
+    // Renewal channel & external-payment surfacing.
+    // The client must NOT decide whether to show external (non-IAP) renewal —
+    // the server is the only authority. Apple/Google policy violation risk.
+    isRU := isRURequest(r)
+    renewalChannel := computeRenewalChannel(lastPaymentMethod.String, effectiveSubType, isRU)
+    var renewalURL interface{} = nil
+    if renewalChannel == "external" && botRenewalURL != "" {
+        renewalURL = botRenewalURL
+    }
+    var renewalBanner interface{} = nil
+    var bannerDaysLeft int = -999
+    if renewalChannel == "external" && subscriptionExpiry.Valid {
+        if expT, perr := parseDBTime(subscriptionExpiry.String); perr == nil {
+            if b := computeRenewalBanner(renewalChannel, expT, r.Header.Get("Accept-Language")); b != nil {
+                renewalBanner = b
+                bannerDaysLeft = int(time.Until(expT).Hours() / 24)
+            }
+        }
+    }
+
+    // Log every external impression once per day per email (funnel analytics).
+    // Idempotent-ish via the WHERE NOT EXISTS guard. Apple/Google channels
+    // are not logged (no funnel to analyze — store handles renewal).
+    if renewalChannel == "external" && analyticsDB != nil {
+        had := 0
+        if renewalBanner != nil {
+            had = 1
+        }
+        analyticsDB.Exec(`
+            INSERT INTO renewal_impressions (email, channel, days_left, had_banner)
+            SELECT ?, ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM renewal_impressions
+                 WHERE email = ?
+                   AND date(shown_at) = date('now')
+            )`, email, renewalChannel, bannerDaysLeft, had, email)
+    }
+
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success":              true,
         "email":                email,
@@ -2049,6 +2259,10 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         "model_super":          MODEL_SUPER,
         "model_premium":        MODEL_PREMIUM,
         "model_economy":        MODEL_ECONOMY,
+        "last_payment_method":  lastPaymentMethod.String,
+        "renewal_channel":      renewalChannel,
+        "renewal_url":          renewalURL,
+        "renewal_banner":       renewalBanner,
     })
 }
 
@@ -2397,14 +2611,15 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
                         subscription_type = ?,
                         subscription_length = ?,
                         subscription_expiry = ?,
+                        last_payment_method = ?,
                         updated_at = CURRENT_TIMESTAMP
                         WHERE email = ?`
-        _, err = tx.Exec(updateQuery, req.SubscriptionType, req.SubscriptionLength, expiryDate, email)
+        _, err = tx.Exec(updateQuery, req.SubscriptionType, req.SubscriptionLength, expiryDate, req.Store, email)
         if err != nil {
             log.Printf("Error updating user subscription: %v", err)
             // Continue anyway - purchase record is more important
         } else {
-            log.Printf("✅ User subscription updated: email=%s, type=%s, length=%s", email, req.SubscriptionType, req.SubscriptionLength)
+            log.Printf("✅ User subscription updated: email=%s, type=%s, length=%s, method=%s", email, req.SubscriptionType, req.SubscriptionLength, req.Store)
         }
     }
 
@@ -3256,10 +3471,12 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
 
         // Check if subscription is expired
         if subscriptionExpiry.Valid && subscriptionExpiry.String != "" {
-            expiryTime, err := time.Parse("2006-01-02 15:04:05", subscriptionExpiry.String)
-            if err == nil && time.Now().After(expiryTime) {
-                subscriptionType = "free" // Subscription expired
-                log.Printf("⚠️ Subscription expired for %s", email)
+            expiryTime, perr := parseDBTime(subscriptionExpiry.String)
+            if perr != nil {
+                log.Printf("⚠️ Could not parse subscription_expiry for %s: %v (raw=%q)", email, perr, subscriptionExpiry.String)
+            } else if time.Now().After(expiryTime) {
+                log.Printf("⚠️ Subscription expired for %s on %s — downgrading to free", email, expiryTime.Format(time.RFC3339))
+                subscriptionType = "free"
             }
         }
 
@@ -3712,8 +3929,8 @@ func botGrantSubscription(w http.ResponseWriter, r *http.Request) {
     err := db.QueryRow(`SELECT id FROM users WHERE email = ?`, targetEmail).Scan(&existingID)
     if err == sql.ErrNoRows {
         log.Printf("🔵 [botGrantSubscription] Creating new user record for %s", targetEmail)
-        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry) VALUES (?, ?, ?, ?)`,
-            targetEmail, req.SubscriptionType, req.SubscriptionLength, subscriptionExpiry)
+        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry, last_payment_method) VALUES (?, ?, ?, ?, ?)`,
+            targetEmail, req.SubscriptionType, req.SubscriptionLength, subscriptionExpiry, req.PaymentMethod)
         if err != nil {
             log.Printf("❌ [botGrantSubscription] Failed to create user: %v", err)
             w.WriteHeader(http.StatusInternalServerError)
@@ -3727,8 +3944,8 @@ func botGrantSubscription(w http.ResponseWriter, r *http.Request) {
         return
     } else {
         log.Printf("🔵 [botGrantSubscription] Updating existing user %s", targetEmail)
-        _, err = db.Exec(`UPDATE users SET subscription_type = ?, subscription_length = ?, subscription_expiry = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
-            req.SubscriptionType, req.SubscriptionLength, subscriptionExpiry, targetEmail)
+        _, err = db.Exec(`UPDATE users SET subscription_type = ?, subscription_length = ?, subscription_expiry = ?, last_payment_method = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
+            req.SubscriptionType, req.SubscriptionLength, subscriptionExpiry, req.PaymentMethod, targetEmail)
         if err != nil {
             log.Printf("❌ [botGrantSubscription] Failed to update user: %v", err)
             w.WriteHeader(http.StatusInternalServerError)
@@ -3740,6 +3957,20 @@ func botGrantSubscription(w http.ResponseWriter, r *http.Request) {
     expiryStr := "never"
     if subscriptionExpiry != nil {
         expiryStr = subscriptionExpiry.Format("2006-01-02")
+    }
+
+    if req.SubscriptionType == "paid" && req.PaymentMethod != "" {
+        var deviceID sql.NullString
+        _ = db.QueryRow(`SELECT current_device_id FROM users WHERE email = ?`, targetEmail).Scan(&deviceID)
+        productID := fmt.Sprintf("bot_%s_%s", req.PaymentMethod, req.SubscriptionLength)
+        _, phErr := db.Exec(`INSERT INTO purchase_history
+            (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            targetEmail, deviceID.String, productID, req.TransactionID, time.Now(), subscriptionExpiry,
+            req.SubscriptionType, req.SubscriptionLength, req.PaymentMethod)
+        if phErr != nil {
+            log.Printf("⚠️ [botGrantSubscription] purchase_history insert failed: %v", phErr)
+        }
     }
 
     log.Printf("✅ [botGrantSubscription] Granted %s %s to %s via %s (expires: %s, txn: %s)",
@@ -4904,6 +5135,64 @@ func adminGetHistoricalData(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Admin endpoint: YooKassa renewal funnel.
+// Counts impressions (server told a client to surface external renewal),
+// unique exposed users, and conversions (purchase_history rows with
+// store='yookassa') over a time window. Conversion rate is paid_users
+// over exposed_users.
+func adminRenewalFunnel(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+        return
+    }
+
+    days := r.URL.Query().Get("days")
+    if days == "" {
+        days = "30"
+    }
+    daysInt, err := strconv.Atoi(days)
+    if err != nil || daysInt < 1 || daysInt > 3650 {
+        daysInt = 30
+    }
+    since := time.Now().AddDate(0, 0, -daysInt)
+
+    var impressions, exposedUsers int
+    if analyticsDB != nil {
+        analyticsDB.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT email) FROM renewal_impressions WHERE shown_at >= ?`,
+            since.Format("2006-01-02 15:04:05")).Scan(&impressions, &exposedUsers)
+    }
+
+    var paidUsers int
+    db.QueryRow(`SELECT COUNT(DISTINCT email) FROM purchase_history WHERE store = 'yookassa' AND purchase_date >= ?`,
+        since.Format("2006-01-02 15:04:05")).Scan(&paidUsers)
+
+    var conversionRate float64
+    if exposedUsers > 0 {
+        conversionRate = float64(paidUsers) / float64(exposedUsers)
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":          true,
+        "window_days":      daysInt,
+        "since":            since.Format(time.RFC3339),
+        "impressions":      impressions,
+        "exposed_users":    exposedUsers,
+        "paid_users":       paidUsers,
+        "conversion_rate":  conversionRate,
+        "note":             "exposed_users = distinct emails that saw external renewal CTA. paid_users = distinct emails that purchased via YooKassa. conversion_rate = paid_users / exposed_users.",
+    })
+}
+
 // Admin endpoint to download the main database (requires 2FA verification code)
 func adminDownloadDB(w http.ResponseWriter, r *http.Request) {
     // Get admin credentials from query params
@@ -5898,6 +6187,7 @@ func main() {
     router.HandleFunc("/api/admin/model-usage-by-user", adminModelUsageByUser).Methods("GET")
     router.HandleFunc("/api/admin/usage-report", adminUsageReport).Methods("GET")
     router.HandleFunc("/api/admin/openai-costs", adminOpenAICosts).Methods("POST")
+    router.HandleFunc("/api/admin/renewal-funnel", adminRenewalFunnel).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")

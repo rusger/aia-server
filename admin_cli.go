@@ -171,9 +171,10 @@ func updateUser(db *sql.DB, deviceID, subscriptionType, subscriptionLength strin
         os.Exit(1)
     }
 
-    // Update user
+    // Update user — mark as admin-granted so the client knows there is no
+    // self-serve renewal channel for this subscription.
     query := `UPDATE users
-              SET subscription_type = ?, subscription_length = ?, updated_at = CURRENT_TIMESTAMP
+              SET subscription_type = ?, subscription_length = ?, last_payment_method = 'admin', updated_at = CURRENT_TIMESTAMP
               WHERE device_id = ?`
 
     result, err := db.Exec(query, subscriptionType, subscriptionLength, deviceID)
