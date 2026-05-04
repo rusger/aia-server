@@ -364,6 +364,155 @@ func (rl *RegistrationLimiter) GetLimiter(ip string) *rate.Limiter {
 
 var registrationLimiter = NewRegistrationLimiter()
 
+// Admin endpoint guard:
+//   1. IPs in ADMIN_ALLOWED_IPS env (comma-separated) bypass all checks.
+//   2. Per-IP token bucket throttles abuse without locking out retries.
+//   3. After 5 failed attempts (403/401) within 15 min from one IP, the IP
+//      is locked for 15 min — owner-style brute-force protection that does
+//      not punish honest typos as long as you eventually succeed.
+type adminFailEntry struct {
+    count       int
+    firstFailAt time.Time
+    lockedUntil time.Time
+}
+
+type AdminGuard struct {
+    failures   map[string]*adminFailEntry
+    perIP      map[string]*rate.Limiter
+    allowedIPs map[string]bool
+    mu         sync.Mutex
+}
+
+const (
+    adminFailWindow   = 15 * time.Minute
+    adminFailLimit    = 5
+    adminLockDuration = 15 * time.Minute
+)
+
+func NewAdminGuard() *AdminGuard {
+    g := &AdminGuard{
+        failures:   make(map[string]*adminFailEntry),
+        perIP:      make(map[string]*rate.Limiter),
+        allowedIPs: make(map[string]bool),
+    }
+    raw := getEnv("ADMIN_ALLOWED_IPS", "")
+    for _, ip := range strings.Split(raw, ",") {
+        ip = strings.TrimSpace(ip)
+        if ip != "" {
+            g.allowedIPs[ip] = true
+        }
+    }
+    if len(g.allowedIPs) > 0 {
+        log.Printf("🛡  Admin allowlist: %d IP(s) bypass admin rate limiter", len(g.allowedIPs))
+    } else {
+        log.Println("🛡  Admin allowlist: empty (set ADMIN_ALLOWED_IPS to bypass lockout for owner IPs)")
+    }
+    return g
+}
+
+func (g *AdminGuard) IsAllowed(ip string) bool {
+    return g.allowedIPs[ip]
+}
+
+// CheckAndRateLimit returns (allowed, retryAfterSeconds).
+func (g *AdminGuard) CheckAndRateLimit(ip string) (bool, int) {
+    if g.IsAllowed(ip) {
+        return true, 0
+    }
+    g.mu.Lock()
+    defer g.mu.Unlock()
+
+    now := time.Now()
+    if e, ok := g.failures[ip]; ok && now.Before(e.lockedUntil) {
+        return false, int(time.Until(e.lockedUntil).Seconds()) + 1
+    }
+
+    lim, ok := g.perIP[ip]
+    if !ok {
+        // 10 burst, refill 1 every 6 sec → ~10/min sustained, plenty for an honest admin.
+        lim = rate.NewLimiter(rate.Every(6*time.Second), 10)
+        g.perIP[ip] = lim
+    }
+    if !lim.Allow() {
+        return false, 6
+    }
+    if len(g.perIP) > 50000 {
+        g.perIP = make(map[string]*rate.Limiter)
+    }
+    return true, 0
+}
+
+func (g *AdminGuard) RecordFail(ip string) {
+    if g.IsAllowed(ip) {
+        return
+    }
+    g.mu.Lock()
+    defer g.mu.Unlock()
+
+    now := time.Now()
+    e, ok := g.failures[ip]
+    if !ok || now.Sub(e.firstFailAt) > adminFailWindow {
+        g.failures[ip] = &adminFailEntry{count: 1, firstFailAt: now}
+        return
+    }
+    e.count++
+    if e.count >= adminFailLimit {
+        e.lockedUntil = now.Add(adminLockDuration)
+        log.Printf("🚫 Admin lockout: ip=%s locked for %s after %d failed attempts",
+            ip, adminLockDuration, e.count)
+    }
+}
+
+func (g *AdminGuard) RecordSuccess(ip string) {
+    g.mu.Lock()
+    defer g.mu.Unlock()
+    delete(g.failures, ip)
+}
+
+var adminGuard = NewAdminGuard()
+
+// statusCapturingWriter records the HTTP status to let the middleware decide
+// whether the call counted as a failure.
+type statusCapturingWriter struct {
+    http.ResponseWriter
+    status int
+}
+
+func (s *statusCapturingWriter) WriteHeader(code int) {
+    s.status = code
+    s.ResponseWriter.WriteHeader(code)
+}
+
+// adminGuardMiddleware enforces allowlist bypass + lockout + per-IP rate limit
+// on every wrapped admin handler. It infers fail/success from the response
+// status: 401/403 (and 400 with an empty admin secret) count as failures; 2xx
+// clears the failure record.
+func adminGuardMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ip := getClientIP(r)
+        allowed, retry := adminGuard.CheckAndRateLimit(ip)
+        if !allowed {
+            w.Header().Set("Retry-After", strconv.Itoa(retry))
+            w.Header().Set("Content-Type", "application/json")
+            w.WriteHeader(http.StatusTooManyRequests)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   fmt.Sprintf("Too many attempts. Try again in %d seconds.", retry),
+            })
+            log.Printf("🛑 [adminGuard] %s blocked (retry %ds) — path=%s", ip, retry, r.URL.Path)
+            return
+        }
+        sw := &statusCapturingWriter{ResponseWriter: w, status: http.StatusOK}
+        next(sw, r)
+        switch {
+        case sw.status == http.StatusUnauthorized || sw.status == http.StatusForbidden:
+            adminGuard.RecordFail(ip)
+        case sw.status >= 200 && sw.status < 300:
+            adminGuard.RecordSuccess(ip)
+        }
+    }
+}
+
 // Helper to extract client IP from request (handles proxies)
 func getClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header (set by proxies like Caddy, nginx)
@@ -6175,19 +6324,21 @@ func main() {
     router.HandleFunc("/api/bot/grant-subscription", botGrantSubscription).Methods("POST")
 
     // Admin endpoints (admin email + secret + verification code required)
-    router.HandleFunc("/api/admin/request-code", adminRequestCode).Methods("POST")
-    router.HandleFunc("/api/admin/grant-subscription", adminGrantSubscription).Methods("POST")
-    router.HandleFunc("/api/admin/users", adminListUsers).Methods("GET")
-    router.HandleFunc("/api/admin/toggle-super", adminToggleSuper).Methods("POST")
-    router.HandleFunc("/api/admin/analytics", adminGetAnalytics).Methods("GET")
-    router.HandleFunc("/api/admin/user-calls", adminGetUserCalls).Methods("GET")
-    router.HandleFunc("/api/admin/analytics-cleanup", adminAnalyticsCleanup).Methods("POST")
-    router.HandleFunc("/api/admin/historical-data", adminGetHistoricalData).Methods("GET")
-    router.HandleFunc("/api/admin/download-db", adminDownloadDB).Methods("GET")
-    router.HandleFunc("/api/admin/model-usage-by-user", adminModelUsageByUser).Methods("GET")
-    router.HandleFunc("/api/admin/usage-report", adminUsageReport).Methods("GET")
-    router.HandleFunc("/api/admin/openai-costs", adminOpenAICosts).Methods("POST")
-    router.HandleFunc("/api/admin/renewal-funnel", adminRenewalFunnel).Methods("GET")
+    // adminGuardMiddleware: per-IP rate limit + lockout after 5 failed
+    // attempts/15min; ADMIN_ALLOWED_IPS env bypasses the limiter.
+    router.HandleFunc("/api/admin/request-code", adminGuardMiddleware(adminRequestCode)).Methods("POST")
+    router.HandleFunc("/api/admin/grant-subscription", adminGuardMiddleware(adminGrantSubscription)).Methods("POST")
+    router.HandleFunc("/api/admin/users", adminGuardMiddleware(adminListUsers)).Methods("GET")
+    router.HandleFunc("/api/admin/toggle-super", adminGuardMiddleware(adminToggleSuper)).Methods("POST")
+    router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
+    router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
+    router.HandleFunc("/api/admin/analytics-cleanup", adminGuardMiddleware(adminAnalyticsCleanup)).Methods("POST")
+    router.HandleFunc("/api/admin/historical-data", adminGuardMiddleware(adminGetHistoricalData)).Methods("GET")
+    router.HandleFunc("/api/admin/download-db", adminGuardMiddleware(adminDownloadDB)).Methods("GET")
+    router.HandleFunc("/api/admin/model-usage-by-user", adminGuardMiddleware(adminModelUsageByUser)).Methods("GET")
+    router.HandleFunc("/api/admin/usage-report", adminGuardMiddleware(adminUsageReport)).Methods("GET")
+    router.HandleFunc("/api/admin/openai-costs", adminGuardMiddleware(adminOpenAICosts)).Methods("POST")
+    router.HandleFunc("/api/admin/renewal-funnel", adminGuardMiddleware(adminRenewalFunnel)).Methods("GET")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
