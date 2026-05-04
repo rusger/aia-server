@@ -17,6 +17,7 @@ import (
     "math/big"
     "net/http"
     "net/smtp"
+    "net/url"
     "os"
     "os/exec"
     "regexp"
@@ -53,6 +54,14 @@ var (
     SMTP_PASSWORD      = getEnv("SMTP_PASSWORD", "")
     SMTP_FROM          = getEnv("SMTP_FROM", "Astrolytix <noreply@astrolytix.com>")
     AUTH_CODE_EXP      = 10 * time.Minute // Auth codes expire in 10 minutes
+
+    // Microsoft Graph API for sending mail (replaces deprecated SMTP Basic Auth).
+    // If GRAPH_TENANT_ID is set, the server uses Graph; otherwise falls back to
+    // the legacy SMTP path (which Microsoft has been progressively disabling).
+    GRAPH_TENANT_ID     = getEnv("GRAPH_TENANT_ID", "")
+    GRAPH_CLIENT_ID     = getEnv("GRAPH_CLIENT_ID", "")
+    GRAPH_CLIENT_SECRET = getEnv("GRAPH_CLIENT_SECRET", "")
+    GRAPH_SENDER        = getEnv("GRAPH_SENDER", "noreply@astrolytix.com")
 
     // AI Model Configuration (server-controlled, changeable without app rebuild)
     MODEL_SUPER   = getEnv("MODEL_SUPER", "gpt-4.1")       // Super tier (was o1)
@@ -3210,10 +3219,6 @@ func isValidEmail(email string) bool {
 
 // Send email using SMTP (Office 365 / GoDaddy M365)
 func sendAuthCodeEmail(toEmail, code string) error {
-    if SMTP_USER == "" || SMTP_PASSWORD == "" {
-        return fmt.Errorf("SMTP credentials not configured")
-    }
-
     // Parse the From address to get just the email part
     fromEmail := SMTP_USER
     fromName := "Astrolytix"
@@ -3235,6 +3240,16 @@ If you didn't request this code, please ignore this email.
 
 Best regards,
 Astrolytix Team`, code)
+
+    // Prefer Microsoft Graph (modern OAuth path); SMTP Basic Auth has been
+    // progressively disabled by Microsoft tenant-by-tenant.
+    if graphConfigured() {
+        return sendEmailViaGraph(toEmail, fromName, subject, body)
+    }
+
+    if SMTP_USER == "" || SMTP_PASSWORD == "" {
+        return fmt.Errorf("no email transport configured (set GRAPH_* or SMTP_* env vars)")
+    }
 
     // Build MIME message
     msg := fmt.Sprintf("From: %s <%s>\r\n"+
@@ -3389,6 +3404,127 @@ func sendAuthCodeEmailSTARTTLS(toEmail, fromEmail, fromName, subject, body strin
     }
 
     return conn.Quit()
+}
+
+// ----------------------------------------------------------------------------
+// Microsoft Graph API mail sender
+//
+// Uses the OAuth2 client_credentials flow (app-only auth) to obtain a token,
+// then POSTs to /v1.0/users/{sender}/sendMail. Replaces the legacy SMTP path
+// that Microsoft has been disabling tenant-by-tenant.
+//
+// Setup: Azure AD app registration with Microsoft Graph "Mail.Send" application
+// permission and admin consent. Three env vars: GRAPH_TENANT_ID,
+// GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET. Sender mailbox: GRAPH_SENDER.
+// ----------------------------------------------------------------------------
+
+type graphTokenCacheT struct {
+    token     string
+    expiresAt time.Time
+    mu        sync.Mutex
+}
+
+var graphTokenCache graphTokenCacheT
+
+func graphConfigured() bool {
+    return GRAPH_TENANT_ID != "" && GRAPH_CLIENT_ID != "" && GRAPH_CLIENT_SECRET != ""
+}
+
+func getGraphAccessToken() (string, error) {
+    graphTokenCache.mu.Lock()
+    defer graphTokenCache.mu.Unlock()
+
+    if graphTokenCache.token != "" && time.Now().Before(graphTokenCache.expiresAt.Add(-60*time.Second)) {
+        return graphTokenCache.token, nil
+    }
+
+    if !graphConfigured() {
+        return "", fmt.Errorf("Graph credentials not configured")
+    }
+
+    tokenURL := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", GRAPH_TENANT_ID)
+    form := url.Values{}
+    form.Set("client_id", GRAPH_CLIENT_ID)
+    form.Set("client_secret", GRAPH_CLIENT_SECRET)
+    form.Set("scope", "https://graph.microsoft.com/.default")
+    form.Set("grant_type", "client_credentials")
+
+    client := &http.Client{Timeout: 15 * time.Second}
+    resp, err := client.PostForm(tokenURL, form)
+    if err != nil {
+        return "", fmt.Errorf("token request failed: %v", err)
+    }
+    defer resp.Body.Close()
+    body, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode != http.StatusOK {
+        return "", fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+    }
+    var tr struct {
+        AccessToken string `json:"access_token"`
+        ExpiresIn   int    `json:"expires_in"`
+    }
+    if err := json.Unmarshal(body, &tr); err != nil {
+        return "", fmt.Errorf("decode token: %v", err)
+    }
+    if tr.AccessToken == "" {
+        return "", fmt.Errorf("empty access_token in response: %s", string(body))
+    }
+    graphTokenCache.token = tr.AccessToken
+    graphTokenCache.expiresAt = time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second)
+    return tr.AccessToken, nil
+}
+
+// sendEmailViaGraph sends a plain-text email via Microsoft Graph as GRAPH_SENDER.
+// fromName is included as the display name in the From header.
+func sendEmailViaGraph(toEmail, fromName, subject, body string) error {
+    token, err := getGraphAccessToken()
+    if err != nil {
+        return err
+    }
+
+    payload := map[string]interface{}{
+        "message": map[string]interface{}{
+            "subject": subject,
+            "body": map[string]interface{}{
+                "contentType": "Text",
+                "content":     body,
+            },
+            "toRecipients": []map[string]interface{}{
+                {"emailAddress": map[string]string{"address": toEmail}},
+            },
+            "from": map[string]interface{}{
+                "emailAddress": map[string]string{
+                    "address": GRAPH_SENDER,
+                    "name":    fromName,
+                },
+            },
+        },
+        "saveToSentItems": false,
+    }
+    payloadJSON, err := json.Marshal(payload)
+    if err != nil {
+        return fmt.Errorf("marshal payload: %v", err)
+    }
+
+    sendURL := fmt.Sprintf("https://graph.microsoft.com/v1.0/users/%s/sendMail", url.PathEscape(GRAPH_SENDER))
+    req, err := http.NewRequest("POST", sendURL, bytes.NewReader(payloadJSON))
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Authorization", "Bearer "+token)
+    req.Header.Set("Content-Type", "application/json")
+
+    client := &http.Client{Timeout: 30 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        return fmt.Errorf("graph sendMail request failed: %v", err)
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != http.StatusAccepted { // Graph sendMail returns 202
+        respBody, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("graph sendMail returned %d: %s", resp.StatusCode, string(respBody))
+    }
+    return nil
 }
 
 // Rate limiter for email requests (prevent abuse)
@@ -3768,8 +3904,14 @@ If you did not request this code, please ignore this email and check your server
         fromEmail = strings.TrimSuffix(parts[1], ">")
     }
 
-    if err := sendAuthCodeEmailSTARTTLS(req.AdminEmail, fromEmail, fromName, subject, body); err != nil {
-        log.Printf("❌ [adminRequestCode] Failed to send email: %v", err)
+    var sendErr error
+    if graphConfigured() {
+        sendErr = sendEmailViaGraph(req.AdminEmail, fromName, subject, body)
+    } else {
+        sendErr = sendAuthCodeEmailSTARTTLS(req.AdminEmail, fromEmail, fromName, subject, body)
+    }
+    if sendErr != nil {
+        log.Printf("❌ [adminRequestCode] Failed to send email: %v", sendErr)
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
             "error":   "Failed to send verification email",
