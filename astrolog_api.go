@@ -788,6 +788,23 @@ func initDB() error {
         return fmt.Errorf("failed to create purchase_history table: %v", err)
     }
 
+    // Migration: dedup legacy duplicate audit rows then guarantee uniqueness
+    // on (email, transaction_id, store). Each row is meant to represent one
+    // underlying purchase event; before this migration the same Apple/Google
+    // receipt was re-recorded on every client re-confirmation (app launch,
+    // paywall open), inflating row counts up to 67× per user. The dedup is
+    // idempotent — once duplicates are gone the DELETE is a no-op.
+    if _, dErr := db.Exec(`
+        DELETE FROM purchase_history WHERE id NOT IN (
+            SELECT MIN(id) FROM purchase_history GROUP BY email, transaction_id, store
+        )`); dErr != nil {
+        log.Printf("⚠️ purchase_history dedup migration: %v", dErr)
+    }
+    if _, iErr := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_unique
+        ON purchase_history(email, transaction_id, store)`); iErr != nil {
+        log.Printf("⚠️ purchase_history unique index migration: %v", iErr)
+    }
+
     // T2.B partner invite hashes — short codes that map to a snapshot of
     // the inviter's birth data so the recipient app can compute a
     // compatibility chart without ever asking the inviter for the data
@@ -2747,8 +2764,10 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     }
     defer tx.Rollback()
 
-    // Insert purchase record
-    query := `INSERT INTO purchase_history
+    // Insert purchase record. OR IGNORE collapses re-confirmations of the
+    // same Apple/Google receipt (same tx_id) into one row per purchase —
+    // see unique index idx_purchase_unique on (email, transaction_id, store).
+    query := `INSERT OR IGNORE INTO purchase_history
               (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
@@ -4064,16 +4083,26 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
     var existingID int
     err = db.QueryRow(`SELECT id FROM users WHERE email = ?`, targetEmail).Scan(&existingID)
 
+    // Stamp last_payment_method='admin' on the user row so the renewal-channel
+    // logic (computeRenewalChannel) treats this user correctly without
+    // depending on the startup backfill at setupDatabase. Paid grants only —
+    // 'free' downgrades clear the marker since there is no payment to attribute.
+    grantPaymentMethod := "admin"
+    if req.SubscriptionType != "paid" {
+        grantPaymentMethod = ""
+    }
+
     if err == sql.ErrNoRows {
         // User doesn't exist - create record (they will get tokens when they sign in)
         log.Printf("🔵 [adminGrantSubscription] Creating new user record for %s", targetEmail)
 
-        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry)
-                          VALUES (?, ?, ?, ?)`,
+        _, err = db.Exec(`INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry, last_payment_method)
+                          VALUES (?, ?, ?, ?, ?)`,
             targetEmail,
             req.SubscriptionType,
             req.SubscriptionLength,
-            subscriptionExpiry)
+            subscriptionExpiry,
+            grantPaymentMethod)
 
         if err != nil {
             log.Printf("❌ [adminGrantSubscription] Failed to create user: %v", err)
@@ -4098,11 +4127,13 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
                           subscription_type = ?,
                           subscription_length = ?,
                           subscription_expiry = ?,
+                          last_payment_method = ?,
                           updated_at = CURRENT_TIMESTAMP
                           WHERE email = ?`,
             req.SubscriptionType,
             req.SubscriptionLength,
             subscriptionExpiry,
+            grantPaymentMethod,
             targetEmail)
 
         if err != nil {
@@ -4112,6 +4143,24 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
                 "error":   "Failed to update subscription",
             })
             return
+        }
+    }
+
+    // Audit row in purchase_history so admin grants are first-class events,
+    // not implied by an empty payment column. transaction_id includes a
+    // nanosecond timestamp so re-grants for the same user produce distinct
+    // rows (the unique index is on email+tx_id+store).
+    if req.SubscriptionType == "paid" {
+        adminTxID := fmt.Sprintf("admin-%d", time.Now().UnixNano())
+        adminProductID := fmt.Sprintf("admin_grant_%s", req.SubscriptionLength)
+        var deviceID sql.NullString
+        _ = db.QueryRow(`SELECT current_device_id FROM users WHERE email = ?`, targetEmail).Scan(&deviceID)
+        if _, phErr := db.Exec(`INSERT OR IGNORE INTO purchase_history
+            (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            targetEmail, deviceID.String, adminProductID, adminTxID, time.Now(), subscriptionExpiry,
+            req.SubscriptionType, req.SubscriptionLength, "admin"); phErr != nil {
+            log.Printf("⚠️ [adminGrantSubscription] purchase_history insert failed: %v", phErr)
         }
     }
 
@@ -4254,7 +4303,7 @@ func botGrantSubscription(w http.ResponseWriter, r *http.Request) {
         var deviceID sql.NullString
         _ = db.QueryRow(`SELECT current_device_id FROM users WHERE email = ?`, targetEmail).Scan(&deviceID)
         productID := fmt.Sprintf("bot_%s_%s", req.PaymentMethod, req.SubscriptionLength)
-        _, phErr := db.Exec(`INSERT INTO purchase_history
+        _, phErr := db.Exec(`INSERT OR IGNORE INTO purchase_history
             (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             targetEmail, deviceID.String, productID, req.TransactionID, time.Now(), subscriptionExpiry,
