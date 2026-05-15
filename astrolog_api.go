@@ -1596,6 +1596,21 @@ type TransitYearResponse struct {
     Error   string            `json:"error,omitempty"`
 }
 
+// TransitMultiYearRequest for multi-year batch transit calculation
+type TransitMultiYearRequest struct {
+    Years     []int  `json:"years"`
+    Timezone  string `json:"timezone"`
+    Longitude string `json:"longitude"`
+    Latitude  string `json:"latitude"`
+}
+
+// TransitMultiYearResponse contains transit data for multiple years
+type TransitMultiYearResponse struct {
+    Success bool                            `json:"success"`
+    Data    map[string]map[string]string    `json:"data"` // "year" -> (date -> chart)
+    Error   string                          `json:"error,omitempty"`
+}
+
 // calculateTransitYear generates transit data for all days in a year
 // This is much faster than 365 individual API calls
 func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
@@ -1711,8 +1726,8 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
     invertedTz := -tzFloat
     invertedLon := -lonFloat
 
-    // Start workers (10 parallel workers)
-    numWorkers := 10
+    // Start workers (30 parallel workers — astrolog is a fast CPU burst)
+    numWorkers := 30
     for i := 0; i < numWorkers; i++ {
         wg.Add(1)
         go func() {
@@ -1787,6 +1802,169 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
         Success: true,
         Year:    req.Year,
         Data:    results,
+    })
+}
+
+// calculateTransitMultiYear generates transit data for multiple years in one request.
+// Uses 40 parallel workers to maximize throughput. Eliminates per-year HTTP round-trips.
+func calculateTransitMultiYear(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Unauthorized"})
+        return
+    }
+
+    var req TransitMultiYearRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Invalid request format"})
+        return
+    }
+
+    // Validate years (max 25 years per request)
+    if len(req.Years) == 0 || len(req.Years) > 25 {
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Provide 1-25 years"})
+        return
+    }
+    for _, y := range req.Years {
+        if y < 1800 || y > 2100 {
+            json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: fmt.Sprintf("Invalid year %d (must be 1800-2100)", y)})
+            return
+        }
+    }
+
+    // Rate limit
+    clientIP := getClientIP(r)
+    ipLim := ipLimiter.GetLimiter(clientIP)
+    if !ipLim.Allow() {
+        w.WriteHeader(http.StatusTooManyRequests)
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Too many requests. Please wait."})
+        return
+    }
+
+    timezone, err := sanitizeTimezone(req.Timezone)
+    if err != nil {
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Invalid timezone: " + err.Error()})
+        return
+    }
+    longitude, err := sanitizeCoordinate(req.Longitude, false)
+    if err != nil {
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Invalid longitude: " + err.Error()})
+        return
+    }
+    latitude, err := sanitizeCoordinate(req.Latitude, true)
+    if err != nil {
+        json.NewEncoder(w).Encode(TransitMultiYearResponse{Success: false, Error: "Invalid latitude: " + err.Error()})
+        return
+    }
+
+    log.Printf("[TransitMultiYear] Starting batch for %d years %v (user: %s)", len(req.Years), req.Years, claims.Email)
+    startTime := time.Now()
+
+    // Pre-initialize per-year result maps (string keys for JSON compatibility)
+    yearResults := make(map[string]map[string]string)
+    var resultsMu sync.Mutex
+    for _, y := range req.Years {
+        yearResults[fmt.Sprintf("%d", y)] = make(map[string]string)
+    }
+
+    // Invert timezone and longitude for Astrolog
+    tzFloat, _ := strconv.ParseFloat(timezone, 64)
+    lonFloat, _ := strconv.ParseFloat(longitude, 64)
+    invertedTz := -tzFloat
+    invertedLon := -lonFloat
+
+    // Build ALL jobs across ALL years
+    type multiJob struct {
+        year int
+        date time.Time
+    }
+    totalDays := 0
+    for _, y := range req.Years {
+        start := time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC)
+        end := time.Date(y, 12, 31, 0, 0, 0, 0, time.UTC)
+        for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+            totalDays++
+        }
+    }
+    jobs := make(chan multiJob, totalDays)
+
+    // 40 workers — astrolog is a lightweight CPU burst, modern servers handle this easily
+    numWorkers := 40
+    var wg sync.WaitGroup
+    for i := 0; i < numWorkers; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            for j := range jobs {
+                dateStr := fmt.Sprintf("%d %d %d", j.date.Month(), j.date.Day(), j.date.Year())
+
+                args := []string{
+                    "-qa",
+                    fmt.Sprintf("%d", j.date.Month()),
+                    fmt.Sprintf("%d", j.date.Day()),
+                    fmt.Sprintf("%d", j.date.Year()),
+                    "12:00",
+                    fmt.Sprintf("%g", invertedTz),
+                    fmt.Sprintf("%g", invertedLon),
+                    latitude,
+                    "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31",
+                }
+
+                ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+                cmd := exec.CommandContext(ctx, "./astrolog", args...)
+                cmd.Dir = "/home/ruslan/aia"
+
+                output, err := cmd.Output()
+                cancel()
+
+                if err != nil {
+                    resultsMu.Lock()
+                    yearResults[fmt.Sprintf("%d", j.year)][dateStr] = ""
+                    resultsMu.Unlock()
+                    continue
+                }
+
+                lines := strings.Split(string(output), "\n")
+                var filtered []string
+                for _, line := range lines {
+                    if !strings.HasPrefix(line, "House cusp") {
+                        filtered = append(filtered, line)
+                    }
+                }
+
+                resultsMu.Lock()
+                yearResults[fmt.Sprintf("%d", j.year)][dateStr] = strings.Join(filtered, "\n")
+                resultsMu.Unlock()
+            }
+        }()
+    }
+
+    // Enqueue all days across all years
+    for _, y := range req.Years {
+        start := time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC)
+        end := time.Date(y, 12, 31, 0, 0, 0, 0, time.UTC)
+        for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+            jobs <- multiJob{year: y, date: d}
+        }
+    }
+    close(jobs)
+    wg.Wait()
+
+    elapsed := time.Since(startTime)
+    totalResults := 0
+    for _, m := range yearResults {
+        totalResults += len(m)
+    }
+    log.Printf("[TransitMultiYear] Completed %d years (%d days) in %v (user: %s)", len(req.Years), totalResults, elapsed, claims.Email)
+
+    logAPICall(claims.DeviceID, "transit-multi-year", fmt.Sprintf("%v", req.Years))
+
+    json.NewEncoder(w).Encode(TransitMultiYearResponse{
+        Success: true,
+        Data:    yearResults,
     })
 }
 
@@ -6500,6 +6678,7 @@ func main() {
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
     router.HandleFunc("/api/transit-year", jwtAuthMiddleware(calculateTransitYear)).Methods("POST")
+    router.HandleFunc("/api/transit-multi-year", jwtAuthMiddleware(calculateTransitMultiYear)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
