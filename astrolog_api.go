@@ -4533,7 +4533,7 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
     // V2 SCHEMA: Query all users from users
     rows, err := db.Query(`SELECT id, email, subscription_type, subscription_length,
                            subscription_expiry, COALESCE(is_super, 0), current_device_id, created_at, updated_at
-                           FROM users ORDER BY updated_at DESC LIMIT 100`)
+                           FROM users ORDER BY updated_at DESC`)
     if err != nil {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "success": false,
