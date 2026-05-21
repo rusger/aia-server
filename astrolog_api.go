@@ -4360,6 +4360,106 @@ func adminGrantSubscription(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// Admin endpoint to cancel (downgrade to free) a user's subscription
+// Requires: admin email + admin secret + verification code
+func adminCancelSubscription(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	log.Println("🔐 [adminCancelSubscription] Received request")
+
+	var req struct {
+		AdminEmail       string `json:"admin_email"`
+		AdminSecret      string `json:"admin_secret"`
+		VerificationCode string `json:"verification_code"`
+		Email            string `json:"email"` // target user
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid request format"})
+		return
+	}
+
+	// Validate admin email
+	if !isAdminEmail(req.AdminEmail) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized: Not an admin email"})
+		return
+	}
+
+	// Validate admin secret
+	if ADMIN_SECRET_KEY == "" || req.AdminSecret != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized: Invalid admin secret"})
+		return
+	}
+
+	// Validate verification code
+	if req.VerificationCode == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Verification code required"})
+		return
+	}
+
+	var codeID int
+	var expiresAt time.Time
+	err := db.QueryRow(`SELECT id, expires_at FROM auth_codes
+		WHERE email = ? AND code = ? AND used = 0 AND device_id = 'admin-action'
+		ORDER BY created_at DESC LIMIT 1`,
+		strings.ToLower(req.AdminEmail), req.VerificationCode).Scan(&codeID, &expiresAt)
+
+	if err == sql.ErrNoRows {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid or expired verification code"})
+		return
+	} else if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+		return
+	}
+	if time.Now().After(expiresAt) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Verification code expired. Request a new one."})
+		return
+	}
+	db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
+
+	// Validate target email
+	targetEmail := strings.ToLower(strings.TrimSpace(req.Email))
+	if targetEmail == "" || !isValidEmail(targetEmail) {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid target email address"})
+		return
+	}
+
+	// Check user exists
+	var existingID int
+	err = db.QueryRow(`SELECT id FROM users WHERE email = ?`, targetEmail).Scan(&existingID)
+	if err == sql.ErrNoRows {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "User not found"})
+		return
+	} else if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+		return
+	}
+
+	// Downgrade to free: clear subscription type, length, expiry, payment method
+	_, err = db.Exec(`UPDATE users SET
+		subscription_type = 'free',
+		subscription_length = 'monthly',
+		subscription_expiry = NULL,
+		last_payment_method = NULL,
+		updated_at = CURRENT_TIMESTAMP
+		WHERE email = ?`, targetEmail)
+	if err != nil {
+		log.Printf("❌ [adminCancelSubscription] Failed to cancel: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Failed to cancel subscription"})
+		return
+	}
+
+	log.Printf("✅ [adminCancelSubscription] Cancelled subscription for %s by admin %s", targetEmail, req.AdminEmail)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Subscription cancelled for %s", targetEmail),
+		"email":   targetEmail,
+	})
+}
+
 // Bot endpoint: check if email exists in users table (no 2FA, uses BOT_API_SECRET)
 func botCheckEmail(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -6698,6 +6798,7 @@ func main() {
     // attempts/15min; ADMIN_ALLOWED_IPS env bypasses the limiter.
     router.HandleFunc("/api/admin/request-code", adminGuardMiddleware(adminRequestCode)).Methods("POST")
     router.HandleFunc("/api/admin/grant-subscription", adminGuardMiddleware(adminGrantSubscription)).Methods("POST")
+    router.HandleFunc("/api/admin/cancel-subscription", adminGuardMiddleware(adminCancelSubscription)).Methods("POST")
     router.HandleFunc("/api/admin/users", adminGuardMiddleware(adminListUsers)).Methods("GET")
     router.HandleFunc("/api/admin/toggle-super", adminGuardMiddleware(adminToggleSuper)).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
