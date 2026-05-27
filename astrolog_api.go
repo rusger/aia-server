@@ -2599,6 +2599,14 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
             )`, email, renewalChannel, bannerDaysLeft, had, email)
     }
 
+    // Login hint for RU device-only free users who can't use Apple/Google payment.
+    // Text lives only on the server — never compiled into the app binary.
+    var loginHint interface{} = nil
+    isDeviceOnly := strings.HasSuffix(email, "@device.astrolytix.app")
+    if isRU && isDeviceOnly && effectiveSubType == "free" {
+        loginHint = "Проблемы с оплатой? Войдите по email для альтернативных способов"
+    }
+
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success":              true,
         "email":                email,
@@ -2616,6 +2624,7 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         "renewal_channel":      renewalChannel,
         "renewal_url":          renewalURL,
         "renewal_banner":       renewalBanner,
+        "login_hint":           loginHint,
     })
 }
 
