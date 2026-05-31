@@ -5104,6 +5104,10 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
             var promptToks, completionToks, totalToks, cachedToks int64
             if err := tokenModelRows.Scan(&model, &calls, &promptToks, &completionToks, &totalToks, &cachedToks); err == nil {
                 // Calculate estimated cost with cached token discount
+                // For historical records where cached_tokens=0, estimate ~50% cached
+                if cachedToks == 0 && promptToks > 0 {
+                    cachedToks = promptToks / 2
+                }
                 regularInput := promptToks - cachedToks
                 if regularInput < 0 {
                     regularInput = 0
@@ -6190,7 +6194,13 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 
 	// Helper: estimate cost based on model pricing (updated 2026-06)
 	// cachedToks = cached input tokens (cheaper rate); promptToks includes cachedToks
+	// For historical records where cached_tokens=0, estimate ~50% of input as cached
 	estimateCost := func(model string, promptToks, completionToks, cachedToks int64) float64 {
+		// If no cached data tracked, estimate that ~50% of prompt tokens were cached
+		// (based on observed ratio from OpenAI billing data)
+		if cachedToks == 0 && promptToks > 0 {
+			cachedToks = promptToks / 2
+		}
 		regularInput := promptToks - cachedToks
 		if regularInput < 0 {
 			regularInput = 0
