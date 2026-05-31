@@ -891,6 +891,9 @@ func initAnalyticsDB() error {
     // Ignore errors - columns may already exist
     analyticsDB.Exec(tokenColumnSQL)
 
+    // Add cached_tokens column (migration for cached input token tracking)
+    analyticsDB.Exec(`ALTER TABLE api_calls ADD COLUMN cached_tokens INTEGER DEFAULT 0;`)
+
     // Create monthly aggregates table for historical data retention
     createMonthlyTableSQL := `
     CREATE TABLE IF NOT EXISTS api_calls_monthly (
@@ -948,18 +951,18 @@ func initAnalyticsDB() error {
 
 // Log an API call to analytics database (without token tracking)
 func logAPICall(deviceID, callType, model string) {
-    logAPICallWithTokens(deviceID, callType, model, 0, 0, 0)
+    logAPICallWithTokens(deviceID, callType, model, 0, 0, 0, 0)
 }
 
 // Log an API call with token usage for cost tracking
-func logAPICallWithTokens(deviceID, callType, model string, promptTokens, completionTokens, totalTokens int) {
+func logAPICallWithTokens(deviceID, callType, model string, promptTokens, completionTokens, totalTokens, cachedTokens int) {
     if analyticsDB == nil {
         return
     }
     go func() {
         _, err := analyticsDB.Exec(
-            `INSERT INTO api_calls (device_id, call_type, model, prompt_tokens, completion_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?)`,
-            deviceID, callType, model, promptTokens, completionTokens, totalTokens)
+            `INSERT INTO api_calls (device_id, call_type, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, callType, model, promptTokens, completionTokens, totalTokens, cachedTokens)
         if err != nil {
             log.Printf("⚠️ Failed to log API call: %v", err)
         }
@@ -2457,7 +2460,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     }
 
     // Extract token usage from response
-    var promptTokens, completionTokens, totalTokens int
+    var promptTokens, completionTokens, totalTokens, cachedTokens int
     if usage, ok := openAIResp["usage"].(map[string]interface{}); ok {
         if pt, ok := usage["prompt_tokens"].(float64); ok {
             promptTokens = int(pt)
@@ -2468,13 +2471,19 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         if tt, ok := usage["total_tokens"].(float64); ok {
             totalTokens = int(tt)
         }
+        // Extract cached input tokens for accurate cost estimation
+        if ptd, ok := usage["prompt_tokens_details"].(map[string]interface{}); ok {
+            if ct, ok := ptd["cached_tokens"].(float64); ok {
+                cachedTokens = int(ct)
+            }
+        }
     }
 
-    log.Printf("✅ ChatGPT request successful, response length: %d, tokens: %d prompt + %d completion = %d total",
-        len(content), promptTokens, completionTokens, totalTokens)
+    log.Printf("✅ ChatGPT request successful, response length: %d, tokens: %d prompt (%d cached) + %d completion = %d total",
+        len(content), promptTokens, cachedTokens, completionTokens, totalTokens)
 
     // Log API call with token usage for analytics
-    logAPICallWithTokens(deviceID, "chatgpt", req.Model, promptTokens, completionTokens, totalTokens)
+    logAPICallWithTokens(deviceID, "chatgpt", req.Model, promptTokens, completionTokens, totalTokens, cachedTokens)
 
     // Return success response
     json.NewEncoder(w).Encode(ChatGPTProxyResponse{
@@ -5077,7 +5086,8 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
                COUNT(*) as calls,
                COALESCE(SUM(prompt_tokens), 0) as prompt_tokens,
                COALESCE(SUM(completion_tokens), 0) as completion_tokens,
-               COALESCE(SUM(total_tokens), 0) as total_tokens
+               COALESCE(SUM(total_tokens), 0) as total_tokens,
+               COALESCE(SUM(cached_tokens), 0) as cached_tokens
         FROM api_calls
         WHERE call_type = 'chatgpt' AND model IS NOT NULL AND model != ''
           AND strftime('%Y-%m', created_at) = ?
@@ -5091,28 +5101,31 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
         for tokenModelRows.Next() {
             var model string
             var calls int
-            var promptToks, completionToks, totalToks int64
-            if err := tokenModelRows.Scan(&model, &calls, &promptToks, &completionToks, &totalToks); err == nil {
-                // Calculate estimated cost based on model pricing (updated 2026-06)
+            var promptToks, completionToks, totalToks, cachedToks int64
+            if err := tokenModelRows.Scan(&model, &calls, &promptToks, &completionToks, &totalToks, &cachedToks); err == nil {
+                // Calculate estimated cost with cached token discount
+                regularInput := promptToks - cachedToks
+                if regularInput < 0 {
+                    regularInput = 0
+                }
                 var estimatedCost float64
                 switch model {
                 case "gpt-4.1":
-                    estimatedCost = (float64(promptToks) * 2.00 / 1000000) + (float64(completionToks) * 8.00 / 1000000)
+                    estimatedCost = (float64(regularInput)*2.00 + float64(cachedToks)*0.50) / 1000000 + float64(completionToks)*8.00/1000000
                 case "gpt-4.1-mini":
-                    estimatedCost = (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
+                    estimatedCost = (float64(regularInput)*0.40 + float64(cachedToks)*0.10) / 1000000 + float64(completionToks)*1.60/1000000
                 case "gpt-4.1-nano":
-                    estimatedCost = (float64(promptToks) * 0.10 / 1000000) + (float64(completionToks) * 0.40 / 1000000)
+                    estimatedCost = (float64(regularInput)*0.10 + float64(cachedToks)*0.025) / 1000000 + float64(completionToks)*0.40/1000000
                 case "gpt-4o":
-                    estimatedCost = (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+                    estimatedCost = (float64(regularInput)*2.50 + float64(cachedToks)*1.25) / 1000000 + float64(completionToks)*10.00/1000000
                 case "gpt-4o-mini":
-                    estimatedCost = (float64(promptToks) * 0.15 / 1000000) + (float64(completionToks) * 0.60 / 1000000)
+                    estimatedCost = (float64(regularInput)*0.15 + float64(cachedToks)*0.075) / 1000000 + float64(completionToks)*0.60/1000000
                 case "o1":
-                    estimatedCost = (float64(promptToks) * 15.00 / 1000000) + (float64(completionToks) * 60.00 / 1000000)
+                    estimatedCost = (float64(regularInput)*15.00 + float64(cachedToks)*7.50) / 1000000 + float64(completionToks)*60.00/1000000
                 case "o1-mini":
-                    estimatedCost = (float64(promptToks) * 1.10 / 1000000) + (float64(completionToks) * 4.40 / 1000000)
+                    estimatedCost = (float64(regularInput)*1.10 + float64(cachedToks)*0.55) / 1000000 + float64(completionToks)*4.40/1000000
                 default:
-                    // Default to gpt-4.1-mini pricing (most common model)
-                    estimatedCost = (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
+                    estimatedCost = (float64(regularInput)*0.40 + float64(cachedToks)*0.10) / 1000000 + float64(completionToks)*1.60/1000000
                 }
 
                 tokenByModel = append(tokenByModel, map[string]interface{}{
@@ -6176,25 +6189,29 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Helper: estimate cost based on model pricing (updated 2026-06)
-	estimateCost := func(model string, promptToks, completionToks int64) float64 {
+	// cachedToks = cached input tokens (cheaper rate); promptToks includes cachedToks
+	estimateCost := func(model string, promptToks, completionToks, cachedToks int64) float64 {
+		regularInput := promptToks - cachedToks
+		if regularInput < 0 {
+			regularInput = 0
+		}
 		switch model {
 		case "gpt-4.1":
-			return (float64(promptToks) * 2.00 / 1000000) + (float64(completionToks) * 8.00 / 1000000)
+			return (float64(regularInput)*2.00 + float64(cachedToks)*0.50) / 1000000 + float64(completionToks)*8.00/1000000
 		case "gpt-4.1-mini":
-			return (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
+			return (float64(regularInput)*0.40 + float64(cachedToks)*0.10) / 1000000 + float64(completionToks)*1.60/1000000
 		case "gpt-4.1-nano":
-			return (float64(promptToks) * 0.10 / 1000000) + (float64(completionToks) * 0.40 / 1000000)
+			return (float64(regularInput)*0.10 + float64(cachedToks)*0.025) / 1000000 + float64(completionToks)*0.40/1000000
 		case "gpt-4o":
-			return (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+			return (float64(regularInput)*2.50 + float64(cachedToks)*1.25) / 1000000 + float64(completionToks)*10.00/1000000
 		case "gpt-4o-mini":
-			return (float64(promptToks) * 0.15 / 1000000) + (float64(completionToks) * 0.60 / 1000000)
+			return (float64(regularInput)*0.15 + float64(cachedToks)*0.075) / 1000000 + float64(completionToks)*0.60/1000000
 		case "o1":
-			return (float64(promptToks) * 15.00 / 1000000) + (float64(completionToks) * 60.00 / 1000000)
+			return (float64(regularInput)*15.00 + float64(cachedToks)*7.50) / 1000000 + float64(completionToks)*60.00/1000000
 		case "o1-mini":
-			return (float64(promptToks) * 1.10 / 1000000) + (float64(completionToks) * 4.40 / 1000000)
+			return (float64(regularInput)*1.10 + float64(cachedToks)*0.55) / 1000000 + float64(completionToks)*4.40/1000000
 		default:
-			// Default to gpt-4.1-mini pricing (most common model)
-			return (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
+			return (float64(regularInput)*0.40 + float64(cachedToks)*0.10) / 1000000 + float64(completionToks)*1.60/1000000
 		}
 	}
 
@@ -6203,7 +6220,8 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 	costQuery := fmt.Sprintf(`
 		SELECT device_id, %s as period_date, COALESCE(model, 'unknown') as model,
 		       SUM(COALESCE(prompt_tokens, 0)) as prompt_toks,
-		       SUM(COALESCE(completion_tokens, 0)) as completion_toks
+		       SUM(COALESCE(completion_tokens, 0)) as completion_toks,
+		       SUM(COALESCE(cached_tokens, 0)) as cached_toks
 		FROM api_calls
 		WHERE 1=1
 	`, dateFormat)
@@ -6230,11 +6248,11 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 		defer costRows.Close()
 		for costRows.Next() {
 			var deviceId, periodDate, model string
-			var promptToks, completionToks int64
-			if err := costRows.Scan(&deviceId, &periodDate, &model, &promptToks, &completionToks); err != nil {
+			var promptToks, completionToks, cachedToks int64
+			if err := costRows.Scan(&deviceId, &periodDate, &model, &promptToks, &completionToks, &cachedToks); err != nil {
 				continue
 			}
-			cost := estimateCost(model, promptToks, completionToks)
+			cost := estimateCost(model, promptToks, completionToks, cachedToks)
 
 			emails := deviceToEmails[deviceId]
 			for _, email := range emails {
