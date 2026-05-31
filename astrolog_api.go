@@ -5093,9 +5093,15 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
             var calls int
             var promptToks, completionToks, totalToks int64
             if err := tokenModelRows.Scan(&model, &calls, &promptToks, &completionToks, &totalToks); err == nil {
-                // Calculate estimated cost based on model pricing (as of 2024)
+                // Calculate estimated cost based on model pricing (updated 2026-06)
                 var estimatedCost float64
                 switch model {
+                case "gpt-4.1":
+                    estimatedCost = (float64(promptToks) * 2.00 / 1000000) + (float64(completionToks) * 8.00 / 1000000)
+                case "gpt-4.1-mini":
+                    estimatedCost = (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
+                case "gpt-4.1-nano":
+                    estimatedCost = (float64(promptToks) * 0.10 / 1000000) + (float64(completionToks) * 0.40 / 1000000)
                 case "gpt-4o":
                     estimatedCost = (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
                 case "gpt-4o-mini":
@@ -5105,8 +5111,8 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
                 case "o1-mini":
                     estimatedCost = (float64(promptToks) * 1.10 / 1000000) + (float64(completionToks) * 4.40 / 1000000)
                 default:
-                    // Default to gpt-4o pricing
-                    estimatedCost = (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+                    // Default to gpt-4.1-mini pricing (most common model)
+                    estimatedCost = (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
                 }
 
                 tokenByModel = append(tokenByModel, map[string]interface{}{
@@ -6169,9 +6175,15 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 		dateStats[periodDate].TotalTokens += totalToks
 	}
 
-	// Helper: estimate cost based on model pricing
+	// Helper: estimate cost based on model pricing (updated 2026-06)
 	estimateCost := func(model string, promptToks, completionToks int64) float64 {
 		switch model {
+		case "gpt-4.1":
+			return (float64(promptToks) * 2.00 / 1000000) + (float64(completionToks) * 8.00 / 1000000)
+		case "gpt-4.1-mini":
+			return (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
+		case "gpt-4.1-nano":
+			return (float64(promptToks) * 0.10 / 1000000) + (float64(completionToks) * 0.40 / 1000000)
 		case "gpt-4o":
 			return (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
 		case "gpt-4o-mini":
@@ -6181,7 +6193,8 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 		case "o1-mini":
 			return (float64(promptToks) * 1.10 / 1000000) + (float64(completionToks) * 4.40 / 1000000)
 		default:
-			return (float64(promptToks) * 2.50 / 1000000) + (float64(completionToks) * 10.00 / 1000000)
+			// Default to gpt-4.1-mini pricing (most common model)
+			return (float64(promptToks) * 0.40 / 1000000) + (float64(completionToks) * 1.60 / 1000000)
 		}
 	}
 
