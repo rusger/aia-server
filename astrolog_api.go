@@ -3103,8 +3103,9 @@ type appleTransactionInfo struct {
     TransactionID         string `json:"transactionId"`
     OriginalTransactionID string `json:"originalTransactionId"`
     ProductID             string `json:"productId"`
-    PurchaseDate          int64  `json:"purchaseDate"`    // epoch milliseconds
-    ExpiresDate           int64  `json:"expiresDate"`     // epoch milliseconds
+    PurchaseDate          int64  `json:"purchaseDate"`         // epoch milliseconds
+    OriginalPurchaseDate  int64  `json:"originalPurchaseDate"` // epoch milliseconds (subscription start)
+    ExpiresDate           int64  `json:"expiresDate"`          // epoch milliseconds
     Type                  string `json:"type"`            // e.g. "Auto-Renewable Subscription"
     AppAccountToken       string `json:"appAccountToken"` // set by client if it tags purchases
     InAppOwnershipType    string `json:"inAppOwnershipType"`
@@ -3207,19 +3208,46 @@ func applyAppleRenewal(txn *appleTransactionInfo) {
     if txn == nil || txn.OriginalTransactionID == "" || txn.ExpiresDate == 0 {
         return
     }
-    email := appleAttributeEmail(txn)
-    if email == "" {
-        log.Printf("🍎 [apple S2S] renewal for unattributed otxn=%s (skipped)", txn.OriginalTransactionID)
-        return
-    }
     expiry := time.UnixMilli(txn.ExpiresDate)
-    if _, err := db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
-        subscription_expiry=?, last_payment_method='apple', updated_at=CURRENT_TIMESTAMP WHERE email=?`,
-        productToLength(txn.ProductID), expiry, email); err != nil {
-        log.Printf("⚠️ [apple S2S] renewal update failed: %v", err)
+
+    // Known subscriber → just keep the expiry window current.
+    if email := appleAttributeEmail(txn); email != "" {
+        if _, err := db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
+            subscription_expiry=?, last_payment_method='apple', updated_at=CURRENT_TIMESTAMP WHERE email=?`,
+            productToLength(txn.ProductID), expiry, email); err != nil {
+            log.Printf("⚠️ [apple S2S] renewal update failed: %v", err)
+            return
+        }
+        log.Printf("🍎 [apple S2S] renewal applied: email=%s until=%v", email, expiry)
         return
     }
-    log.Printf("🍎 [apple S2S] renewal applied: email=%s until=%v", email, expiry)
+
+    // Unknown subscription renewing — a previously-invisible subscriber whose
+    // original purchase predates this webhook and never synced through the
+    // client. Record a ONE-TIME discovery placeholder so the subscriber is
+    // counted; dedup by original_transaction_id so monthly renewals don't each
+    // add a row. recordPurchase later removes the placeholder if the client
+    // finally syncs, and token attribution can claim it once the app updates.
+    var seen int
+    db.QueryRow(`SELECT COUNT(*) FROM purchase_history
+                 WHERE store='apple' AND (original_transaction_id = ? OR transaction_id = ?)`,
+        txn.OriginalTransactionID, txn.OriginalTransactionID).Scan(&seen)
+    if seen > 0 {
+        return
+    }
+    startMillis := txn.OriginalPurchaseDate
+    if startMillis == 0 {
+        startMillis = txn.PurchaseDate
+    }
+    if _, err := db.Exec(`INSERT OR IGNORE INTO purchase_history
+        (email, device_id, product_id, transaction_id, original_transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
+        VALUES (?, 'apple_s2s_renewal', ?, ?, ?, ?, ?, 'paid', ?, 'apple')`,
+        "apple:"+txn.OriginalTransactionID, txn.ProductID, txn.TransactionID, txn.OriginalTransactionID,
+        time.UnixMilli(startMillis), &expiry, productToLength(txn.ProductID)); err != nil {
+        log.Printf("⚠️ [apple S2S] renewal discovery insert failed: %v", err)
+        return
+    }
+    log.Printf("🍎 [apple S2S] discovered previously-invisible subscription via renewal: otxn=%s product=%s", txn.OriginalTransactionID, txn.ProductID)
 }
 
 // applyAppleRevoke downgrades a user when a subscription ends, is refunded, or
