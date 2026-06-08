@@ -29,6 +29,20 @@ go get modernc.org/sqlite
 echo "✓ Dependencies installed"
 echo ""
 
+# Apple Root CA (G3) — required to verify App Store Server Notification
+# signatures. Fetched once; safe to re-run (idempotent).
+if [ ! -f apple_root_ca_g3.pem ]; then
+    echo "🍎 Fetching Apple Root CA - G3 for App Store notification verification..."
+    if curl -fsSL -o apple_root_ca_g3.pem https://www.apple.com/certificateauthority/AppleRootCA-G3.cer; then
+        echo "✓ Apple Root CA saved: ./apple_root_ca_g3.pem"
+    else
+        echo "⚠️  Could not fetch Apple Root CA — App Store notifications will be rejected until apple_root_ca_g3.pem exists"
+    fi
+else
+    echo "✓ Apple Root CA already present: ./apple_root_ca_g3.pem"
+fi
+echo ""
+
 # Build the main API server
 echo "🔨 Building API server..."
 go build -o astrolog_api astrolog_api.go
