@@ -253,7 +253,8 @@ type RecordPurchaseRequest struct {
     ExpiryDate         string `json:"expiry_date"`
     SubscriptionType   string `json:"subscription_type"`
     SubscriptionLength string `json:"subscription_length"`
-    Store              string `json:"store"` // "apple" or "google"
+    Store              string `json:"store"`             // "apple" or "google"
+    AppAccountToken    string `json:"app_account_token"` // StoreKit appAccountToken (UUID) for S2S attribution
 }
 
 // Admin hardcoded emails (can grant subscriptions)
@@ -870,6 +871,19 @@ func initDB() error {
         if !strings.Contains(mErr.Error(), "duplicate column") {
             log.Printf("ℹ️ users.last_payment_method migration note: %v", mErr)
         }
+    }
+
+    // Migration: app_account_token — the UUID the client tags Apple purchases
+    // with (StoreKit appAccountToken). Stored at register/sync time so that an
+    // App Store Server Notification can be attributed to this account even if
+    // the purchase itself never synced through the client.
+    if _, mErr := db.Exec(`ALTER TABLE users ADD COLUMN app_account_token TEXT`); mErr != nil {
+        if !strings.Contains(mErr.Error(), "duplicate column") {
+            log.Printf("ℹ️ users.app_account_token migration note: %v", mErr)
+        }
+    }
+    if _, iErr := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_app_account_token ON users(app_account_token)`); iErr != nil {
+        log.Printf("⚠️ users.app_account_token index migration: %v", iErr)
     }
     // Backfill last_payment_method from latest purchase_history row per email.
     // Idempotent: only updates rows where the column is still NULL.
@@ -2200,6 +2214,7 @@ func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
         DeviceID           string `json:"device_id"`
         SubscriptionType   string `json:"subscription_type"`
         SubscriptionLength string `json:"subscription_length"`
+        AppAccountToken    string `json:"app_account_token"`
     }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
         log.Printf("❌ [registerOrUpdateUser] Invalid request: %v", err)
@@ -2274,6 +2289,15 @@ func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
         }
 
         log.Printf("✅ Existing device logged in: %s (plan: %s)", req.DeviceID, subscriptionType)
+    }
+
+    // Persist the StoreKit appAccountToken so Apple S2S notifications can be
+    // attributed to this account even if a purchase never syncs via the client.
+    if req.AppAccountToken != "" {
+        if _, tErr := db.Exec(`UPDATE users SET app_account_token = ? WHERE email = ?`,
+            req.AppAccountToken, anonymousEmail); tErr != nil {
+            log.Printf("⚠️ Failed to store app_account_token for %s: %v", req.DeviceID, tErr)
+        }
     }
 
     // Generate JWT tokens
@@ -3087,6 +3111,17 @@ type appleTransactionInfo struct {
     Storefront            string `json:"storefront"`
 }
 
+// appleEmailForToken returns the account email whose stored StoreKit
+// appAccountToken matches the one in the notification, or "" if none.
+func appleEmailForToken(token string) string {
+    if token == "" {
+        return ""
+    }
+    var email string
+    db.QueryRow(`SELECT email FROM users WHERE app_account_token = ? LIMIT 1`, token).Scan(&email)
+    return email
+}
+
 // appleEmailForOriginalTxn returns the real (non-placeholder) account email tied
 // to an Apple original_transaction_id, or "" if we can't attribute it yet.
 func appleEmailForOriginalTxn(originalTxnID string) string {
@@ -3100,6 +3135,16 @@ func appleEmailForOriginalTxn(originalTxnID string) string {
                  ORDER BY id LIMIT 1`,
         originalTxnID, originalTxnID).Scan(&email)
     return email
+}
+
+// appleAttributeEmail resolves a transaction to a real account email, trying the
+// appAccountToken first (works even for purchases the client never synced), then
+// falling back to matching the original transaction id.
+func appleAttributeEmail(txn *appleTransactionInfo) string {
+    if email := appleEmailForToken(txn.AppAccountToken); email != "" {
+        return email
+    }
+    return appleEmailForOriginalTxn(txn.OriginalTransactionID)
 }
 
 // upsertAppleTransaction records a new Apple purchase in purchase_history if we
@@ -3127,7 +3172,7 @@ func upsertAppleTransaction(txn *appleTransactionInfo, deviceHint string) {
         expiry = &e
     }
 
-    email := appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    email := appleAttributeEmail(txn)
     attributed := email != ""
     if !attributed {
         email = "apple:" + txn.OriginalTransactionID
@@ -3162,7 +3207,7 @@ func applyAppleRenewal(txn *appleTransactionInfo) {
     if txn == nil || txn.OriginalTransactionID == "" || txn.ExpiresDate == 0 {
         return
     }
-    email := appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    email := appleAttributeEmail(txn)
     if email == "" {
         log.Printf("🍎 [apple S2S] renewal for unattributed otxn=%s (skipped)", txn.OriginalTransactionID)
         return
@@ -3183,7 +3228,7 @@ func applyAppleRevoke(txn *appleTransactionInfo, reason string) {
     if txn == nil || txn.OriginalTransactionID == "" {
         return
     }
-    email := appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    email := appleAttributeEmail(txn)
     if email == "" {
         return
     }
@@ -3437,6 +3482,15 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // restore — keeping the funnel's "completed" count in lockstep with purchase_history.
     if newRows, raErr := insertRes.RowsAffected(); raErr == nil && newRows == 1 {
         emitPurchaseCompletedEvent(deviceID, req.ProductID, req.Store, "server_record_purchase")
+    }
+
+    // Persist the StoreKit appAccountToken so future Apple S2S notifications
+    // (e.g. renewals) attribute back to this account.
+    if req.AppAccountToken != "" && email != "" {
+        if _, tErr := db.Exec(`UPDATE users SET app_account_token = ? WHERE email = ?`,
+            req.AppAccountToken, email); tErr != nil {
+            log.Printf("⚠️ Failed to store app_account_token on purchase: %v", tErr)
+        }
     }
 
     // Reconcile: if the Apple S2S handler had already recorded this transaction
