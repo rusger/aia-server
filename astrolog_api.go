@@ -3,10 +3,12 @@ package main
 import (
     "bytes"
     "context"
+    "crypto/ecdsa"
     "crypto/hmac"
     "crypto/rand"
     "crypto/sha256"
     "crypto/tls"
+    "crypto/x509"
     "database/sql"
     "encoding/base64"
     "encoding/hex"
@@ -675,6 +677,162 @@ func parseDBTime(s string) (time.Time, error) {
 var db *sql.DB
 var analyticsDB *sql.DB
 
+// appleRootPool pins App Store Server Notification verification to Apple's
+// Root CA. Loaded at startup from APPLE_ROOT_CA_PATH (PEM or DER). If nil,
+// verifyAppleJWS fails closed so unsigned/forged notifications are rejected.
+var appleRootPool *x509.CertPool
+
+// initAppleRootCA loads Apple's Root CA (G3) so the notification handler can
+// verify the x5c certificate chain Apple embeds in every signed payload.
+// Accepts either PEM or raw DER (Apple distributes AppleRootCA-G3.cer as DER).
+func initAppleRootCA() {
+    path := getEnv("APPLE_ROOT_CA_PATH", "./apple_root_ca_g3.pem")
+    raw, err := os.ReadFile(path)
+    if err != nil {
+        log.Printf("⚠️ Apple Root CA not loaded from %s: %v — App Store notifications will be REJECTED until present", path, err)
+        return
+    }
+    pool := x509.NewCertPool()
+    if pool.AppendCertsFromPEM(raw) {
+        appleRootPool = pool
+        log.Printf("✅ Apple Root CA loaded (PEM) from %s", path)
+        return
+    }
+    // Fall back to DER (.cer)
+    cert, derErr := x509.ParseCertificate(raw)
+    if derErr != nil {
+        log.Printf("⚠️ Apple Root CA at %s is neither valid PEM nor DER: %v", path, derErr)
+        return
+    }
+    pool.AddCert(cert)
+    appleRootPool = pool
+    log.Printf("✅ Apple Root CA loaded (DER) from %s", path)
+}
+
+// verifyAppleJWS verifies an Apple-signed JWS (compact serialization) by
+// validating the embedded x5c chain up to Apple's pinned Root CA and checking
+// the ES256 signature, then returns the decoded payload bytes. Used for both
+// the notification envelope and the nested signedTransactionInfo.
+func verifyAppleJWS(token string) ([]byte, error) {
+    if appleRootPool == nil {
+        return nil, fmt.Errorf("apple root CA not configured")
+    }
+    parts := strings.Split(token, ".")
+    if len(parts) != 3 {
+        return nil, fmt.Errorf("malformed JWS (%d segments)", len(parts))
+    }
+    headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+    if err != nil {
+        return nil, fmt.Errorf("bad header base64: %w", err)
+    }
+    var hdr struct {
+        Alg string   `json:"alg"`
+        X5c []string `json:"x5c"`
+    }
+    if err := json.Unmarshal(headerJSON, &hdr); err != nil {
+        return nil, fmt.Errorf("bad header json: %w", err)
+    }
+    if hdr.Alg != "ES256" {
+        return nil, fmt.Errorf("unexpected alg %q", hdr.Alg)
+    }
+    if len(hdr.X5c) < 2 {
+        return nil, fmt.Errorf("x5c chain too short (%d)", len(hdr.X5c))
+    }
+    // x5c entries are standard-base64 DER certs: [leaf, intermediate, (root)].
+    var certs []*x509.Certificate
+    for i, c := range hdr.X5c {
+        der, decErr := base64.StdEncoding.DecodeString(c)
+        if decErr != nil {
+            return nil, fmt.Errorf("bad x5c[%d] base64: %w", i, decErr)
+        }
+        crt, parseErr := x509.ParseCertificate(der)
+        if parseErr != nil {
+            return nil, fmt.Errorf("bad x5c[%d] cert: %w", i, parseErr)
+        }
+        certs = append(certs, crt)
+    }
+    leaf := certs[0]
+    intermediates := x509.NewCertPool()
+    for _, c := range certs[1:] {
+        intermediates.AddCert(c)
+    }
+    // Apple leaf certs carry a custom EKU OID, so accept any EKU; the pinned
+    // Root CA in appleRootPool is what actually establishes trust.
+    if _, vErr := leaf.Verify(x509.VerifyOptions{
+        Roots:         appleRootPool,
+        Intermediates: intermediates,
+        KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+    }); vErr != nil {
+        return nil, fmt.Errorf("certificate chain verification failed: %w", vErr)
+    }
+    pub, ok := leaf.PublicKey.(*ecdsa.PublicKey)
+    if !ok {
+        return nil, fmt.Errorf("leaf public key is not ECDSA")
+    }
+    sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+    if err != nil {
+        return nil, fmt.Errorf("bad signature base64: %w", err)
+    }
+    if len(sig) != 64 {
+        return nil, fmt.Errorf("unexpected ES256 signature length %d", len(sig))
+    }
+    rInt := new(big.Int).SetBytes(sig[:32])
+    sInt := new(big.Int).SetBytes(sig[32:])
+    digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+    if !ecdsa.Verify(pub, digest[:], rInt, sInt) {
+        return nil, fmt.Errorf("signature verification failed")
+    }
+    payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+    if err != nil {
+        return nil, fmt.Errorf("bad payload base64: %w", err)
+    }
+    return payload, nil
+}
+
+// productToLength maps an App Store product id to our subscription_length bucket.
+func productToLength(productID string) string {
+    p := strings.ToLower(productID)
+    switch {
+    case strings.Contains(p, "year"):
+        return "yearly"
+    case strings.Contains(p, "life"):
+        return "lifetime"
+    case strings.Contains(p, "month"):
+        return "monthly"
+    default:
+        return "monthly"
+    }
+}
+
+// emitPurchaseCompletedEvent writes a server-authoritative purchase_completed
+// funnel event into analytics_events. Called by recordPurchase (client sync)
+// and the Apple S2S handler (purchases the client never synced) so the funnel's
+// completed count tracks real purchases regardless of client-side reliability.
+func emitPurchaseCompletedEvent(deviceID, productID, store, source string) {
+    if analyticsDB == nil {
+        return
+    }
+    platform := store
+    switch store {
+    case "apple":
+        platform = "ios"
+    case "google":
+        platform = "android"
+    }
+    props, _ := json.Marshal(map[string]string{
+        "sku":    productID,
+        "store":  store,
+        "source": source,
+    })
+    if _, err := analyticsDB.Exec(
+        `INSERT INTO analytics_events (device_id, event_type, event_name, properties, app_version, platform)
+         VALUES (?, 'funnel', 'purchase_completed', ?, 'server', ?)`,
+        deviceID, string(props), platform,
+    ); err != nil {
+        log.Printf("⚠️ Failed to emit server purchase_completed event: %v", err)
+    }
+}
+
 // Initialize database
 func initDB() error {
     var err error
@@ -803,6 +961,33 @@ func initDB() error {
     if _, iErr := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_unique
         ON purchase_history(email, transaction_id, store)`); iErr != nil {
         log.Printf("⚠️ purchase_history unique index migration: %v", iErr)
+    }
+
+    // Apple S2S: original_transaction_id ties renewals and server notifications
+    // back to the initial purchase (and thus to a user). Older rows predate it.
+    if _, aErr := db.Exec(`ALTER TABLE purchase_history ADD COLUMN original_transaction_id TEXT`); aErr != nil {
+        if !strings.Contains(aErr.Error(), "duplicate column") {
+            log.Printf("⚠️ purchase_history original_transaction_id migration: %v", aErr)
+        }
+    }
+
+    // Apple App Store Server Notifications V2 — audit log + idempotency guard.
+    // notification_uuid is unique so Apple's retries are processed exactly once.
+    if _, nErr := db.Exec(`
+        CREATE TABLE IF NOT EXISTS apple_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            notification_uuid TEXT UNIQUE,
+            notification_type TEXT,
+            subtype TEXT,
+            environment TEXT,
+            transaction_id TEXT,
+            original_transaction_id TEXT,
+            product_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_apple_notif_otxn ON apple_notifications(original_transaction_id);
+    `); nErr != nil {
+        log.Printf("⚠️ apple_notifications table migration: %v", nErr)
     }
 
     // T2.B partner invite hashes — short codes that map to a snapshot of
@@ -2864,6 +3049,239 @@ func verifyGooglePlayPurchase(productID, purchaseToken string, isSubscription bo
     return true, nil, nil
 }
 
+// ---------------------------------------------------------------------------
+// Apple App Store Server Notifications V2
+//
+// Apple POSTs {"signedPayload": "<JWS>"} to our endpoint for every subscription
+// lifecycle event. This is the source of truth for purchases — it fires even
+// when the client never synced (bad network, app killed, user never reopened
+// the app), closing the gap where real Apple sales were missing from our DB.
+// ---------------------------------------------------------------------------
+
+type appleNotificationBody struct {
+    SignedPayload string `json:"signedPayload"`
+}
+
+type appleNotificationPayload struct {
+    NotificationType string `json:"notificationType"`
+    Subtype          string `json:"subtype"`
+    NotificationUUID string `json:"notificationUUID"`
+    Version          string `json:"version"`
+    Data             struct {
+        BundleID              string `json:"bundleId"`
+        Environment           string `json:"environment"`
+        SignedTransactionInfo string `json:"signedTransactionInfo"`
+        SignedRenewalInfo     string `json:"signedRenewalInfo"`
+    } `json:"data"`
+}
+
+type appleTransactionInfo struct {
+    TransactionID         string `json:"transactionId"`
+    OriginalTransactionID string `json:"originalTransactionId"`
+    ProductID             string `json:"productId"`
+    PurchaseDate          int64  `json:"purchaseDate"`    // epoch milliseconds
+    ExpiresDate           int64  `json:"expiresDate"`     // epoch milliseconds
+    Type                  string `json:"type"`            // e.g. "Auto-Renewable Subscription"
+    AppAccountToken       string `json:"appAccountToken"` // set by client if it tags purchases
+    InAppOwnershipType    string `json:"inAppOwnershipType"`
+    Storefront            string `json:"storefront"`
+}
+
+// appleEmailForOriginalTxn returns the real (non-placeholder) account email tied
+// to an Apple original_transaction_id, or "" if we can't attribute it yet.
+func appleEmailForOriginalTxn(originalTxnID string) string {
+    if originalTxnID == "" {
+        return ""
+    }
+    var email string
+    db.QueryRow(`SELECT email FROM purchase_history
+                 WHERE store='apple' AND email NOT LIKE 'apple:%'
+                   AND (transaction_id = ? OR original_transaction_id = ?)
+                 ORDER BY id LIMIT 1`,
+        originalTxnID, originalTxnID).Scan(&email)
+    return email
+}
+
+// upsertAppleTransaction records a new Apple purchase in purchase_history if we
+// haven't seen the transaction yet, attributing it to a user when possible and
+// otherwise storing a clearly-marked placeholder so the sale is never lost.
+func upsertAppleTransaction(txn *appleTransactionInfo, deviceHint string) {
+    if txn == nil || txn.TransactionID == "" {
+        return
+    }
+
+    // Dedup by transaction id across any email — the client may already have
+    // synced this exact transaction via /api/user/purchases.
+    var existing int
+    db.QueryRow(`SELECT COUNT(*) FROM purchase_history WHERE store='apple' AND transaction_id = ?`,
+        txn.TransactionID).Scan(&existing)
+    if existing > 0 {
+        return
+    }
+
+    length := productToLength(txn.ProductID)
+    purchaseDate := time.UnixMilli(txn.PurchaseDate)
+    var expiry *time.Time
+    if txn.ExpiresDate > 0 {
+        e := time.UnixMilli(txn.ExpiresDate)
+        expiry = &e
+    }
+
+    email := appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    attributed := email != ""
+    if !attributed {
+        email = "apple:" + txn.OriginalTransactionID
+    }
+
+    if _, err := db.Exec(`INSERT OR IGNORE INTO purchase_history
+        (email, device_id, product_id, transaction_id, original_transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'apple')`,
+        email, deviceHint, txn.ProductID, txn.TransactionID, txn.OriginalTransactionID,
+        purchaseDate, expiry, "paid", length); err != nil {
+        log.Printf("⚠️ [apple S2S] purchase_history insert failed: %v", err)
+        return
+    }
+    log.Printf("🍎 [apple S2S] purchase recorded: product=%s txn=%s attributed=%v", txn.ProductID, txn.TransactionID, attributed)
+
+    // Catch purchases the client never synced in the in-app funnel too.
+    emitPurchaseCompletedEvent(deviceHint, txn.ProductID, "apple", "server_apple_s2s")
+
+    if attributed {
+        if _, uErr := db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
+            subscription_expiry=?, last_payment_method='apple', updated_at=CURRENT_TIMESTAMP WHERE email=?`,
+            length, expiry, email); uErr != nil {
+            log.Printf("⚠️ [apple S2S] user subscription update failed: %v", uErr)
+        }
+    }
+}
+
+// applyAppleRenewal extends the subscription window on DID_RENEW. We don't add a
+// purchase_history row for renewals (those rows mean *new* conversions), we just
+// keep the user's expiry current.
+func applyAppleRenewal(txn *appleTransactionInfo) {
+    if txn == nil || txn.OriginalTransactionID == "" || txn.ExpiresDate == 0 {
+        return
+    }
+    email := appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    if email == "" {
+        log.Printf("🍎 [apple S2S] renewal for unattributed otxn=%s (skipped)", txn.OriginalTransactionID)
+        return
+    }
+    expiry := time.UnixMilli(txn.ExpiresDate)
+    if _, err := db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
+        subscription_expiry=?, last_payment_method='apple', updated_at=CURRENT_TIMESTAMP WHERE email=?`,
+        productToLength(txn.ProductID), expiry, email); err != nil {
+        log.Printf("⚠️ [apple S2S] renewal update failed: %v", err)
+        return
+    }
+    log.Printf("🍎 [apple S2S] renewal applied: email=%s until=%v", email, expiry)
+}
+
+// applyAppleRevoke downgrades a user when a subscription ends, is refunded, or
+// is revoked. Only acts on transactions we can attribute to a real account.
+func applyAppleRevoke(txn *appleTransactionInfo, reason string) {
+    if txn == nil || txn.OriginalTransactionID == "" {
+        return
+    }
+    email := appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    if email == "" {
+        return
+    }
+    if _, err := db.Exec(`UPDATE users SET subscription_type='free',
+        updated_at=CURRENT_TIMESTAMP WHERE email=?`, email); err != nil {
+        log.Printf("⚠️ [apple S2S] revoke (%s) update failed: %v", reason, err)
+        return
+    }
+    log.Printf("🍎 [apple S2S] subscription ended (%s): email=%s", reason, email)
+}
+
+// recordAppleNotificationIfNew logs the notification for audit and returns false
+// if this notificationUUID was already processed (Apple retries on non-2xx).
+func recordAppleNotificationIfNew(note *appleNotificationPayload, txn *appleTransactionInfo) bool {
+    res, err := db.Exec(`INSERT OR IGNORE INTO apple_notifications
+        (notification_uuid, notification_type, subtype, environment, transaction_id, original_transaction_id, product_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        note.NotificationUUID, note.NotificationType, note.Subtype, note.Data.Environment,
+        txn.TransactionID, txn.OriginalTransactionID, txn.ProductID)
+    if err != nil {
+        log.Printf("⚠️ apple_notifications insert: %v", err)
+        return true // process anyway rather than silently drop
+    }
+    n, _ := res.RowsAffected()
+    return n == 1
+}
+
+// POST /api/apple/notifications - App Store Server Notifications V2 webhook
+func appleServerNotification(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    var body appleNotificationBody
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SignedPayload == "" {
+        w.WriteHeader(http.StatusBadRequest)
+        w.Write([]byte(`{"success":false,"error":"invalid body"}`))
+        return
+    }
+
+    payload, err := verifyAppleJWS(body.SignedPayload)
+    if err != nil {
+        log.Printf("❌ [apple S2S] envelope signature verification failed: %v", err)
+        w.WriteHeader(http.StatusUnauthorized)
+        w.Write([]byte(`{"success":false,"error":"signature verification failed"}`))
+        return
+    }
+
+    var note appleNotificationPayload
+    if err := json.Unmarshal(payload, &note); err != nil {
+        log.Printf("❌ [apple S2S] payload parse failed: %v", err)
+        w.WriteHeader(http.StatusBadRequest)
+        w.Write([]byte(`{"success":false}`))
+        return
+    }
+
+    var txn appleTransactionInfo
+    if note.Data.SignedTransactionInfo != "" {
+        txnPayload, tErr := verifyAppleJWS(note.Data.SignedTransactionInfo)
+        if tErr != nil {
+            log.Printf("❌ [apple S2S] transaction signature verification failed: %v", tErr)
+            w.WriteHeader(http.StatusUnauthorized)
+            w.Write([]byte(`{"success":false}`))
+            return
+        }
+        if jErr := json.Unmarshal(txnPayload, &txn); jErr != nil {
+            log.Printf("❌ [apple S2S] transaction parse failed: %v", jErr)
+        }
+    }
+
+    log.Printf("🍎 [apple S2S] type=%s subtype=%s env=%s product=%s txn=%s otxn=%s",
+        note.NotificationType, note.Subtype, note.Data.Environment, txn.ProductID, txn.TransactionID, txn.OriginalTransactionID)
+
+    // Idempotency — Apple retries failed deliveries; process each UUID once.
+    if !recordAppleNotificationIfNew(&note, &txn) {
+        log.Printf("🍎 [apple S2S] duplicate notification %s ignored", note.NotificationUUID)
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"success":true,"duplicate":true}`))
+        return
+    }
+
+    const deviceHint = "apple_s2s"
+    switch note.NotificationType {
+    case "SUBSCRIBED", "OFFER_REDEEMED":
+        upsertAppleTransaction(&txn, deviceHint)
+    case "DID_RENEW":
+        applyAppleRenewal(&txn)
+    case "EXPIRED", "GRACE_PERIOD_EXPIRED", "REFUND", "REVOKE":
+        applyAppleRevoke(&txn, note.NotificationType)
+    case "TEST":
+        log.Printf("🍎 [apple S2S] TEST notification received OK")
+    default:
+        log.Printf("🍎 [apple S2S] unhandled type %s (logged only)", note.NotificationType)
+    }
+
+    // Always 200 on a verified notification so Apple stops retrying.
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"success":true}`))
+}
+
 // Record a purchase in the purchase history
 func recordPurchase(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -3017,25 +3435,21 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // INSERT OR IGNORE collapses re-confirmations/restores of the same receipt to 0
     // rows affected, so this fires exactly once per real purchase and never on a
     // restore — keeping the funnel's "completed" count in lockstep with purchase_history.
-    if newRows, raErr := insertRes.RowsAffected(); raErr == nil && newRows == 1 && analyticsDB != nil {
-        platform := req.Store
-        switch req.Store {
-        case "apple":
-            platform = "ios"
-        case "google":
-            platform = "android"
-        }
-        props, _ := json.Marshal(map[string]string{
-            "sku":    req.ProductID,
-            "store":  req.Store,
-            "source": "server_record_purchase",
-        })
-        if _, aErr := analyticsDB.Exec(
-            `INSERT INTO analytics_events (device_id, event_type, event_name, properties, app_version, platform)
-             VALUES (?, 'funnel', 'purchase_completed', ?, 'server', ?)`,
-            deviceID, string(props), platform,
-        ); aErr != nil {
-            log.Printf("⚠️ Failed to emit server purchase_completed event: %v", aErr)
+    if newRows, raErr := insertRes.RowsAffected(); raErr == nil && newRows == 1 {
+        emitPurchaseCompletedEvent(deviceID, req.ProductID, req.Store, "server_record_purchase")
+    }
+
+    // Reconcile: if the Apple S2S handler had already recorded this transaction
+    // as an unattributed placeholder (email "apple:<originalTransactionId>")
+    // because the client hadn't synced yet, drop the placeholder now that we
+    // have the real account. For an initial buy transaction_id == originalTransactionId.
+    if req.Store == "apple" && req.TransactionID != "" {
+        if _, dErr := db.Exec(
+            `DELETE FROM purchase_history WHERE store='apple' AND email LIKE 'apple:%'
+                AND (transaction_id = ? OR original_transaction_id = ?)`,
+            req.TransactionID, req.TransactionID,
+        ); dErr != nil {
+            log.Printf("⚠️ placeholder reconcile failed: %v", dErr)
         }
     }
 
@@ -6843,6 +7257,9 @@ func main() {
         defer analyticsDB.Close()
     }
 
+    // Load Apple Root CA for App Store Server Notification signature verification
+    initAppleRootCA()
+
     router := mux.NewRouter()
 
     // Public endpoints (no JWT required)
@@ -6854,6 +7271,10 @@ func main() {
     // Analytics endpoints (public - no JWT required for event tracking)
     router.HandleFunc("/api/analytics/event", trackAnalyticsEvent).Methods("POST")
     router.HandleFunc("/api/analytics/events", trackAnalyticsEvents).Methods("POST")
+
+    // Apple App Store Server Notifications V2 (public — authenticated by Apple's
+    // JWS signature, verified against the pinned Apple Root CA, not by JWT)
+    router.HandleFunc("/api/apple/notifications", appleServerNotification).Methods("POST")
 
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
