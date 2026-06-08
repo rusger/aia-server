@@ -2967,7 +2967,7 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
               (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-    _, err = tx.Exec(query, email, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
+    insertRes, err := tx.Exec(query, email, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
     if err != nil {
         log.Printf("Error recording purchase: %v", err)
         w.WriteHeader(http.StatusInternalServerError)
@@ -3008,6 +3008,36 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     }
 
     log.Printf("✅ Purchase recorded: device=%s, product=%s, store=%s", deviceID, req.ProductID, req.Store)
+
+    // Emit a server-authoritative purchase_completed funnel event, but ONLY when a
+    // genuinely new purchase_history row was inserted (RowsAffected==1). The client's
+    // in-app purchase_completed event is unreliable: StoreKit often replays new iOS
+    // subscriptions through the stream as PurchaseStatus.restored, and purchases that
+    // fail inline sync are persisted later via drainSyncQueue (which fires no event).
+    // INSERT OR IGNORE collapses re-confirmations/restores of the same receipt to 0
+    // rows affected, so this fires exactly once per real purchase and never on a
+    // restore — keeping the funnel's "completed" count in lockstep with purchase_history.
+    if newRows, raErr := insertRes.RowsAffected(); raErr == nil && newRows == 1 && analyticsDB != nil {
+        platform := req.Store
+        switch req.Store {
+        case "apple":
+            platform = "ios"
+        case "google":
+            platform = "android"
+        }
+        props, _ := json.Marshal(map[string]string{
+            "sku":    req.ProductID,
+            "store":  req.Store,
+            "source": "server_record_purchase",
+        })
+        if _, aErr := analyticsDB.Exec(
+            `INSERT INTO analytics_events (device_id, event_type, event_name, properties, app_version, platform)
+             VALUES (?, 'funnel', 'purchase_completed', ?, 'server', ?)`,
+            deviceID, string(props), platform,
+        ); aErr != nil {
+            log.Printf("⚠️ Failed to emit server purchase_completed event: %v", aErr)
+        }
+    }
 
     json.NewEncoder(w).Encode(map[string]interface{}{
         "success": true,
