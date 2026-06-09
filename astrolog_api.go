@@ -1609,6 +1609,37 @@ func sanitizeCoordinate(coord string, isLatitude bool) (string, error) {
     return coord, nil
 }
 
+// astrologSem caps concurrent ./astrolog processes across ALL requests.
+// Each transit-year/multi-year request spawns 30 workers; several concurrent
+// requests (e.g. background month loading) used to launch hundreds of
+// CPU-bound processes at once, overloading the CPU so some exceeded the
+// per-call timeout and returned empty days — which the client drops, leaving
+// visible gaps. A global cap keeps total processes bounded no matter how many
+// requests arrive together.
+var astrologSem = make(chan struct{}, 12)
+
+// runAstrolog runs the astrolog binary under the global concurrency cap, with a
+// generous timeout and one retry, so a transient overload/timeout does not drop
+// a day's data.
+func runAstrolog(args []string) ([]byte, error) {
+	astrologSem <- struct{}{}
+	defer func() { <-astrologSem }()
+
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		cmd := exec.CommandContext(ctx, "./astrolog", args...)
+		cmd.Dir = "/home/ruslan/aia"
+		output, err := cmd.Output()
+		cancel()
+		if err == nil {
+			return output, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
 func calculateChart(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
@@ -1738,14 +1769,8 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     fullCommand := fmt.Sprintf("./astrolog %s", strings.Join(args, " "))
     log.Printf("Executing command: %s", fullCommand)
 
-    // Execute command with timeout
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-
-    cmd := exec.CommandContext(ctx, "./astrolog", args...)
-    cmd.Dir = "/home/ruslan/aia"
-    
-    output, err := cmd.Output()
+    // Execute under the global concurrency cap (with generous timeout + retry)
+    output, err := runAstrolog(args)
     if err != nil {
         json.NewEncoder(w).Encode(AstrologResponse{
             Success: false,
@@ -1949,13 +1974,7 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
                     "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31",
                 }
 
-                ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-                cmd := exec.CommandContext(ctx, "./astrolog", args...)
-                cmd.Dir = "/home/ruslan/aia"
-
-                output, err := cmd.Output()
-                cancel()
-
+                output, err := runAstrolog(args)
                 if err != nil {
                     resultsMu.Lock()
                     results[dateStr] = "" // Empty string for failed dates
@@ -2115,13 +2134,7 @@ func calculateTransitMultiYear(w http.ResponseWriter, r *http.Request) {
                     "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31",
                 }
 
-                ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-                cmd := exec.CommandContext(ctx, "./astrolog", args...)
-                cmd.Dir = "/home/ruslan/aia"
-
-                output, err := cmd.Output()
-                cancel()
-
+                output, err := runAstrolog(args)
                 if err != nil {
                     resultsMu.Lock()
                     yearResults[fmt.Sprintf("%d", j.year)][dateStr] = ""
