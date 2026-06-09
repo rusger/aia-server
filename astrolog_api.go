@@ -13,6 +13,7 @@ import (
     "encoding/base64"
     "encoding/hex"
     "encoding/json"
+    "encoding/pem"
     "fmt"
     "io"
     "log"
@@ -3341,31 +3342,223 @@ func appleServerNotification(w http.ResponseWriter, r *http.Request) {
     log.Printf("🍎 [apple S2S] type=%s subtype=%s env=%s product=%s txn=%s otxn=%s",
         note.NotificationType, note.Subtype, note.Data.Environment, txn.ProductID, txn.TransactionID, txn.OriginalTransactionID)
 
-    // Idempotency — Apple retries failed deliveries; process each UUID once.
-    if !recordAppleNotificationIfNew(&note, &txn) {
+    if !processAppleNotification(&note, &txn) {
         log.Printf("🍎 [apple S2S] duplicate notification %s ignored", note.NotificationUUID)
         w.WriteHeader(http.StatusOK)
         w.Write([]byte(`{"success":true,"duplicate":true}`))
         return
     }
 
+    // Always 200 on a verified notification so Apple stops retrying.
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"success":true}`))
+}
+
+// processAppleNotification applies a verified notification's effects exactly
+// once (idempotent on notificationUUID). Returns false if it was already
+// processed. Shared by the live webhook and the one-time backfill so both paths
+// behave identically.
+func processAppleNotification(note *appleNotificationPayload, txn *appleTransactionInfo) bool {
+    if !recordAppleNotificationIfNew(note, txn) {
+        return false
+    }
     const deviceHint = "apple_s2s"
     switch note.NotificationType {
     case "SUBSCRIBED", "OFFER_REDEEMED":
-        upsertAppleTransaction(&txn, deviceHint)
+        upsertAppleTransaction(txn, deviceHint)
     case "DID_RENEW":
-        applyAppleRenewal(&txn)
+        applyAppleRenewal(txn)
     case "EXPIRED", "GRACE_PERIOD_EXPIRED", "REFUND", "REVOKE":
-        applyAppleRevoke(&txn, note.NotificationType)
+        applyAppleRevoke(txn, note.NotificationType)
     case "TEST":
         log.Printf("🍎 [apple S2S] TEST notification received OK")
     default:
         log.Printf("🍎 [apple S2S] unhandled type %s (logged only)", note.NotificationType)
     }
+    return true
+}
 
-    // Always 200 on a verified notification so Apple stops retrying.
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte(`{"success":true}`))
+// ---------------------------------------------------------------------------
+// One-time backfill via the App Store Server API.
+//
+// The webhook only catches events from when its URL was configured onward. To
+// recover purchases/renewals from before that (and any the App Store failed to
+// deliver), we call Get Notification History — Apple replays up to 180 days of
+// signed notifications — and run each through the same processing path.
+// Authenticated with an In-App Purchase API key (.p8), configured via env.
+// ---------------------------------------------------------------------------
+
+type appStoreAPIConfig struct {
+    KeyID    string
+    IssuerID string
+    BundleID string
+    KeyPath  string
+}
+
+func loadAppStoreAPIConfig() (appStoreAPIConfig, error) {
+    c := appStoreAPIConfig{
+        KeyID:    getEnv("APPLE_INAPP_KEY_ID", ""),
+        IssuerID: getEnv("APPLE_INAPP_ISSUER_ID", ""),
+        BundleID: getEnv("APPLE_BUNDLE_ID", "com.astrolytix.app"),
+        KeyPath:  getEnv("APPLE_INAPP_KEY_PATH", "./appstore_inapp_key.p8"),
+    }
+    if c.KeyID == "" || c.IssuerID == "" {
+        return c, fmt.Errorf("APPLE_INAPP_KEY_ID and APPLE_INAPP_ISSUER_ID must be set")
+    }
+    return c, nil
+}
+
+// mintAppStoreAPIToken signs a short-lived ES256 JWT for the App Store Server API.
+func mintAppStoreAPIToken(cfg appStoreAPIConfig) (string, error) {
+    raw, err := os.ReadFile(cfg.KeyPath)
+    if err != nil {
+        return "", fmt.Errorf("read key %s: %w", cfg.KeyPath, err)
+    }
+    block, _ := pem.Decode(raw)
+    if block == nil {
+        return "", fmt.Errorf("key %s is not valid PEM", cfg.KeyPath)
+    }
+    parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+    if err != nil {
+        return "", fmt.Errorf("parse PKCS8 key: %w", err)
+    }
+    ecKey, ok := parsed.(*ecdsa.PrivateKey)
+    if !ok {
+        return "", fmt.Errorf("key is not an ECDSA private key")
+    }
+    now := time.Now()
+    token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+        "iss": cfg.IssuerID,
+        "iat": now.Unix(),
+        "exp": now.Add(10 * time.Minute).Unix(),
+        "aud": "appstoreconnect-v1",
+        "bid": cfg.BundleID,
+    })
+    token.Header["kid"] = cfg.KeyID
+    return token.SignedString(ecKey)
+}
+
+type notificationHistoryResponse struct {
+    NotificationHistory []struct {
+        SignedPayload string `json:"signedPayload"`
+    } `json:"notificationHistory"`
+    HasMore         bool   `json:"hasMore"`
+    PaginationToken string `json:"paginationToken"`
+}
+
+func appStoreAPIBaseURL(sandbox bool) string {
+    if sandbox {
+        return "https://api.storekit-sandbox.itunes.apple.com"
+    }
+    return "https://api.storekit.itunes.apple.com"
+}
+
+// runAppStoreBackfill pulls up to 180 days of notification history and replays
+// each entry through processAppleNotification (idempotent, so safe to re-run).
+func runAppStoreBackfill(sandbox bool) (processed, skipped, errCount int, err error) {
+    if appleRootPool == nil {
+        return 0, 0, 0, fmt.Errorf("apple root CA not loaded; cannot verify history payloads")
+    }
+    cfg, cErr := loadAppStoreAPIConfig()
+    if cErr != nil {
+        return 0, 0, 0, cErr
+    }
+    jwtToken, tErr := mintAppStoreAPIToken(cfg)
+    if tErr != nil {
+        return 0, 0, 0, tErr
+    }
+    base := appStoreAPIBaseURL(sandbox)
+    endMs := time.Now().UnixMilli()
+    startMs := time.Now().Add(-179 * 24 * time.Hour).UnixMilli()
+    bodyJSON, _ := json.Marshal(map[string]int64{"startDate": startMs, "endDate": endMs})
+
+    client := &http.Client{Timeout: 30 * time.Second}
+    paginationToken := ""
+    for page := 0; page < 200; page++ { // safety cap
+        reqURL := base + "/inApps/v1/notifications/history"
+        if paginationToken != "" {
+            reqURL += "?paginationToken=" + url.QueryEscape(paginationToken)
+        }
+        httpReq, _ := http.NewRequest("POST", reqURL, bytes.NewReader(bodyJSON))
+        httpReq.Header.Set("Authorization", "Bearer "+jwtToken)
+        httpReq.Header.Set("Content-Type", "application/json")
+        resp, hErr := client.Do(httpReq)
+        if hErr != nil {
+            return processed, skipped, errCount, fmt.Errorf("history request: %w", hErr)
+        }
+        respBody, _ := io.ReadAll(resp.Body)
+        resp.Body.Close()
+        if resp.StatusCode != http.StatusOK {
+            return processed, skipped, errCount, fmt.Errorf("history API status %d: %s", resp.StatusCode, string(respBody))
+        }
+        var hist notificationHistoryResponse
+        if jErr := json.Unmarshal(respBody, &hist); jErr != nil {
+            return processed, skipped, errCount, fmt.Errorf("parse history: %w", jErr)
+        }
+        for _, item := range hist.NotificationHistory {
+            payload, vErr := verifyAppleJWS(item.SignedPayload)
+            if vErr != nil {
+                log.Printf("⚠️ [apple backfill] payload verify failed: %v", vErr)
+                errCount++
+                continue
+            }
+            var note appleNotificationPayload
+            if json.Unmarshal(payload, &note) != nil {
+                errCount++
+                continue
+            }
+            var txn appleTransactionInfo
+            if note.Data.SignedTransactionInfo != "" {
+                if tp, e := verifyAppleJWS(note.Data.SignedTransactionInfo); e == nil {
+                    json.Unmarshal(tp, &txn)
+                }
+            }
+            if processAppleNotification(&note, &txn) {
+                processed++
+            } else {
+                skipped++
+            }
+        }
+        if !hist.HasMore || hist.PaginationToken == "" {
+            break
+        }
+        paginationToken = hist.PaginationToken
+    }
+    return processed, skipped, errCount, nil
+}
+
+// POST /api/admin/appstore-backfill - admin-triggered one-time history replay
+func appleBackfillHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    var req struct {
+        AdminSecret string `json:"admin_secret"`
+        Sandbox     bool   `json:"sandbox"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid body"})
+        return
+    }
+    if ADMIN_SECRET_KEY == "" || req.AdminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "unauthorized"})
+        return
+    }
+    log.Printf("🍎 [apple backfill] starting (sandbox=%v)", req.Sandbox)
+    processed, skipped, errs, err := runAppStoreBackfill(req.Sandbox)
+    if err != nil {
+        log.Printf("❌ [apple backfill] %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+        return
+    }
+    log.Printf("✅ [apple backfill] done: processed=%d duplicates_skipped=%d errors=%d", processed, skipped, errs)
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":            true,
+        "processed":          processed,
+        "duplicates_skipped": skipped,
+        "errors":             errs,
+    })
 }
 
 // Record a purchase in the purchase history
@@ -7370,6 +7563,10 @@ func main() {
     // Apple App Store Server Notifications V2 (public — authenticated by Apple's
     // JWS signature, verified against the pinned Apple Root CA, not by JWT)
     router.HandleFunc("/api/apple/notifications", appleServerNotification).Methods("POST")
+
+    // Admin-only one-time backfill of past purchases via App Store Server API
+    // (auth by ADMIN_SECRET_KEY in the request body)
+    router.HandleFunc("/api/admin/appstore-backfill", appleBackfillHandler).Methods("POST")
 
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")

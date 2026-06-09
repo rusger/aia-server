@@ -16,6 +16,7 @@ users.db
 jwt_secret.key
 *.key
 *.pem
+*.p8
 
 # Environment
 .env
