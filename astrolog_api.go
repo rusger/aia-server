@@ -1617,7 +1617,11 @@ func sanitizeCoordinate(coord string, isLatitude bool) (string, error) {
 // per-call timeout and returned empty days — which the client drops, leaving
 // visible gaps. A global cap keeps total processes bounded no matter how many
 // requests arrive together.
-var astrologSem = make(chan struct{}, 12)
+//
+// Sized for a 2-vCPU host: astrolog is CPU-bound, so more than ~2x cores just
+// thrashes (context switches + cache misses) and makes each call SLOWER. 4 =
+// 2 cores + a little overlap for process spawn / ephemeris I/O.
+var astrologSem = make(chan struct{}, 4)
 
 // runAstrolog runs the astrolog binary under the global concurrency cap, with a
 // generous timeout and one retry, so a transient overload/timeout does not drop
