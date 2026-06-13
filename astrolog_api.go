@@ -7036,9 +7036,6 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 		email := ur.Email
 		ed := emailStats[email]
 		uniqueEmails[email] = true
-		grandTotalCalls += ed.TotalCalls
-		grandTotalTokens += ed.TotalTokens
-		grandTotalCost += emailCost[email]
 
 		subType := "free"
 		isSuper := false
@@ -7091,6 +7088,20 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 			"models_used":       ed.ModelsUsed,
 			"daily":             dailyArr,
 		})
+	}
+
+	// Grand totals are counted ONCE PER DEVICE, not once per email. A device
+	// shared across multiple accounts (e.g. via login_history) maps to several
+	// emails; summing emailCost/emailStats over those emails multi-counts the
+	// same usage. dateStats/dateCost are accumulated per device row, so they are
+	// the de-duplicated source of truth (and also include devices that aren't
+	// linked to any email).
+	for _, ds := range dateStats {
+		grandTotalCalls += ds.TotalCalls
+		grandTotalTokens += ds.TotalTokens
+	}
+	for _, c := range dateCost {
+		grandTotalCost += c
 	}
 
 	// by_date array
