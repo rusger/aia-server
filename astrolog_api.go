@@ -839,6 +839,26 @@ func emitPurchaseCompletedEvent(deviceID, productID, store, source string) {
     }
 }
 
+// emitDeviceLimitEvent records when a login was blocked by the concurrent-device
+// limit, so we can track over time how often accounts hit the cap (a signal for
+// subscription sharing/resale).
+func emitDeviceLimitEvent(deviceID, platform string, activeCount int) {
+    if analyticsDB == nil {
+        return
+    }
+    props, _ := json.Marshal(map[string]interface{}{
+        "active_devices": activeCount,
+        "max_devices":    MAX_ACTIVE_DEVICES,
+    })
+    if _, err := analyticsDB.Exec(
+        `INSERT INTO analytics_events (device_id, event_type, event_name, properties, app_version, platform)
+         VALUES (?, 'auth', 'device_limit_blocked', ?, 'server', ?)`,
+        deviceID, string(props), platform,
+    ); err != nil {
+        log.Printf("⚠️ Failed to emit device_limit_blocked event: %v", err)
+    }
+}
+
 // Initialize database
 func initDB() error {
     var err error
@@ -4785,14 +4805,17 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     // rejected login doesn't burn the user's verification code. A device that
     // is already active (re-login on a known device) is always allowed; only a
     // brand-new device that would exceed the limit is rejected.
-    if !isDeviceActive(email, deviceID) && countActiveDevices(email) >= MAX_ACTIVE_DEVICES {
-        log.Printf("🚫 Device limit reached for %s (%d active) — rejecting new device %s", email, MAX_ACTIVE_DEVICES, deviceID)
-        json.NewEncoder(w).Encode(EmailAuthResponse{
-            Success: false,
-            Error:   "Device limit reached",
-            Code:    "device_limit",
-        })
-        return
+    if !isDeviceActive(email, deviceID) {
+        if active := countActiveDevices(email); active >= MAX_ACTIVE_DEVICES {
+            log.Printf("🚫 Device limit reached for %s (%d active) — rejecting new device %s", email, active, deviceID)
+            emitDeviceLimitEvent(deviceID, strings.TrimSpace(req.Platform), active)
+            json.NewEncoder(w).Encode(EmailAuthResponse{
+                Success: false,
+                Error:   "Device limit reached",
+                Code:    "device_limit",
+            })
+            return
+        }
     }
 
     // Mark code as used
@@ -5588,6 +5611,83 @@ func botGrantSubscription(w http.ResponseWriter, r *http.Request) {
 }
 
 // Admin endpoint to list all users with subscriptions
+// adminDeviceSharing surfaces accounts using a subscription on many devices —
+// a signal for sharing/resale. Returns emails with >= `min` active devices
+// (default 3), with platform spread, historical distinct-device count, and
+// subscription status, sorted by active device count descending.
+func adminDeviceSharing(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+        return
+    }
+
+    minDevices := 3
+    if v := r.URL.Query().Get("min"); v != "" {
+        if n, err := strconv.Atoi(v); err == nil && n > 0 {
+            minDevices = n
+        }
+    }
+
+    rows, err := db.Query(`
+        SELECT d.email,
+               COUNT(*) AS active_devices,
+               COALESCE(GROUP_CONCAT(DISTINCT d.platform), '') AS platforms,
+               MAX(d.last_seen) AS last_seen,
+               (SELECT COUNT(DISTINCT lh.device_id) FROM login_history lh WHERE lh.email = d.email) AS historical_devices,
+               COALESCE(u.subscription_type, 'free') AS subscription_type,
+               u.subscription_expiry
+        FROM devices d
+        LEFT JOIN users u ON u.email = d.email
+        WHERE d.revoked = 0 AND d.email NOT LIKE '%@device.astrolytix.app'
+        GROUP BY d.email
+        HAVING active_devices >= ?
+        ORDER BY active_devices DESC, historical_devices DESC
+        LIMIT 500`, minDevices)
+    if err != nil {
+        log.Printf("❌ adminDeviceSharing query: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+        return
+    }
+    defer rows.Close()
+
+    accounts := []map[string]interface{}{}
+    for rows.Next() {
+        var email, platforms, subType string
+        var lastSeen, subExpiry sql.NullString
+        var activeDevices, historicalDevices int
+        if err := rows.Scan(&email, &activeDevices, &platforms, &lastSeen, &historicalDevices, &subType, &subExpiry); err != nil {
+            continue
+        }
+        accounts = append(accounts, map[string]interface{}{
+            "email":               email,
+            "active_devices":      activeDevices,
+            "historical_devices":  historicalDevices,
+            "platforms":           platforms,
+            "last_seen":           lastSeen.String,
+            "subscription_type":   subType,
+            "subscription_expiry": subExpiry.String,
+        })
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":      true,
+        "min_devices":  minDevices,
+        "max_devices":  MAX_ACTIVE_DEVICES,
+        "count":        len(accounts),
+        "accounts":     accounts,
+    })
+}
+
 func adminListUsers(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
@@ -7857,6 +7957,7 @@ func main() {
     router.HandleFunc("/api/admin/grant-subscription", adminGuardMiddleware(adminGrantSubscription)).Methods("POST")
     router.HandleFunc("/api/admin/cancel-subscription", adminGuardMiddleware(adminCancelSubscription)).Methods("POST")
     router.HandleFunc("/api/admin/users", adminGuardMiddleware(adminListUsers)).Methods("GET")
+    router.HandleFunc("/api/admin/device-sharing", adminGuardMiddleware(adminDeviceSharing)).Methods("GET")
     router.HandleFunc("/api/admin/toggle-super", adminGuardMiddleware(adminToggleSuper)).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
