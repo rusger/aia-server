@@ -7375,10 +7375,11 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 			var bucket struct {
 				StartTime int64 `json:"start_time"`
 				Results   []struct {
-					InputTokens      int64  `json:"input_tokens"`
-					OutputTokens     int64  `json:"output_tokens"`
-					NumModelRequests int64  `json:"num_model_requests"`
-					Model            string `json:"model"`
+					InputTokens       int64  `json:"input_tokens"`
+					InputCachedTokens int64  `json:"input_cached_tokens"`
+					OutputTokens      int64  `json:"output_tokens"`
+					NumModelRequests  int64  `json:"num_model_requests"`
+					Model             string `json:"model"`
 				} `json:"results"`
 			}
 			if err := json.Unmarshal(raw, &bucket); err != nil {
@@ -7400,6 +7401,7 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 					usageByDate[date].ByModel[r.Model] = make(map[string]int64)
 				}
 				usageByDate[date].ByModel[r.Model]["input_tokens"] += r.InputTokens
+				usageByDate[date].ByModel[r.Model]["cached_tokens"] += r.InputCachedTokens
 				usageByDate[date].ByModel[r.Model]["output_tokens"] += r.OutputTokens
 				usageByDate[date].ByModel[r.Model]["requests"] += r.NumModelRequests
 
@@ -7407,34 +7409,50 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 					modelTotals[r.Model] = make(map[string]int64)
 				}
 				modelTotals[r.Model]["input_tokens"] += r.InputTokens
+				modelTotals[r.Model]["cached_tokens"] += r.InputCachedTokens
 				modelTotals[r.Model]["output_tokens"] += r.OutputTokens
 				modelTotals[r.Model]["requests"] += r.NumModelRequests
 			}
 		}
 	}
 
-	// Calculate cost from Usage API tokens using per-model pricing
-	estimateModelCost := func(model string, inputToks, outputToks int64) float64 {
-		inF := float64(inputToks) / 1000000.0
+	// Calculate cost from Usage API tokens using per-model pricing.
+	// NOTE: OpenAI's Usage API reports input_tokens as the TOTAL input, with
+	// input_cached_tokens being the cached subset (billed at a discount). So
+	// regular (uncached) input = inputToks - cachedToks.
+	// Pricing per 1M tokens: regularInput / cachedInput / output.
+	// Order matters: more specific model names MUST be checked before generic
+	// ones — e.g. "gpt-4.1-mini" contains "gpt-4", so it must match first.
+	estimateModelCost := func(model string, inputToks, cachedToks, outputToks int64) float64 {
+		if cachedToks > inputToks {
+			cachedToks = inputToks
+		}
+		regF := float64(inputToks-cachedToks) / 1000000.0
+		cacF := float64(cachedToks) / 1000000.0
 		outF := float64(outputToks) / 1000000.0
-		// Pricing per 1M tokens (input / output)
 		switch {
+		case strings.Contains(model, "gpt-4.1-nano"):
+			return regF*0.10 + cacF*0.025 + outF*0.40
+		case strings.Contains(model, "gpt-4.1-mini"):
+			return regF*0.40 + cacF*0.10 + outF*1.60
+		case strings.Contains(model, "gpt-4.1"):
+			return regF*2.00 + cacF*0.50 + outF*8.00
 		case strings.Contains(model, "gpt-4o-mini"):
-			return inF*0.15 + outF*0.60
+			return regF*0.15 + cacF*0.075 + outF*0.60
 		case strings.Contains(model, "gpt-4o"):
-			return inF*2.50 + outF*10.00
+			return regF*2.50 + cacF*1.25 + outF*10.00
 		case strings.Contains(model, "gpt-4-turbo"):
-			return inF*10.00 + outF*30.00
+			return regF*10.00 + outF*30.00
 		case strings.Contains(model, "gpt-4"):
-			return inF*30.00 + outF*60.00
+			return regF*30.00 + outF*60.00
 		case strings.Contains(model, "gpt-3.5-turbo"):
-			return inF*0.50 + outF*1.50
+			return regF*0.50 + outF*1.50
 		case strings.Contains(model, "o1-mini"):
-			return inF*1.10 + outF*4.40
+			return regF*1.10 + cacF*0.55 + outF*4.40
 		case strings.Contains(model, "o1"):
-			return inF*15.00 + outF*60.00
+			return regF*15.00 + cacF*7.50 + outF*60.00
 		default:
-			return inF*2.50 + outF*10.00 // default to gpt-4o pricing
+			return regF*2.50 + cacF*1.25 + outF*10.00 // default to gpt-4o pricing
 		}
 	}
 
@@ -7444,7 +7462,7 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 	// Build model summary with calculated costs
 	var modelSummary []map[string]interface{}
 	for model, totals := range modelTotals {
-		modelCost := estimateModelCost(model, totals["input_tokens"], totals["output_tokens"])
+		modelCost := estimateModelCost(model, totals["input_tokens"], totals["cached_tokens"], totals["output_tokens"])
 		totalCalculatedCost += modelCost
 		ms := map[string]interface{}{
 			"model":          model,
@@ -7459,7 +7477,7 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 	// Calculate per-day costs from usage data
 	for d, u := range usageByDate {
 		for model, toks := range u.ByModel {
-			dailyCalculatedCost[d] += estimateModelCost(model, toks["input_tokens"], toks["output_tokens"])
+			dailyCalculatedCost[d] += estimateModelCost(model, toks["input_tokens"], toks["cached_tokens"], toks["output_tokens"])
 		}
 	}
 
