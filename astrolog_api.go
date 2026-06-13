@@ -49,6 +49,7 @@ var (
     ACCESS_TOKEN_EXP   = 24 * time.Hour  // Access tokens expire in 24 hours
     REFRESH_TOKEN_EXP  = 30 * 24 * time.Hour // Refresh tokens expire in 30 days
     JWT_SECRET_FILE    = "jwt_secret.key" // File to persist JWT secret
+    MAX_ACTIVE_DEVICES = 10 // Max concurrently logged-in devices per email (subscription sharing guard)
 
     // SMTP Configuration for email auth
     SMTP_HOST          = getEnv("SMTP_HOST", "smtp.office365.com")
@@ -202,9 +203,11 @@ type EmailAuthRequestCode struct {
 
 // Email auth request - verify code
 type EmailAuthVerifyCode struct {
-    Email    string `json:"email"`
-    Code     string `json:"code"`
-    DeviceID string `json:"device_id"` // Device to associate with this email
+    Email      string `json:"email"`
+    Code       string `json:"code"`
+    DeviceID   string `json:"device_id"`   // Device to associate with this email
+    DeviceName string `json:"device_name"` // Human-readable name for "My Devices"
+    Platform   string `json:"platform"`    // "iOS" / "Android"
 }
 
 // Email auth response
@@ -212,6 +215,7 @@ type EmailAuthResponse struct {
     Success      bool   `json:"success"`
     Message      string `json:"message,omitempty"`
     Error        string `json:"error,omitempty"`
+    Code         string `json:"code,omitempty"` // machine-readable error, e.g. "device_limit"
     AccessToken  string `json:"access_token,omitempty"`
     RefreshToken string `json:"refresh_token,omitempty"`
     ExpiresIn    int64  `json:"expires_in,omitempty"`
@@ -939,6 +943,30 @@ func initDB() error {
         return fmt.Errorf("failed to create login_history table: %v", err)
     }
 
+    // Active device sessions per email. Powers the concurrent-device limit
+    // (MAX_ACTIVE_DEVICES) and the "My Devices" screen with remote logout.
+    // A device is "active" while revoked = 0; logging it out (locally or from
+    // another device) sets revoked = 1, after which the auth middleware rejects
+    // its tokens on the next request and the device drops to free.
+    createDevicesSQL := `
+    CREATE TABLE IF NOT EXISTS devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        device_name TEXT,
+        platform TEXT,
+        revoked INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_email_device ON devices(email, device_id);
+    CREATE INDEX IF NOT EXISTS idx_devices_email ON devices(email, revoked);
+    `
+    _, err = db.Exec(createDevicesSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create devices table: %v", err)
+    }
+
     // Purchase history
     createPurchaseHistorySQL := `
     CREATE TABLE IF NOT EXISTS purchase_history (
@@ -1439,6 +1467,69 @@ func validateToken(tokenString string, expectedType string) (*JWTClaims, error) 
     return nil, fmt.Errorf("invalid token")
 }
 
+// ============================================================================
+// DEVICE SESSION MANAGEMENT (concurrent-device limit + remote logout)
+// ============================================================================
+
+// registerDevice records or re-activates a device session for an email.
+// Passing an empty deviceName/platform preserves any value already stored
+// (used by lazy registration on refresh, where no metadata is available).
+func registerDevice(email, deviceID, deviceName, platform string) {
+    if email == "" || deviceID == "" {
+        return
+    }
+    res, err := db.Exec(`
+        UPDATE devices SET
+            revoked = 0,
+            last_seen = CURRENT_TIMESTAMP,
+            device_name = CASE WHEN ? != '' THEN ? ELSE device_name END,
+            platform = CASE WHEN ? != '' THEN ? ELSE platform END
+        WHERE email = ? AND device_id = ?`,
+        deviceName, deviceName, platform, platform, email, deviceID)
+    if err != nil {
+        log.Printf("⚠️ registerDevice update failed for %s/%s: %v", email, deviceID, err)
+        return
+    }
+    if n, _ := res.RowsAffected(); n == 0 {
+        _, err = db.Exec(`INSERT INTO devices (email, device_id, device_name, platform, revoked)
+                          VALUES (?, ?, ?, ?, 0)`,
+            email, deviceID, deviceName, platform)
+        if err != nil {
+            log.Printf("⚠️ registerDevice insert failed for %s/%s: %v", email, deviceID, err)
+        }
+    }
+}
+
+// countActiveDevices returns how many non-revoked devices an email has.
+func countActiveDevices(email string) int {
+    var n int
+    if err := db.QueryRow(`SELECT COUNT(*) FROM devices WHERE email = ? AND revoked = 0`, email).Scan(&n); err != nil {
+        log.Printf("⚠️ countActiveDevices failed for %s: %v", email, err)
+        return 0
+    }
+    return n
+}
+
+// isDeviceActive reports whether a device row exists and is NOT revoked.
+func isDeviceActive(email, deviceID string) bool {
+    var revoked int
+    if err := db.QueryRow(`SELECT revoked FROM devices WHERE email = ? AND device_id = ?`, email, deviceID).Scan(&revoked); err != nil {
+        return false // no row
+    }
+    return revoked == 0
+}
+
+// isDeviceRevoked reports whether an explicit revoked row exists for this device.
+// Returns false when no row exists, so legacy sessions created before this
+// feature shipped keep working until the user next logs in (which registers them).
+func isDeviceRevoked(email, deviceID string) bool {
+    var revoked int
+    if err := db.QueryRow(`SELECT revoked FROM devices WHERE email = ? AND device_id = ?`, email, deviceID).Scan(&revoked); err != nil {
+        return false // no row — don't lock out legacy/unregistered sessions
+    }
+    return revoked == 1
+}
+
 // Extract JWT token from Authorization header
 func extractTokenFromHeader(r *http.Request) (string, error) {
     authHeader := r.Header.Get("Authorization")
@@ -1474,6 +1565,18 @@ func jwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
             json.NewEncoder(w).Encode(map[string]interface{}{
                 "success": false,
                 "error":   "Invalid or expired token",
+            })
+            return
+        }
+
+        // Reject tokens from devices that have been logged out remotely
+        // (via the "My Devices" screen). The device drops to free on its next call.
+        if claims.Email != "" && claims.DeviceID != "" && isDeviceRevoked(claims.Email, claims.DeviceID) {
+            w.WriteHeader(http.StatusUnauthorized)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "This device has been logged out",
+                "code":    "device_revoked",
             })
             return
         }
@@ -2391,6 +2494,17 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Reject refresh from devices logged out remotely. A 401 here makes the
+    // client clear its tokens and drop to free.
+    if claims.DeviceID != "" && isDeviceRevoked(email, claims.DeviceID) {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(AuthTokensResponse{
+            Success: false,
+            Error:   "This device has been logged out",
+        })
+        return
+    }
+
     var subscriptionType, subscriptionLength string
     var subscriptionExpiry sql.NullString
     query := `SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`
@@ -2442,6 +2556,13 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
             Error:   "Failed to generate token",
         })
         return
+    }
+
+    // Lazily register the device so sessions created before this feature
+    // shipped still appear in "My Devices" and count toward the limit. Skipped
+    // for anonymous device-only accounts (always 1:1 device↔email).
+    if !strings.HasSuffix(email, "@device.astrolytix.app") {
+        registerDevice(email, claims.DeviceID, "", "")
     }
 
     log.Printf("🔄 Token refreshed for user: %s", email)
@@ -4660,6 +4781,20 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Enforce the concurrent-device limit BEFORE consuming the code, so a
+    // rejected login doesn't burn the user's verification code. A device that
+    // is already active (re-login on a known device) is always allowed; only a
+    // brand-new device that would exceed the limit is rejected.
+    if !isDeviceActive(email, deviceID) && countActiveDevices(email) >= MAX_ACTIVE_DEVICES {
+        log.Printf("🚫 Device limit reached for %s (%d active) — rejecting new device %s", email, MAX_ACTIVE_DEVICES, deviceID)
+        json.NewEncoder(w).Encode(EmailAuthResponse{
+            Success: false,
+            Error:   "Device limit reached",
+            Code:    "device_limit",
+        })
+        return
+    }
+
     // Mark code as used
     _, err = db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND code = ?`, email, storedCode)
     if err != nil {
@@ -4722,6 +4857,9 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     // Record login in history
     db.Exec(`INSERT INTO login_history (email, device_id) VALUES (?, ?)`, email, deviceID)
 
+    // Register / re-activate this device session (powers My Devices + the limit)
+    registerDevice(email, deviceID, strings.TrimSpace(req.DeviceName), strings.TrimSpace(req.Platform))
+
     // Generate JWT tokens with EMAIL as primary identity
     accessToken, err := generateAccessToken(email, deviceID, subscriptionType, subscriptionLength)
     if err != nil {
@@ -4752,6 +4890,97 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         RefreshToken: refreshToken,
         ExpiresIn:    int64(ACCESS_TOKEN_EXP.Seconds()),
     })
+}
+
+// listDevices returns the caller's active (non-revoked) device sessions for
+// the "My Devices" screen. The requesting device is lazily registered so it
+// always appears, even for sessions created before this feature shipped.
+func listDevices(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok || claims.Email == "" {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+
+    // Ensure the current device is represented (with a name if provided).
+    registerDevice(claims.Email, claims.DeviceID,
+        strings.TrimSpace(r.URL.Query().Get("device_name")),
+        strings.TrimSpace(r.URL.Query().Get("platform")))
+
+    rows, err := db.Query(`SELECT device_id, COALESCE(device_name, ''), COALESCE(platform, ''), last_seen, created_at
+                           FROM devices WHERE email = ? AND revoked = 0
+                           ORDER BY last_seen DESC`, claims.Email)
+    if err != nil {
+        log.Printf("❌ listDevices query: %v", err)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+        return
+    }
+    defer rows.Close()
+
+    devices := []map[string]interface{}{}
+    for rows.Next() {
+        var did, name, platform, lastSeen, createdAt string
+        if err := rows.Scan(&did, &name, &platform, &lastSeen, &createdAt); err != nil {
+            continue
+        }
+        devices = append(devices, map[string]interface{}{
+            "device_id":   did,
+            "device_name": name,
+            "platform":    platform,
+            "last_seen":   lastSeen,
+            "created_at":  createdAt,
+            "is_current":  did == claims.DeviceID,
+        })
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":     true,
+        "devices":     devices,
+        "max_devices": MAX_ACTIVE_DEVICES,
+    })
+}
+
+// logoutDevices revokes one or more device sessions for the caller's email.
+// Revoked devices are rejected by the auth middleware on their next request.
+func logoutDevices(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok || claims.Email == "" {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+
+    var req struct {
+        DeviceIDs []string `json:"device_ids"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.DeviceIDs) == 0 {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "No devices specified"})
+        return
+    }
+
+    revoked := 0
+    for _, did := range req.DeviceIDs {
+        did = strings.TrimSpace(did)
+        if did == "" {
+            continue
+        }
+        res, err := db.Exec(`UPDATE devices SET revoked = 1 WHERE email = ? AND device_id = ?`, claims.Email, did)
+        if err != nil {
+            log.Printf("⚠️ logoutDevices revoke failed for %s/%s: %v", claims.Email, did, err)
+            continue
+        }
+        if n, _ := res.RowsAffected(); n > 0 {
+            revoked++
+        }
+    }
+
+    log.Printf("🔒 %s logged out %d device(s)", claims.Email, revoked)
+    json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "revoked": revoked})
 }
 
 // ============================================================================
@@ -7609,6 +7838,8 @@ func main() {
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
+    router.HandleFunc("/api/user/devices", jwtAuthMiddleware(listDevices)).Methods("GET")
+    router.HandleFunc("/api/user/devices/logout", jwtAuthMiddleware(logoutDevices)).Methods("POST")
     router.HandleFunc("/api/user/data", jwtAuthMiddleware(deleteUserData)).Methods("DELETE")
 
     // T2.B partner invite endpoints
