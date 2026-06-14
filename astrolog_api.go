@@ -987,6 +987,20 @@ func initDB() error {
         return fmt.Errorf("failed to create devices table: %v", err)
     }
 
+    // Migration: APNs push token per device (idempotent). Stored when the app
+    // registers for remote notifications; used by the outbound push delivery
+    // in push.go (/api/admin/send-push + the send-push CLI).
+    if _, mErr := db.Exec(`ALTER TABLE devices ADD COLUMN push_token TEXT`); mErr != nil {
+        if !strings.Contains(mErr.Error(), "duplicate column") {
+            log.Printf("ℹ️ devices.push_token migration note: %v", mErr)
+        }
+    }
+    if _, mErr := db.Exec(`ALTER TABLE devices ADD COLUMN push_token_updated_at DATETIME`); mErr != nil {
+        if !strings.Contains(mErr.Error(), "duplicate column") {
+            log.Printf("ℹ️ devices.push_token_updated_at migration note: %v", mErr)
+        }
+    }
+
     // Purchase history
     createPurchaseHistorySQL := `
     CREATE TABLE IF NOT EXISTS purchase_history (
@@ -7888,6 +7902,14 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+    // CLI subcommand: send a test/manual push, then exit (no server start).
+    //   ./astrolog_api send-push <device_id> "<message>" ["<title>"] ["<payload>"]
+    // Reuses the same APNs path + users.db as the HTTP endpoints (see push.go).
+    if len(os.Args) >= 2 && os.Args[1] == "send-push" {
+        runSendPushCLI(os.Args[2:])
+        return
+    }
+
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
         log.Fatalf("Failed to initialize JWT secret: %v", err)
@@ -7941,6 +7963,8 @@ func main() {
     router.HandleFunc("/api/user/devices", jwtAuthMiddleware(listDevices)).Methods("GET")
     router.HandleFunc("/api/user/devices/logout", jwtAuthMiddleware(logoutDevices)).Methods("POST")
     router.HandleFunc("/api/user/data", jwtAuthMiddleware(deleteUserData)).Methods("DELETE")
+    // Store this device's APNs push token (see push.go)
+    router.HandleFunc("/api/user/push-token", jwtAuthMiddleware(registerPushToken)).Methods("POST")
 
     // T2.B partner invite endpoints
     router.HandleFunc("/api/invites/create", jwtAuthMiddleware(createInvite)).Methods("POST")
@@ -7968,6 +7992,9 @@ func main() {
     router.HandleFunc("/api/admin/usage-report", adminGuardMiddleware(adminUsageReport)).Methods("GET")
     router.HandleFunc("/api/admin/openai-costs", adminGuardMiddleware(adminOpenAICosts)).Methods("POST")
     router.HandleFunc("/api/admin/renewal-funnel", adminGuardMiddleware(adminRenewalFunnel)).Methods("GET")
+    // Send a push notification to a device (by device_id) or user (by email).
+    // Admin secret + 2FA code required, same gate as the other admin actions.
+    router.HandleFunc("/api/admin/send-push", adminGuardMiddleware(adminSendPush)).Methods("POST")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")

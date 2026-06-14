@@ -45,7 +45,7 @@ echo ""
 
 # Build the main API server
 echo "🔨 Building API server..."
-go build -o astrolog_api astrolog_api.go
+go build -o astrolog_api astrolog_api.go push.go
 chmod +x astrolog_api
 echo "✓ API server built: ./astrolog_api"
 echo ""
