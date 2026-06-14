@@ -163,11 +163,6 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 		return err
 	}
 
-	host := "api.push.apple.com"
-	if !c.production {
-		host = "api.sandbox.push.apple.com"
-	}
-
 	aps := map[string]interface{}{
 		"alert": map[string]string{"title": title, "body": body},
 		"sound": "default",
@@ -194,10 +189,43 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 		return err
 	}
 
+	// A device token is valid for exactly ONE environment: production tokens
+	// (TestFlight/App Store builds) work only on api.push.apple.com, sandbox
+	// tokens (Xcode/dev builds) only on api.sandbox.push.apple.com. We can't
+	// tell which a token is, so try the configured primary and, on a
+	// BadDeviceToken (wrong-environment) rejection, automatically retry the
+	// other host. This serves a mixed fleet of dev + production devices.
+	primary := "api.push.apple.com"
+	secondary := "api.sandbox.push.apple.com"
+	if !c.production {
+		primary, secondary = secondary, primary
+	}
+
+	status, reason, err := sendAPNsToHost(c, jwt, primary, deviceToken, jsonBody)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK {
+		return nil
+	}
+	if status == http.StatusBadRequest && strings.Contains(reason, "BadDeviceToken") {
+		if status, reason, err = sendAPNsToHost(c, jwt, secondary, deviceToken, jsonBody); err != nil {
+			return err
+		}
+		if status == http.StatusOK {
+			return nil
+		}
+	}
+	return fmt.Errorf("APNs %d: %s", status, reason)
+}
+
+// sendAPNsToHost POSTs the prepared payload to one APNs host and returns the
+// HTTP status code and response body (the rejection reason, if any).
+func sendAPNsToHost(c *apnsConfig, jwt, host, deviceToken string, jsonBody []byte) (int, string, error) {
 	url := fmt.Sprintf("https://%s/3/device/%s", host, deviceToken)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
-		return err
+		return 0, "", err
 	}
 	req.Header.Set("authorization", "bearer "+jwt)
 	req.Header.Set("apns-topic", c.bundleID)
@@ -206,16 +234,11 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 
 	resp, err := apnsHTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("APNs request failed: %w", err)
+		return 0, "", fmt.Errorf("APNs request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode == http.StatusOK {
-		return nil
-	}
-	reason := strings.TrimSpace(string(respBody))
-	return fmt.Errorf("APNs %d: %s (apns-id=%s)", resp.StatusCode, reason, resp.Header.Get("apns-id"))
+	return resp.StatusCode, strings.TrimSpace(string(respBody)), nil
 }
 
 // pushTarget is one resolved device row eligible to receive a push.
