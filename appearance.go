@@ -5,16 +5,56 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
+	"sync/atomic"
 )
 
-// ensureAppearanceSchema runs the appearance migration exactly once per
-// process. It is invoked at startup and defensively at the top of each
-// appearance handler, so the columns are guaranteed to exist before any query
-// touches them regardless of startup ordering or deploy quirks.
-var appearanceSchemaOnce sync.Once
+// appearanceCols are the columns added to the devices table for the four
+// appearance preferences (+ platform + timestamp).
+var appearanceCols = []string{
+	"appearance_theme TEXT",
+	"appearance_color TEXT",
+	"appearance_background TEXT",
+	"appearance_icon_set TEXT",
+	"appearance_platform TEXT",
+	"appearance_updated_at DATETIME",
+}
 
-func ensureAppearanceSchema() { appearanceSchemaOnce.Do(migrateAppearance) }
+// appearanceReady flips to true only once every column is confirmed present,
+// after which ensureAppearanceSchema is a cheap atomic load.
+var appearanceReady atomic.Bool
+
+// ensureAppearanceSchema makes sure the appearance columns exist on the devices
+// table. It is called at startup AND at the top of every appearance handler.
+//
+// Crucially it RETRIES until it fully succeeds: a "duplicate column" error
+// means the column is already there (fine), while any other error (e.g. a
+// transient "database is locked" from the concurrent push-event loop at
+// startup) leaves appearanceReady false so the next request tries again. This
+// self-heals a migration that failed once, instead of giving up permanently.
+func ensureAppearanceSchema() {
+	if appearanceReady.Load() {
+		return
+	}
+	allGood := true
+	added := 0
+	for _, c := range appearanceCols {
+		if _, err := db.Exec("ALTER TABLE devices ADD COLUMN " + c); err != nil {
+			if strings.Contains(err.Error(), "duplicate column") {
+				continue // already present — good
+			}
+			log.Printf("⚠️ appearance ALTER failed (%s): %v — will retry on next request", c, err)
+			allGood = false
+			continue
+		}
+		added++
+	}
+	if allGood {
+		appearanceReady.Store(true)
+		if added > 0 {
+			log.Printf("✓ appearance migration: added %d column(s); schema ready", added)
+		}
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Appearance preferences (the four "Внешний вид" settings)
@@ -29,30 +69,6 @@ func ensureAppearanceSchema() { appearanceSchemaOnce.Do(migrateAppearance) }
 // user with several devices keeps a value per device. All columns are added
 // as nullable migrations — existing rows and old clients are unaffected.
 // ---------------------------------------------------------------------------
-
-// migrateAppearance adds the appearance columns to the devices table.
-// Idempotent: duplicate-column errors on a second run are ignored.
-func migrateAppearance() {
-	cols := []string{
-		"appearance_theme TEXT",
-		"appearance_color TEXT",
-		"appearance_background TEXT",
-		"appearance_icon_set TEXT",
-		"appearance_platform TEXT",
-		"appearance_updated_at DATETIME",
-	}
-	added := 0
-	for _, c := range cols {
-		if _, err := db.Exec("ALTER TABLE devices ADD COLUMN " + c); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column") {
-				log.Printf("⚠️ devices appearance migration FAILED (%s): %v", c, err)
-			}
-		} else {
-			added++
-		}
-	}
-	log.Printf("✓ appearance migration: %d/%d columns added (rest already present)", added, len(cols))
-}
 
 // setAppearanceParams — POST /api/user/appearance (JWT-protected).
 // Records the four appearance preferences for the calling device. Called by

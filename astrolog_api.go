@@ -7921,6 +7921,13 @@ func main() {
     }
     defer db.Close()
 
+    // Per-device appearance preferences (theme/colour/background/icon set),
+    // surfaced per user in the Stellar Vault dashboard. Run BEFORE the
+    // concurrent push-event loop so the ALTERs don't race a DB lock. The
+    // handlers also call this (it self-heals if it ever fails here). See
+    // appearance.go.
+    ensureAppearanceSchema()
+
     // Initialize analytics database
     if err := initAnalyticsDB(); err != nil {
         log.Printf("⚠️ Warning: Analytics database failed to initialize: %v", err)
@@ -7937,10 +7944,6 @@ func main() {
     // See events.go. iOS-only; targets all devices with a registered token.
     migratePushEvents()
     go pushEventLoop()
-
-    // Per-device appearance preferences (theme/colour/background/icon set),
-    // surfaced per user in the Stellar Vault dashboard. See appearance.go.
-    ensureAppearanceSchema()
 
     router := mux.NewRouter()
 
