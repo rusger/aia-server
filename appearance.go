@@ -177,23 +177,40 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 	color := map[string]int{}
 	background := map[string]int{}
 	iconSet := map[string]int{}
+	type comboKey struct{ t, c, b, i string }
+	combos := map[comboKey]int{}
 	total := 0
-	bump := func(m map[string]int, v string) {
+	norm := func(v string) string {
 		if v == "" {
-			v = "(unset)"
+			return "(unset)"
 		}
-		m[v]++
+		return v
 	}
 	for rows.Next() {
 		var t, c, b, i string
 		if err := rows.Scan(&t, &c, &b, &i); err != nil {
 			continue
 		}
+		t, c, b, i = norm(t), norm(c), norm(b), norm(i)
 		total++
-		bump(theme, t)
-		bump(color, c)
-		bump(background, b)
-		bump(iconSet, i)
+		theme[t]++
+		color[c]++
+		background[b]++
+		iconSet[i]++
+		combos[comboKey{t, c, b, i}]++
+	}
+
+	// Every distinct full combination of the four settings, with its user count.
+	// The client sorts these and computes percentages against total_users.
+	comboList := make([]map[string]interface{}, 0, len(combos))
+	for k, n := range combos {
+		comboList = append(comboList, map[string]interface{}{
+			"theme":        k.t,
+			"color_scheme": k.c,
+			"background":   k.b,
+			"icon_set":     k.i,
+			"count":        n,
+		})
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -203,5 +220,6 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		"color_scheme": color,
 		"background":   background,
 		"icon_set":     iconSet,
+		"combinations": comboList,
 	})
 }
