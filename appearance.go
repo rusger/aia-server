@@ -5,7 +5,16 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 )
+
+// ensureAppearanceSchema runs the appearance migration exactly once per
+// process. It is invoked at startup and defensively at the top of each
+// appearance handler, so the columns are guaranteed to exist before any query
+// touches them regardless of startup ordering or deploy quirks.
+var appearanceSchemaOnce sync.Once
+
+func ensureAppearanceSchema() { appearanceSchemaOnce.Do(migrateAppearance) }
 
 // ---------------------------------------------------------------------------
 // Appearance preferences (the four "Внешний вид" settings)
@@ -32,13 +41,17 @@ func migrateAppearance() {
 		"appearance_platform TEXT",
 		"appearance_updated_at DATETIME",
 	}
+	added := 0
 	for _, c := range cols {
 		if _, err := db.Exec("ALTER TABLE devices ADD COLUMN " + c); err != nil {
 			if !strings.Contains(err.Error(), "duplicate column") {
-				log.Printf("ℹ️ devices appearance migration note (%s): %v", c, err)
+				log.Printf("⚠️ devices appearance migration FAILED (%s): %v", c, err)
 			}
+		} else {
+			added++
 		}
 	}
+	log.Printf("✓ appearance migration: %d/%d columns added (rest already present)", added, len(cols))
 }
 
 // setAppearanceParams — POST /api/user/appearance (JWT-protected).
@@ -46,6 +59,7 @@ func migrateAppearance() {
 // the app (debounced) whenever a preference changes and on launch.
 func setAppearanceParams(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	ensureAppearanceSchema()
 
 	claims, ok := r.Context().Value("claims").(*JWTClaims)
 	if !ok || claims.Email == "" || claims.DeviceID == "" {
@@ -101,6 +115,7 @@ func setAppearanceParams(w http.ResponseWriter, r *http.Request) {
 //	                       counting the most-recent device per user
 func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	ensureAppearanceSchema()
 
 	if !isAdminEmail(r.URL.Query().Get("admin_email")) {
 		w.WriteHeader(http.StatusForbidden)
@@ -127,7 +142,8 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 			WHERE email = ? AND appearance_updated_at IS NOT NULL
 			ORDER BY appearance_updated_at DESC`, userEmail)
 		if err != nil {
-			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+			log.Printf("⚠️ appearance per-user query failed: %v", err)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error: " + err.Error()})
 			return
 		}
 		defer rows.Close()
@@ -168,7 +184,8 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		)
 		WHERE rn = 1`)
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+		log.Printf("⚠️ appearance aggregate query failed: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error: " + err.Error()})
 		return
 	}
 	defer rows.Close()

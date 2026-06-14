@@ -7940,7 +7940,7 @@ func main() {
 
     // Per-device appearance preferences (theme/colour/background/icon set),
     // surfaced per user in the Stellar Vault dashboard. See appearance.go.
-    migrateAppearance()
+    ensureAppearanceSchema()
 
     router := mux.NewRouter()
 
