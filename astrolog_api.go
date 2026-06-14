@@ -7932,6 +7932,12 @@ func main() {
     // Load Apple Root CA for App Store Server Notification signature verification
     initAppleRootCA()
 
+    // Server-driven universal event pushes (New/Full Moon, slow-planet
+    // ingresses, eclipses). Schema migration + background compute/deliver loop.
+    // See events.go. iOS-only; targets all devices with a registered token.
+    migratePushEvents()
+    go pushEventLoop()
+
     router := mux.NewRouter()
 
     // Public endpoints (no JWT required)
