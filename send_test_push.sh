@@ -20,9 +20,18 @@ set -e
 cd "$(dirname "$0")"
 
 if [ -f .env ]; then
+  # Parse .env like systemd EnvironmentFile (literal KEY=VALUE), NOT via
+  # `source` — values may contain parentheses/spaces that break shell eval.
   set -a
-  # shellcheck disable=SC1091
-  source .env
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    [ "${line#*=}" = "$line" ] && continue   # no '=', skip
+    key=${line%%=*}
+    val=${line#*=}
+    export "$key=$val"
+  done < .env
   set +a
 fi
 
