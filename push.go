@@ -183,9 +183,11 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 		// them makes the plugin treat our server push like a local one and
 		// forward the payload to NotificationRouter.
 		payloadMap["NotificationId"] = notificationIDFromString(payload)
-		payloadMap["presentAlert"] = true
+		payloadMap["presentAlert"] = true // iOS < 14 foreground
 		payloadMap["presentSound"] = true
 		payloadMap["presentBadge"] = false
+		payloadMap["presentBanner"] = true // iOS 14+ foreground banner
+		payloadMap["presentList"] = true   // iOS 14+ notification center
 	}
 	jsonBody, err := json.Marshal(payloadMap)
 	if err != nil {
