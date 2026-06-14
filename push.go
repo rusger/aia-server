@@ -415,11 +415,7 @@ func adminSendPush(w http.ResponseWriter, r *http.Request) {
 	sent := 0
 	var failures []string
 	for _, t := range targets {
-		if !strings.EqualFold(t.platform, "iOS") && t.platform != "" {
-			failures = append(failures, fmt.Sprintf("%s: unsupported platform %q (only iOS/APNs)", t.deviceID, t.platform))
-			continue
-		}
-		if err := sendAPNs(t.token, title, req.Message, req.Payload); err != nil {
+		if err := sendPushToToken(t.platform, t.token, title, req.Message, req.Payload); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", t.deviceID, err))
 			continue
 		}
@@ -485,11 +481,11 @@ func runSendPushCLI(args []string) {
 
 	ok := 0
 	for _, t := range targets {
-		if err := sendAPNs(t.token, title, message, payload); err != nil {
+		if err := sendPushToToken(t.platform, t.token, title, message, payload); err != nil {
 			fmt.Printf("❌ %s: %v\n", t.deviceID, err)
 			continue
 		}
-		fmt.Printf("✅ sent to %s\n", t.deviceID)
+		fmt.Printf("✅ sent to %s (%s)\n", t.deviceID, t.platform)
 		ok++
 	}
 	if ok == 0 {

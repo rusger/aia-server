@@ -425,22 +425,21 @@ func deliverDueEvents() {
 		return
 	}
 
-	// All deliverable devices (iOS with a token).
-	drows, err := db.Query(`SELECT device_id, push_token, COALESCE(language,'en'), COALESCE(tz_offset_minutes,0)
-		FROM devices WHERE push_token IS NOT NULL AND push_token != '' AND revoked = 0
-		AND (platform = 'iOS' OR platform IS NULL OR platform = '')`)
+	// All deliverable devices with a token (iOS → APNs, Android → FCM).
+	drows, err := db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(language,'en'), COALESCE(tz_offset_minutes,0)
+		FROM devices WHERE push_token IS NOT NULL AND push_token != '' AND revoked = 0`)
 	if err != nil {
 		log.Printf("⚠️ deliverDueEvents devices: %v", err)
 		return
 	}
 	type dev struct {
-		id, token, lang string
-		tzMin           int
+		id, token, platform, lang string
+		tzMin                     int
 	}
 	var devs []dev
 	for drows.Next() {
 		var d dev
-		if err := drows.Scan(&d.id, &d.token, &d.lang, &d.tzMin); err == nil {
+		if err := drows.Scan(&d.id, &d.token, &d.platform, &d.lang, &d.tzMin); err == nil {
 			devs = append(devs, d)
 		}
 	}
@@ -465,7 +464,7 @@ func deliverDueEvents() {
 				continue // already sent
 			}
 			title, body := eventText(e.kind, e.params, d.lang)
-			if err := sendAPNs(d.token, title, body, e.payld); err != nil {
+			if err := sendPushToToken(d.platform, d.token, title, body, e.payld); err != nil {
 				log.Printf("⚠️ event push to %s failed: %v", d.id, err)
 				// Roll back the claim so a later tick can retry.
 				db.Exec(`DELETE FROM push_event_deliveries WHERE event_id = ? AND device_id = ?`, e.id, d.id)
