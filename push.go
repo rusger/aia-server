@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net/http"
@@ -142,6 +143,14 @@ func apnsProviderToken(c *apnsConfig) (string, error) {
 
 var apnsHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
+// notificationIDFromString derives a stable positive 31-bit int id from a
+// payload, used for the flutter_local_notifications NotificationId marker key.
+func notificationIDFromString(s string) int {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return int(h.Sum32() & 0x7FFFFFFF)
+}
+
 // sendAPNs delivers a single alert push to one APNs device token. Returns nil
 // on success (HTTP 200) or an error describing the APNs rejection reason.
 func sendAPNs(deviceToken, title, body, payload string) error {
@@ -167,6 +176,16 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 	if payload != "" {
 		// Custom key the app's notification tap handler reads to deep-link.
 		payloadMap["payload"] = payload
+		// flutter_local_notifications' iOS delegate ONLY routes a tap to Dart
+		// for notifications carrying its marker keys (isAFlutterLocalNotification
+		// requires NotificationId + presentAlert/Sound/Badge + payload). Remote
+		// pushes lack them, so without this the tap is silently ignored. Adding
+		// them makes the plugin treat our server push like a local one and
+		// forward the payload to NotificationRouter.
+		payloadMap["NotificationId"] = notificationIDFromString(payload)
+		payloadMap["presentAlert"] = true
+		payloadMap["presentSound"] = true
+		payloadMap["presentBadge"] = false
 	}
 	jsonBody, err := json.Marshal(payloadMap)
 	if err != nil {
