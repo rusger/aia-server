@@ -1768,16 +1768,27 @@ func runAstrolog(args []string) ([]byte, error) {
 	defer func() { <-astrologSem }()
 
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < 3; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		cmd := exec.CommandContext(ctx, "./astrolog", args...)
 		cmd.Dir = "/home/ruslan/aia"
 		output, err := cmd.Output()
 		cancel()
-		if err == nil {
+		// Treat empty output as a failure too: a blank chart poisons the
+		// client's transit cache exactly like a hard error would.
+		if err == nil && len(strings.TrimSpace(string(output))) > 0 {
 			return output, nil
 		}
-		lastErr = err
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("astrolog returned empty output")
+		}
+		// Small backoff — transient failures are usually CPU/IO contention
+		// under batch load, and a brief pause lets a slot free up.
+		if attempt < 2 {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 	return nil, lastErr
 }
@@ -1957,12 +1968,22 @@ type TransitYearRequest struct {
     Months    []int   `json:"months,omitempty"` // Optional: specific months (1-12) to calculate
 }
 
-// TransitYearResponse contains all transit data for a year
+// TransitYearResponse contains all transit data for a year.
+//
+// Completeness contract: `Success` means "the request was processed";
+// `Complete` means "every requested day was computed with non-empty output".
+// A partial/poisoned response (some days failed and came back empty) is
+// reported with Complete=false + MissingDates so the client can refuse to
+// cache it and retry, instead of freezing a truncated forecast forever.
 type TransitYearResponse struct {
-    Success bool              `json:"success"`
-    Year    int               `json:"year"`
-    Data    map[string]string `json:"data"` // date -> chart output
-    Error   string            `json:"error,omitempty"`
+    Success       bool              `json:"success"`
+    Year          int               `json:"year"`
+    Data          map[string]string `json:"data"` // date -> chart output (empty days omitted)
+    Complete      bool              `json:"complete"`
+    RequestedDays int               `json:"requestedDays"`
+    ReturnedDays  int               `json:"returnedDays"` // non-empty days only
+    MissingDates  []string          `json:"missingDates,omitempty"`
+    Error         string            `json:"error,omitempty"`
 }
 
 // TransitMultiYearRequest for multi-year batch transit calculation
@@ -1973,11 +1994,18 @@ type TransitMultiYearRequest struct {
     Latitude  string `json:"latitude"`
 }
 
-// TransitMultiYearResponse contains transit data for multiple years
+// TransitMultiYearResponse contains transit data for multiple years.
+// Same completeness contract as TransitYearResponse: MissingByYear lists the
+// days that failed per year, and Complete is true only when every requested
+// day of every year was computed non-empty.
 type TransitMultiYearResponse struct {
-    Success bool                            `json:"success"`
-    Data    map[string]map[string]string    `json:"data"` // "year" -> (date -> chart)
-    Error   string                          `json:"error,omitempty"`
+    Success       bool                         `json:"success"`
+    Data          map[string]map[string]string `json:"data"` // "year" -> (date -> chart); empty days omitted
+    Complete      bool                         `json:"complete"`
+    RequestedDays int                          `json:"requestedDays"`
+    ReturnedDays  int                          `json:"returnedDays"`
+    MissingByYear map[string][]string          `json:"missingByYear,omitempty"` // "year" -> dates
+    Error         string                       `json:"error,omitempty"`
 }
 
 // calculateTransitYear generates transit data for all days in a year
@@ -2118,9 +2146,9 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
 
                 output, err := runAstrolog(args)
                 if err != nil {
-                    resultsMu.Lock()
-                    results[dateStr] = "" // Empty string for failed dates
-                    resultsMu.Unlock()
+                    // Do NOT store an empty placeholder — a blank day looks
+                    // "present" to the client and poisons its cache. Leave it
+                    // absent so completeness accounting below flags it missing.
                     continue
                 }
 
@@ -2134,8 +2162,12 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
                     }
                 }
 
+                chart := strings.Join(filtered, "\n")
+                if strings.TrimSpace(chart) == "" {
+                    continue // treat empty chart as a failed day (see above)
+                }
                 resultsMu.Lock()
-                results[dateStr] = strings.Join(filtered, "\n")
+                results[dateStr] = chart
                 resultsMu.Unlock()
             }
         }()
@@ -2155,16 +2187,36 @@ func calculateTransitYear(w http.ResponseWriter, r *http.Request) {
     wg.Wait()
 
     elapsed := time.Since(startTime)
-    log.Printf("[TransitYear] Completed year %d: %d days (requested %d) in %v (user: %s)",
-        req.Year, len(results), jobCount, elapsed, claims.Email)
+
+    // Completeness accounting: every day of every requested month must be
+    // present and non-empty. Any gap → Complete=false so the client refuses
+    // to cache a truncated year.
+    var missingDates []string
+    for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+        if !monthsToCalc[int(d.Month())] {
+            continue
+        }
+        dateStr := fmt.Sprintf("%d %d %d", d.Month(), d.Day(), d.Year())
+        if v, ok := results[dateStr]; !ok || v == "" {
+            missingDates = append(missingDates, dateStr)
+        }
+    }
+    complete := len(missingDates) == 0
+
+    log.Printf("[TransitYear] Completed year %d: %d/%d days, complete=%t (missing %d) in %v (user: %s)",
+        req.Year, len(results), jobCount, complete, len(missingDates), elapsed, claims.Email)
 
     // Log API call
     logAPICall(claims.DeviceID, "transit-year", fmt.Sprintf("%d", req.Year))
 
     json.NewEncoder(w).Encode(TransitYearResponse{
-        Success: true,
-        Year:    req.Year,
-        Data:    results,
+        Success:       true,
+        Year:          req.Year,
+        Data:          results,
+        Complete:      complete,
+        RequestedDays: jobCount,
+        ReturnedDays:  len(results),
+        MissingDates:  missingDates,
     })
 }
 
@@ -2278,9 +2330,7 @@ func calculateTransitMultiYear(w http.ResponseWriter, r *http.Request) {
 
                 output, err := runAstrolog(args)
                 if err != nil {
-                    resultsMu.Lock()
-                    yearResults[fmt.Sprintf("%d", j.year)][dateStr] = ""
-                    resultsMu.Unlock()
+                    // Omit failed days (no empty placeholder) — see calculateTransitYear.
                     continue
                 }
 
@@ -2292,8 +2342,12 @@ func calculateTransitMultiYear(w http.ResponseWriter, r *http.Request) {
                     }
                 }
 
+                chart := strings.Join(filtered, "\n")
+                if strings.TrimSpace(chart) == "" {
+                    continue
+                }
                 resultsMu.Lock()
-                yearResults[fmt.Sprintf("%d", j.year)][dateStr] = strings.Join(filtered, "\n")
+                yearResults[fmt.Sprintf("%d", j.year)][dateStr] = chart
                 resultsMu.Unlock()
             }
         }()
@@ -2315,13 +2369,35 @@ func calculateTransitMultiYear(w http.ResponseWriter, r *http.Request) {
     for _, m := range yearResults {
         totalResults += len(m)
     }
-    log.Printf("[TransitMultiYear] Completed %d years (%d days) in %v (user: %s)", len(req.Years), totalResults, elapsed, claims.Email)
+
+    // Completeness accounting per year (multi-year always requests all 12 months).
+    missingByYear := make(map[string][]string)
+    for _, y := range req.Years {
+        yKey := fmt.Sprintf("%d", y)
+        yMap := yearResults[yKey]
+        start := time.Date(y, 1, 1, 0, 0, 0, 0, time.UTC)
+        end := time.Date(y, 12, 31, 0, 0, 0, 0, time.UTC)
+        for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+            dateStr := fmt.Sprintf("%d %d %d", d.Month(), d.Day(), d.Year())
+            if v, ok := yMap[dateStr]; !ok || v == "" {
+                missingByYear[yKey] = append(missingByYear[yKey], dateStr)
+            }
+        }
+    }
+    complete := len(missingByYear) == 0
+
+    log.Printf("[TransitMultiYear] Completed %d years (%d/%d days, complete=%t) in %v (user: %s)",
+        len(req.Years), totalResults, totalDays, complete, elapsed, claims.Email)
 
     logAPICall(claims.DeviceID, "transit-multi-year", fmt.Sprintf("%v", req.Years))
 
     json.NewEncoder(w).Encode(TransitMultiYearResponse{
-        Success: true,
-        Data:    yearResults,
+        Success:       true,
+        Data:          yearResults,
+        Complete:      complete,
+        RequestedDays: totalDays,
+        ReturnedDays:  totalResults,
+        MissingByYear: missingByYear,
     })
 }
 
