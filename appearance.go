@@ -15,6 +15,14 @@ var appearanceCols = []string{
 	"appearance_color TEXT",
 	"appearance_background TEXT",
 	"appearance_icon_set TEXT",
+	// Per-element "randomize on each launch" flags. When a flag is 1, the value
+	// stored alongside it is a momentary shuffle pick, not a deliberate choice —
+	// so the dashboard can split "set by user" from "kept random". 0 = the user
+	// fixed this element (also the default for old clients that don't report it).
+	"appearance_theme_random INTEGER DEFAULT 0",
+	"appearance_color_random INTEGER DEFAULT 0",
+	"appearance_background_random INTEGER DEFAULT 0",
+	"appearance_icon_random INTEGER DEFAULT 0",
 	"appearance_platform TEXT",
 	"appearance_updated_at DATETIME",
 }
@@ -85,11 +93,15 @@ func setAppearanceParams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Theme       string `json:"theme"`
-		ColorScheme string `json:"color_scheme"`
-		Background  string `json:"background"`
-		IconSet     string `json:"icon_set"`
-		Platform    string `json:"platform"`
+		Theme            string `json:"theme"`
+		ColorScheme      string `json:"color_scheme"`
+		Background       string `json:"background"`
+		IconSet          string `json:"icon_set"`
+		ThemeRandom      bool   `json:"theme_random"`
+		ColorRandom      bool   `json:"color_random"`
+		BackgroundRandom bool   `json:"background_random"`
+		IconRandom       bool   `json:"icon_random"`
+		Platform         string `json:"platform"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -100,21 +112,34 @@ func setAppearanceParams(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
 	// Upsert onto the existing (email, device_id) row; create it if the device
 	// hasn't been recorded yet (relies on idx_devices_email_device).
+	b2i := func(b bool) int {
+		if b {
+			return 1
+		}
+		return 0
+	}
 	_, err := db.Exec(`
 		INSERT INTO devices (email, device_id, last_seen,
 			appearance_theme, appearance_color, appearance_background, appearance_icon_set,
+			appearance_theme_random, appearance_color_random, appearance_background_random, appearance_icon_random,
 			appearance_platform, appearance_updated_at)
-		VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(email, device_id) DO UPDATE SET
 			last_seen = CURRENT_TIMESTAMP,
 			appearance_theme = excluded.appearance_theme,
 			appearance_color = excluded.appearance_color,
 			appearance_background = excluded.appearance_background,
 			appearance_icon_set = excluded.appearance_icon_set,
+			appearance_theme_random = excluded.appearance_theme_random,
+			appearance_color_random = excluded.appearance_color_random,
+			appearance_background_random = excluded.appearance_background_random,
+			appearance_icon_random = excluded.appearance_icon_random,
 			appearance_platform = CASE WHEN excluded.appearance_platform != '' THEN excluded.appearance_platform ELSE devices.appearance_platform END,
 			appearance_updated_at = CURRENT_TIMESTAMP`,
 		email, claims.DeviceID,
-		req.Theme, req.ColorScheme, req.Background, req.IconSet, req.Platform)
+		req.Theme, req.ColorScheme, req.Background, req.IconSet,
+		b2i(req.ThemeRandom), b2i(req.ColorRandom), b2i(req.BackgroundRandom), b2i(req.IconRandom),
+		req.Platform)
 	if err != nil {
 		log.Printf("⚠️ appearance upsert failed: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
@@ -153,6 +178,8 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 			       COALESCE(NULLIF(appearance_platform, ''), platform, ''),
 			       COALESCE(appearance_theme, ''), COALESCE(appearance_color, ''),
 			       COALESCE(appearance_background, ''), COALESCE(appearance_icon_set, ''),
+			       COALESCE(appearance_theme_random, 0), COALESCE(appearance_color_random, 0),
+			       COALESCE(appearance_background_random, 0), COALESCE(appearance_icon_random, 0),
 			       COALESCE(appearance_updated_at, '')
 			FROM devices
 			WHERE email = ? AND appearance_updated_at IS NOT NULL
@@ -167,17 +194,23 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		out := []map[string]interface{}{}
 		for rows.Next() {
 			var deviceID, platform, theme, color, background, iconSet, updatedAt string
-			if err := rows.Scan(&deviceID, &platform, &theme, &color, &background, &iconSet, &updatedAt); err != nil {
+			var themeRnd, colorRnd, bgRnd, iconRnd int
+			if err := rows.Scan(&deviceID, &platform, &theme, &color, &background, &iconSet,
+				&themeRnd, &colorRnd, &bgRnd, &iconRnd, &updatedAt); err != nil {
 				continue
 			}
 			out = append(out, map[string]interface{}{
-				"device_id":    deviceID,
-				"platform":     platform,
-				"theme":        theme,
-				"color_scheme": color,
-				"background":   background,
-				"icon_set":     iconSet,
-				"updated_at":   updatedAt,
+				"device_id":         deviceID,
+				"platform":          platform,
+				"theme":             theme,
+				"color_scheme":      color,
+				"background":        background,
+				"icon_set":          iconSet,
+				"theme_random":      themeRnd == 1,
+				"color_random":      colorRnd == 1,
+				"background_random": bgRnd == 1,
+				"icon_random":       iconRnd == 1,
+				"updated_at":        updatedAt,
 			})
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -190,10 +223,23 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── Aggregate: distribution over the most-recent device per user ─────────
+	//
+	// For each of the four parameters we report a "momentary snapshot" that
+	// separates two kinds of users:
+	//   • fixed  — the user deliberately chose this value (random flag off);
+	//   • random — the user keeps this element shuffling on every launch, so the
+	//              stored value is just whatever the last launch happened to pick.
+	// Counting a random user's momentary value as a real preference would skew
+	// the distribution, so random users are tallied separately (a single
+	// "random" bucket per parameter) instead of by their throwaway value.
 	rows, err := db.Query(`
-		SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set
+		SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set,
+		       COALESCE(appearance_theme_random, 0), COALESCE(appearance_color_random, 0),
+		       COALESCE(appearance_background_random, 0), COALESCE(appearance_icon_random, 0)
 		FROM (
 			SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set,
+			       appearance_theme_random, appearance_color_random,
+			       appearance_background_random, appearance_icon_random,
 			       ROW_NUMBER() OVER (PARTITION BY email ORDER BY appearance_updated_at DESC) AS rn
 			FROM devices
 			WHERE appearance_updated_at IS NOT NULL
@@ -206,10 +252,16 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	theme := map[string]int{}
-	color := map[string]int{}
-	background := map[string]int{}
-	iconSet := map[string]int{}
+	// Per-parameter accumulator: fixed values → user count, plus how many users
+	// keep that parameter on random vs. fixed.
+	type paramAgg struct {
+		fixed       map[string]int
+		fixedCount  int
+		randomCount int
+	}
+	newParam := func() *paramAgg { return &paramAgg{fixed: map[string]int{}} }
+	theme, color, background, iconSet := newParam(), newParam(), newParam(), newParam()
+
 	type comboKey struct{ t, c, b, i string }
 	combos := map[comboKey]int{}
 	total := 0
@@ -219,22 +271,37 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		}
 		return v
 	}
+	// add tallies one user's value into a parameter; random users go to the
+	// random bucket and contribute "(random)" to the combination key.
+	add := func(p *paramAgg, v string, isRandom bool) string {
+		if isRandom {
+			p.randomCount++
+			return "(random)"
+		}
+		v = norm(v)
+		p.fixed[v]++
+		p.fixedCount++
+		return v
+	}
 	for rows.Next() {
 		var t, c, b, i string
-		if err := rows.Scan(&t, &c, &b, &i); err != nil {
+		var tr, cr, br, ir int
+		if err := rows.Scan(&t, &c, &b, &i, &tr, &cr, &br, &ir); err != nil {
 			continue
 		}
-		t, c, b, i = norm(t), norm(c), norm(b), norm(i)
 		total++
-		theme[t]++
-		color[c]++
-		background[b]++
-		iconSet[i]++
-		combos[comboKey{t, c, b, i}]++
+		ck := comboKey{
+			add(theme, t, tr == 1),
+			add(color, c, cr == 1),
+			add(background, b, br == 1),
+			add(iconSet, i, ir == 1),
+		}
+		combos[ck]++
 	}
 
 	// Every distinct full combination of the four settings, with its user count.
-	// The client sorts these and computes percentages against total_users.
+	// Random elements appear as "(random)" so combinations reflect the stable
+	// choices rather than each launch's throwaway shuffle pick.
 	comboList := make([]map[string]interface{}, 0, len(combos))
 	for k, n := range combos {
 		comboList = append(comboList, map[string]interface{}{
@@ -246,13 +313,22 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Serialise a parameter as {fixed:{value:count}, fixed_count, random_count}.
+	paramJSON := func(p *paramAgg) map[string]interface{} {
+		return map[string]interface{}{
+			"fixed":        p.fixed,
+			"fixed_count":  p.fixedCount,
+			"random_count": p.randomCount,
+		}
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"total_users":  total,
-		"theme":        theme,
-		"color_scheme": color,
-		"background":   background,
-		"icon_set":     iconSet,
+		"theme":        paramJSON(theme),
+		"color_scheme": paramJSON(color),
+		"background":   paramJSON(background),
+		"icon_set":     paramJSON(iconSet),
 		"combinations": comboList,
 	})
 }
