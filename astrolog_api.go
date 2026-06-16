@@ -8056,6 +8056,8 @@ func main() {
     router.HandleFunc("/api/user/push-token", jwtAuthMiddleware(registerPushToken)).Methods("POST")
     // Store this device's four appearance preferences (see appearance.go)
     router.HandleFunc("/api/user/appearance", jwtAuthMiddleware(setAppearanceParams)).Methods("POST")
+    // Accumulate per-screen time spent by this device (see screentime.go)
+    router.HandleFunc("/api/user/screen-time", jwtAuthMiddleware(setScreenTime)).Methods("POST")
 
     // T2.B partner invite endpoints
     router.HandleFunc("/api/invites/create", jwtAuthMiddleware(createInvite)).Methods("POST")
@@ -8077,6 +8079,7 @@ func main() {
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
     router.HandleFunc("/api/admin/user-appearance", adminGuardMiddleware(adminGetUserAppearance)).Methods("GET")
+    router.HandleFunc("/api/admin/screen-time", adminGuardMiddleware(adminGetScreenTime)).Methods("GET")
     router.HandleFunc("/api/admin/analytics-cleanup", adminGuardMiddleware(adminAnalyticsCleanup)).Methods("POST")
     router.HandleFunc("/api/admin/historical-data", adminGuardMiddleware(adminGetHistoricalData)).Methods("GET")
     router.HandleFunc("/api/admin/download-db", adminGuardMiddleware(adminDownloadDB)).Methods("GET")
