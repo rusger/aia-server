@@ -3025,6 +3025,35 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         }
     }
 
+    // OR-with-device entitlement (email is optional by design). An IAP
+    // subscription is attributed to whichever identity (email or the anonymous
+    // device account) was active at purchase time. If the email account isn't
+    // paid, honor an active subscription on the SAME device so the user keeps
+    // access without being forced to log in by email. The same OR runs at JWT
+    // issuance in verifyAuthCode. Server stays the single source of truth: an
+    // expired device subscription is treated as free here too.
+    if effectiveSubType != "paid" && claims.DeviceID != "" && !strings.HasSuffix(email, "@device.astrolytix.app") {
+        var dType, dLength string
+        var dExpiry, dPay sql.NullString
+        if e := db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry, last_payment_method
+            FROM users WHERE email = ?`, claims.DeviceID+"@device.astrolytix.app").
+            Scan(&dType, &dLength, &dExpiry, &dPay); e == nil && dType == "paid" {
+            devActive := true
+            if dExpiry.Valid && dExpiry.String != "" {
+                if t, perr := parseDBTime(dExpiry.String); perr == nil && time.Now().After(t) {
+                    devActive = false
+                }
+            }
+            if devActive {
+                effectiveSubType = "paid"
+                subscriptionLength = dLength
+                subscriptionExpiry = dExpiry
+                lastPaymentMethod = dPay
+                log.Printf("🔗 [getUserInfo] %s entitled via device account %s", email, claims.DeviceID)
+            }
+        }
+    }
+
     log.Printf("📊 [getUserInfo] email=%s, db_type=%s, effective_type=%s, expiry=%s",
         email, subscriptionType, effectiveSubType, subscriptionExpiry.String)
 
@@ -4803,66 +4832,6 @@ func requestAuthCode(w http.ResponseWriter, r *http.Request) {
     })
 }
 
-// migrateDeviceSubscriptionToEmail moves an unmigrated paid subscription from a
-// device-anonymous account (<deviceID>@device.astrolytix.app) onto the real
-// email account when the user logs in. IAP purchases made before email login
-// are attributed to the device identity (via app_account_token / device_id), so
-// without this the entitlement is invisible after login — the exact bug behind
-// "I paid but the app shows free". Only migrates when the device account holds
-// an active (or no-expiry) paid plan and the email account is not already on an
-// active paid plan. Returns true if a migration was performed.
-func migrateDeviceSubscriptionToEmail(email, deviceID string) bool {
-    if email == "" || deviceID == "" || strings.HasSuffix(email, "@device.astrolytix.app") {
-        return false
-    }
-    deviceEmail := deviceID + "@device.astrolytix.app"
-
-    var devType, devLength, devPay string
-    var devExpiry, devToken sql.NullString
-    err := db.QueryRow(`SELECT subscription_type, subscription_length, COALESCE(last_payment_method,''),
-        subscription_expiry, app_account_token FROM users WHERE email = ?`, deviceEmail).
-        Scan(&devType, &devLength, &devPay, &devExpiry, &devToken)
-    if err != nil || devType != "paid" {
-        return false
-    }
-    // Device plan must still be active (future expiry, or no expiry recorded).
-    if devExpiry.Valid && devExpiry.String != "" {
-        if t, perr := parseDBTime(devExpiry.String); perr == nil && time.Now().After(t) {
-            return false
-        }
-    }
-
-    // Don't clobber an email account that is already on an active paid plan.
-    var emType string
-    var emExpiry sql.NullString
-    if e := db.QueryRow(`SELECT subscription_type, subscription_expiry FROM users WHERE email = ?`, email).
-        Scan(&emType, &emExpiry); e == nil && emType == "paid" {
-        if !emExpiry.Valid || emExpiry.String == "" {
-            return false // already lifetime / no-expiry paid
-        }
-        if t, perr := parseDBTime(emExpiry.String); perr == nil && time.Now().Before(t) {
-            return false // already active paid
-        }
-    }
-
-    // Move the entitlement onto the email account (sql.NullString stores NULL
-    // when not valid, so empty expiry/token don't become empty strings).
-    if _, uErr := db.Exec(`UPDATE users SET subscription_type=?, subscription_length=?,
-        subscription_expiry=?, last_payment_method=?, app_account_token=?, updated_at=CURRENT_TIMESTAMP
-        WHERE email=?`, devType, devLength, devExpiry, devPay, devToken, email); uErr != nil {
-        log.Printf("⚠️ [login migrate] email update failed: %v", uErr)
-        return false
-    }
-    // Re-point purchase history (OR IGNORE in case the email already has the row)
-    // and retire the phantom device account so future Apple/Google S2S renewals
-    // attribute to the email and the subscriber isn't double-counted.
-    db.Exec(`UPDATE OR IGNORE purchase_history SET email=? WHERE email=?`, email, deviceEmail)
-    db.Exec(`UPDATE users SET subscription_type='free', app_account_token=NULL,
-        updated_at=CURRENT_TIMESTAMP WHERE email=?`, deviceEmail)
-    log.Printf("🔁 [login migrate] moved %s/%s subscription from device %s to %s", devType, devLength, deviceID, email)
-    return true
-}
-
 // Verify auth code - validates code and returns JWT tokens
 func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -5027,22 +4996,26 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         log.Printf("✅ Existing user logged in: %s (device: %s, plan: %s)", email, deviceID, subscriptionType)
     }
 
-    // Pull any subscription bought before the user logged in onto this email.
-    // IAP purchases are attributed to the anonymous device identity; without
-    // this migration the entitlement is invisible after email login.
-    if migrateDeviceSubscriptionToEmail(email, deviceID) {
-        // Re-read so the JWT below reflects the migrated plan.
-        var mType, mLength string
-        var mExpiry sql.NullString
-        if e := db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`, email).
-            Scan(&mType, &mLength, &mExpiry); e == nil {
-            subscriptionType, subscriptionLength = mType, mLength
-            if mExpiry.Valid && mExpiry.String != "" {
-                if t, perr := parseDBTime(mExpiry.String); perr == nil && time.Now().After(t) {
-                    subscriptionType = "free"
+    // OR-with-device entitlement (email stays optional): an IAP subscription is
+    // attributed to whichever identity (email or anonymous device account) was
+    // active at purchase time. If the email account isn't paid, honor an active
+    // subscription on the SAME device so the JWT reflects it without forcing the
+    // purchase onto the email account. getUserInfo applies the same OR.
+    if subscriptionType != "paid" && deviceID != "" {
+        var dType, dLength string
+        var dExpiry sql.NullString
+        if e := db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`,
+            deviceID+"@device.astrolytix.app").Scan(&dType, &dLength, &dExpiry); e == nil && dType == "paid" {
+            devActive := true
+            if dExpiry.Valid && dExpiry.String != "" {
+                if t, perr := parseDBTime(dExpiry.String); perr == nil && time.Now().After(t) {
+                    devActive = false
                 }
             }
-            log.Printf("🔁 [verifyAuthCode] migrated device subscription to %s (plan: %s)", email, subscriptionType)
+            if devActive {
+                subscriptionType, subscriptionLength = "paid", dLength
+                log.Printf("🔗 [verifyAuthCode] %s entitled via device account %s", email, deviceID)
+            }
         }
     }
 
