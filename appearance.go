@@ -15,6 +15,7 @@ var appearanceCols = []string{
 	"appearance_color TEXT",
 	"appearance_background TEXT",
 	"appearance_icon_set TEXT",
+	"appearance_spinner TEXT",
 	// Per-element "randomize on each launch" flags. When a flag is 1, the value
 	// stored alongside it is a momentary shuffle pick, not a deliberate choice —
 	// so the dashboard can split "set by user" from "kept random". 0 = the user
@@ -23,6 +24,7 @@ var appearanceCols = []string{
 	"appearance_color_random INTEGER DEFAULT 0",
 	"appearance_background_random INTEGER DEFAULT 0",
 	"appearance_icon_random INTEGER DEFAULT 0",
+	"appearance_spinner_random INTEGER DEFAULT 0",
 	"appearance_platform TEXT",
 	"appearance_updated_at DATETIME",
 }
@@ -67,8 +69,8 @@ func ensureAppearanceSchema() {
 // ---------------------------------------------------------------------------
 // Appearance preferences (the four "Внешний вид" settings)
 //
-// The mobile app lets the user pick four visual preferences — theme, colour
-// scheme, background and horoscope icon set. This file records the last value
+// The mobile app lets the user pick five visual preferences — theme, colour
+// scheme, background, horoscope icon set and loading spinner. This file records the last value
 // each device reported so the Stellar Vault admin dashboard can show, per
 // user, which appearance parameters they have set.
 //
@@ -97,10 +99,12 @@ func setAppearanceParams(w http.ResponseWriter, r *http.Request) {
 		ColorScheme      string `json:"color_scheme"`
 		Background       string `json:"background"`
 		IconSet          string `json:"icon_set"`
+		Spinner          string `json:"spinner"`
 		ThemeRandom      bool   `json:"theme_random"`
 		ColorRandom      bool   `json:"color_random"`
 		BackgroundRandom bool   `json:"background_random"`
 		IconRandom       bool   `json:"icon_random"`
+		SpinnerRandom    bool   `json:"spinner_random"`
 		Platform         string `json:"platform"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -120,25 +124,27 @@ func setAppearanceParams(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := db.Exec(`
 		INSERT INTO devices (email, device_id, last_seen,
-			appearance_theme, appearance_color, appearance_background, appearance_icon_set,
-			appearance_theme_random, appearance_color_random, appearance_background_random, appearance_icon_random,
+			appearance_theme, appearance_color, appearance_background, appearance_icon_set, appearance_spinner,
+			appearance_theme_random, appearance_color_random, appearance_background_random, appearance_icon_random, appearance_spinner_random,
 			appearance_platform, appearance_updated_at)
-		VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(email, device_id) DO UPDATE SET
 			last_seen = CURRENT_TIMESTAMP,
 			appearance_theme = excluded.appearance_theme,
 			appearance_color = excluded.appearance_color,
 			appearance_background = excluded.appearance_background,
 			appearance_icon_set = excluded.appearance_icon_set,
+			appearance_spinner = excluded.appearance_spinner,
 			appearance_theme_random = excluded.appearance_theme_random,
 			appearance_color_random = excluded.appearance_color_random,
 			appearance_background_random = excluded.appearance_background_random,
 			appearance_icon_random = excluded.appearance_icon_random,
+			appearance_spinner_random = excluded.appearance_spinner_random,
 			appearance_platform = CASE WHEN excluded.appearance_platform != '' THEN excluded.appearance_platform ELSE devices.appearance_platform END,
 			appearance_updated_at = CURRENT_TIMESTAMP`,
 		email, claims.DeviceID,
-		req.Theme, req.ColorScheme, req.Background, req.IconSet,
-		b2i(req.ThemeRandom), b2i(req.ColorRandom), b2i(req.BackgroundRandom), b2i(req.IconRandom),
+		req.Theme, req.ColorScheme, req.Background, req.IconSet, req.Spinner,
+		b2i(req.ThemeRandom), b2i(req.ColorRandom), b2i(req.BackgroundRandom), b2i(req.IconRandom), b2i(req.SpinnerRandom),
 		req.Platform)
 	if err != nil {
 		log.Printf("⚠️ appearance upsert failed: %v", err)
@@ -178,8 +184,10 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 			       COALESCE(NULLIF(appearance_platform, ''), platform, ''),
 			       COALESCE(appearance_theme, ''), COALESCE(appearance_color, ''),
 			       COALESCE(appearance_background, ''), COALESCE(appearance_icon_set, ''),
+			       COALESCE(appearance_spinner, ''),
 			       COALESCE(appearance_theme_random, 0), COALESCE(appearance_color_random, 0),
 			       COALESCE(appearance_background_random, 0), COALESCE(appearance_icon_random, 0),
+			       COALESCE(appearance_spinner_random, 0),
 			       COALESCE(appearance_updated_at, '')
 			FROM devices
 			WHERE email = ? AND appearance_updated_at IS NOT NULL
@@ -193,10 +201,10 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 
 		out := []map[string]interface{}{}
 		for rows.Next() {
-			var deviceID, platform, theme, color, background, iconSet, updatedAt string
-			var themeRnd, colorRnd, bgRnd, iconRnd int
-			if err := rows.Scan(&deviceID, &platform, &theme, &color, &background, &iconSet,
-				&themeRnd, &colorRnd, &bgRnd, &iconRnd, &updatedAt); err != nil {
+			var deviceID, platform, theme, color, background, iconSet, spinner, updatedAt string
+			var themeRnd, colorRnd, bgRnd, iconRnd, spinnerRnd int
+			if err := rows.Scan(&deviceID, &platform, &theme, &color, &background, &iconSet, &spinner,
+				&themeRnd, &colorRnd, &bgRnd, &iconRnd, &spinnerRnd, &updatedAt); err != nil {
 				continue
 			}
 			out = append(out, map[string]interface{}{
@@ -206,10 +214,12 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 				"color_scheme":      color,
 				"background":        background,
 				"icon_set":          iconSet,
+				"spinner":           spinner,
 				"theme_random":      themeRnd == 1,
 				"color_random":      colorRnd == 1,
 				"background_random": bgRnd == 1,
 				"icon_random":       iconRnd == 1,
+				"spinner_random":    spinnerRnd == 1,
 				"updated_at":        updatedAt,
 			})
 		}
@@ -233,13 +243,14 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 	// the distribution, so random users are tallied separately (a single
 	// "random" bucket per parameter) instead of by their throwaway value.
 	rows, err := db.Query(`
-		SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set,
+		SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set, appearance_spinner,
 		       COALESCE(appearance_theme_random, 0), COALESCE(appearance_color_random, 0),
-		       COALESCE(appearance_background_random, 0), COALESCE(appearance_icon_random, 0)
+		       COALESCE(appearance_background_random, 0), COALESCE(appearance_icon_random, 0),
+		       COALESCE(appearance_spinner_random, 0)
 		FROM (
-			SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set,
+			SELECT appearance_theme, appearance_color, appearance_background, appearance_icon_set, appearance_spinner,
 			       appearance_theme_random, appearance_color_random,
-			       appearance_background_random, appearance_icon_random,
+			       appearance_background_random, appearance_icon_random, appearance_spinner_random,
 			       ROW_NUMBER() OVER (PARTITION BY email ORDER BY appearance_updated_at DESC) AS rn
 			FROM devices
 			WHERE appearance_updated_at IS NOT NULL
@@ -260,9 +271,9 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		randomCount int
 	}
 	newParam := func() *paramAgg { return &paramAgg{fixed: map[string]int{}} }
-	theme, color, background, iconSet := newParam(), newParam(), newParam(), newParam()
+	theme, color, background, iconSet, spinner := newParam(), newParam(), newParam(), newParam(), newParam()
 
-	type comboKey struct{ t, c, b, i string }
+	type comboKey struct{ t, c, b, i, s string }
 	combos := map[comboKey]int{}
 	total := 0
 	norm := func(v string) string {
@@ -284,9 +295,9 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		return v
 	}
 	for rows.Next() {
-		var t, c, b, i string
-		var tr, cr, br, ir int
-		if err := rows.Scan(&t, &c, &b, &i, &tr, &cr, &br, &ir); err != nil {
+		var t, c, b, i, s string
+		var tr, cr, br, ir, sr int
+		if err := rows.Scan(&t, &c, &b, &i, &s, &tr, &cr, &br, &ir, &sr); err != nil {
 			continue
 		}
 		total++
@@ -295,6 +306,7 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 			add(color, c, cr == 1),
 			add(background, b, br == 1),
 			add(iconSet, i, ir == 1),
+			add(spinner, s, sr == 1),
 		}
 		combos[ck]++
 	}
@@ -309,6 +321,7 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 			"color_scheme": k.c,
 			"background":   k.b,
 			"icon_set":     k.i,
+			"spinner":      k.s,
 			"count":        n,
 		})
 	}
@@ -329,6 +342,7 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		"color_scheme": paramJSON(color),
 		"background":   paramJSON(background),
 		"icon_set":     paramJSON(iconSet),
+		"spinner":      paramJSON(spinner),
 		"combinations": comboList,
 	})
 }
