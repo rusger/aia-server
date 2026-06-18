@@ -8056,6 +8056,11 @@ func main() {
     // appearance.go.
     ensureAppearanceSchema()
 
+    // Per-device in-app language preference, surfaced per user and in aggregate
+    // in the Stellar Vault dashboard. Same self-healing migration pattern as
+    // appearance. See languages.go.
+    ensureLanguageSchema()
+
     // Initialize analytics database
     if err := initAnalyticsDB(); err != nil {
         log.Printf("⚠️ Warning: Analytics database failed to initialize: %v", err)
@@ -8108,6 +8113,8 @@ func main() {
     router.HandleFunc("/api/user/push-token", jwtAuthMiddleware(registerPushToken)).Methods("POST")
     // Store this device's four appearance preferences (see appearance.go)
     router.HandleFunc("/api/user/appearance", jwtAuthMiddleware(setAppearanceParams)).Methods("POST")
+    // Store this device's in-app language preference (see languages.go)
+    router.HandleFunc("/api/user/language", jwtAuthMiddleware(setLanguage)).Methods("POST")
     // Accumulate per-screen time spent by this device (see screentime.go)
     router.HandleFunc("/api/user/screen-time", jwtAuthMiddleware(setScreenTime)).Methods("POST")
 
@@ -8131,6 +8138,7 @@ func main() {
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
     router.HandleFunc("/api/admin/user-appearance", adminGuardMiddleware(adminGetUserAppearance)).Methods("GET")
+    router.HandleFunc("/api/admin/user-languages", adminGuardMiddleware(adminGetUserLanguages)).Methods("GET")
     router.HandleFunc("/api/admin/screen-time", adminGuardMiddleware(adminGetScreenTime)).Methods("GET")
     router.HandleFunc("/api/admin/analytics-cleanup", adminGuardMiddleware(adminAnalyticsCleanup)).Methods("POST")
     router.HandleFunc("/api/admin/historical-data", adminGuardMiddleware(adminGetHistoricalData)).Methods("GET")
