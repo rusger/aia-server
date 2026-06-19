@@ -179,6 +179,67 @@ func adminGetUserLanguages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Drill-down: the users behind a single language count ─────────────────
+	//
+	// The dashboard makes every "Users" number clickable, sending
+	//   list=language&value=<code or "(unset)">
+	// We reproduce the same most-recent-device-per-user snapshot the aggregate
+	// uses and return the users whose language matches, so the count and the
+	// listed users always agree.
+	if r.URL.Query().Get("list") == "language" {
+		want := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("value")))
+		rows, err := db.Query(`
+			SELECT email, device_id,
+			       COALESCE(NULLIF(language_platform, ''), platform, ''),
+			       COALESCE(app_language, ''), COALESCE(app_country, ''),
+			       COALESCE(language_updated_at, '')
+			FROM (
+				SELECT email, device_id, platform, language_platform,
+				       app_language, app_country, language_updated_at,
+				       ROW_NUMBER() OVER (PARTITION BY email ORDER BY language_updated_at DESC) AS rn
+				FROM devices
+				WHERE language_updated_at IS NOT NULL
+			)
+			WHERE rn = 1
+			ORDER BY language_updated_at DESC`)
+		if err != nil {
+			log.Printf("⚠️ language list query failed: %v", err)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error: " + err.Error()})
+			return
+		}
+		defer rows.Close()
+
+		users := []map[string]interface{}{}
+		for rows.Next() {
+			var email, deviceID, platform, language, country, updatedAt string
+			if err := rows.Scan(&email, &deviceID, &platform, &language, &country, &updatedAt); err != nil {
+				continue
+			}
+			lang := strings.ToLower(strings.TrimSpace(language))
+			label := lang
+			if label == "" {
+				label = "(unset)"
+			}
+			if label != want {
+				continue
+			}
+			users = append(users, map[string]interface{}{
+				"email":      email,
+				"device_id":  deviceID,
+				"platform":   platform,
+				"language":   label,
+				"country":    country,
+				"updated_at": updatedAt,
+			})
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"users":   users,
+			"count":   len(users),
+		})
+		return
+	}
+
 	// ── Aggregate: distribution over the most-recent device per user ─────────
 	rows, err := db.Query(`
 		SELECT app_language

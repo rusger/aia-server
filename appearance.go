@@ -232,6 +232,32 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Drill-down: the users behind a single count ──────────────────────────
+	//
+	// The dashboard makes every "Users" number clickable. A click sends either:
+	//   list=param&param=<key>&value=<displayed value>   (one parameter table)
+	//   list=combo&theme=&color_scheme=&background=&icon_set=&spinner=  (a row of
+	//                                                       the full-combination table)
+	// where each value is exactly what the dashboard shows — a fixed value, the
+	// literal "(unset)", or the literal "(random)". We reproduce the same
+	// most-recent-device-per-user snapshot the aggregate uses, label every user's
+	// values identically, then return the users whose label(s) match so the count
+	// and the listed users always agree.
+	if listMode := r.URL.Query().Get("list"); listMode == "param" || listMode == "combo" {
+		users, err := appearanceUsersMatching(listMode, r.URL.Query())
+		if err != nil {
+			log.Printf("⚠️ appearance list query failed: %v", err)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error: " + err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"users":   users,
+			"count":   len(users),
+		})
+		return
+	}
+
 	// ── Aggregate: distribution over the most-recent device per user ─────────
 	//
 	// For each of the four parameters we report a "momentary snapshot" that
@@ -345,4 +371,112 @@ func adminGetUserAppearance(w http.ResponseWriter, r *http.Request) {
 		"spinner":      paramJSON(spinner),
 		"combinations": comboList,
 	})
+}
+
+// appearanceUsersMatching returns the users (one most-recent device per user)
+// whose appearance values match the requested filter, in the same way the
+// aggregate counts them. `mode` is "param" or "combo"; `q` carries the filter
+// values (each the literal label the dashboard displays: a fixed value,
+// "(unset)" or "(random)").
+//
+// The display label for one element is derived exactly as the aggregate does:
+// a random element is labelled "(random)" regardless of its stored value, an
+// empty fixed value is "(unset)", otherwise the stored value itself. We compare
+// labels — never raw columns — so a listed user set always matches its count.
+func appearanceUsersMatching(mode string, q interface {
+	Get(string) string
+}) ([]map[string]interface{}, error) {
+	rows, err := db.Query(`
+		SELECT email, device_id,
+		       COALESCE(NULLIF(appearance_platform, ''), platform, ''),
+		       appearance_theme, appearance_color, appearance_background, appearance_icon_set, appearance_spinner,
+		       COALESCE(appearance_theme_random, 0), COALESCE(appearance_color_random, 0),
+		       COALESCE(appearance_background_random, 0), COALESCE(appearance_icon_random, 0),
+		       COALESCE(appearance_spinner_random, 0),
+		       COALESCE(appearance_updated_at, '')
+		FROM (
+			SELECT email, device_id, platform,
+			       appearance_theme, appearance_color, appearance_background, appearance_icon_set, appearance_spinner,
+			       appearance_platform,
+			       appearance_theme_random, appearance_color_random,
+			       appearance_background_random, appearance_icon_random, appearance_spinner_random,
+			       appearance_updated_at,
+			       ROW_NUMBER() OVER (PARTITION BY email ORDER BY appearance_updated_at DESC) AS rn
+			FROM devices
+			WHERE appearance_updated_at IS NOT NULL
+		)
+		WHERE rn = 1
+		ORDER BY appearance_updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// label reproduces the aggregate's per-element display value.
+	label := func(v string, isRandom bool) string {
+		if isRandom {
+			return "(random)"
+		}
+		if v == "" {
+			return "(unset)"
+		}
+		return v
+	}
+
+	// What we're matching against.
+	wantParam := q.Get("param")  // mode == "param": which element
+	wantValue := q.Get("value")  // mode == "param": its label
+	wantCombo := map[string]string{
+		"theme":        q.Get("theme"),
+		"color_scheme": q.Get("color_scheme"),
+		"background":   q.Get("background"),
+		"icon_set":     q.Get("icon_set"),
+		"spinner":      q.Get("spinner"),
+	}
+
+	users := []map[string]interface{}{}
+	for rows.Next() {
+		var email, deviceID, platform, theme, color, background, iconSet, spinner, updatedAt string
+		var tr, cr, br, ir, sr int
+		if err := rows.Scan(&email, &deviceID, &platform, &theme, &color, &background, &iconSet, &spinner,
+			&tr, &cr, &br, &ir, &sr, &updatedAt); err != nil {
+			continue
+		}
+		labels := map[string]string{
+			"theme":        label(theme, tr == 1),
+			"color_scheme": label(color, cr == 1),
+			"background":   label(background, br == 1),
+			"icon_set":     label(iconSet, ir == 1),
+			"spinner":      label(spinner, sr == 1),
+		}
+
+		match := false
+		if mode == "param" {
+			if l, ok := labels[wantParam]; ok && l == wantValue {
+				match = true
+			}
+		} else { // combo
+			match = labels["theme"] == wantCombo["theme"] &&
+				labels["color_scheme"] == wantCombo["color_scheme"] &&
+				labels["background"] == wantCombo["background"] &&
+				labels["icon_set"] == wantCombo["icon_set"] &&
+				labels["spinner"] == wantCombo["spinner"]
+		}
+		if !match {
+			continue
+		}
+
+		users = append(users, map[string]interface{}{
+			"email":        email,
+			"device_id":    deviceID,
+			"platform":     platform,
+			"theme":        labels["theme"],
+			"color_scheme": labels["color_scheme"],
+			"background":   labels["background"],
+			"icon_set":     labels["icon_set"],
+			"spinner":      labels["spinner"],
+			"updated_at":   updatedAt,
+		})
+	}
+	return users, nil
 }
