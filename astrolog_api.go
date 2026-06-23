@@ -5855,6 +5855,64 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Device platform + model enrichment for the Users table / per-user card.
+    // Two sources, by coverage:
+    //   * analytics_events (analyticsDB) keyed by the compound device_id — this
+    //     matches users.current_device_id and covers the most devices.
+    //   * devices table (users db) keyed by email — fewer rows, but it carries
+    //     the human-readable model (device_name, e.g. "iPhone15,3").
+    // normPlatform folds the two casings ("ios"/"iOS") into one display value.
+    normPlatform := func(p string) string {
+        switch strings.ToLower(strings.TrimSpace(p)) {
+        case "ios":
+            return "iOS"
+        case "android":
+            return "Android"
+        default:
+            return ""
+        }
+    }
+
+    // device_id -> platform, from analytics events (best platform coverage).
+    platByDevice := map[string]string{}
+    if analyticsDB != nil {
+        if pRows, pErr := analyticsDB.Query(
+            `SELECT device_id, platform FROM analytics_events WHERE platform != '' GROUP BY device_id`); pErr == nil {
+            for pRows.Next() {
+                var did, plat string
+                if pRows.Scan(&did, &plat) == nil {
+                    if np := normPlatform(plat); np != "" {
+                        platByDevice[did] = np
+                    }
+                }
+            }
+            pRows.Close()
+        }
+    }
+
+    // email -> {platform, model}, from the devices table (carries the model).
+    // Ordered oldest-first so the most recently seen device wins; only
+    // non-empty values overwrite, so a stale blank never clobbers a real one.
+    type devInfo struct{ platform, model string }
+    devByEmail := map[string]devInfo{}
+    if dRows, dErr := db.Query(
+        `SELECT email, COALESCE(platform,''), COALESCE(device_name,'') FROM devices ORDER BY last_seen ASC`); dErr == nil {
+        for dRows.Next() {
+            var em, plat, model string
+            if dRows.Scan(&em, &plat, &model) == nil {
+                info := devByEmail[em]
+                if np := normPlatform(plat); np != "" {
+                    info.platform = np
+                }
+                if strings.TrimSpace(model) != "" {
+                    info.model = model
+                }
+                devByEmail[em] = info
+            }
+        }
+        dRows.Close()
+    }
+
     // V2 SCHEMA: Query all users from users
     rows, err := db.Query(`SELECT id, email, subscription_type, subscription_length,
                            subscription_expiry, COALESCE(is_super, 0), current_device_id, created_at, updated_at
@@ -5880,6 +5938,14 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
             continue
         }
 
+        // Resolve platform (analytics by device_id first, then devices by
+        // email) and model (devices by email only).
+        di := devByEmail[email]
+        platform := platByDevice[currentDeviceID.String]
+        if platform == "" {
+            platform = di.platform
+        }
+
         user := map[string]interface{}{
             "id":                  id,
             "email":               email,
@@ -5888,6 +5954,8 @@ func adminListUsers(w http.ResponseWriter, r *http.Request) {
             "subscription_expiry": subExpiry.String,
             "is_super":            isSuper == 1,
             "current_device_id":   currentDeviceID.String,
+            "platform":            platform,
+            "device_model":        di.model,
             "created_at":          createdAt.String,
             "updated_at":          updatedAt.String,
         }
