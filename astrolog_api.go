@@ -8161,6 +8161,7 @@ func main() {
     // Apple App Store Server Notifications V2 (public — authenticated by Apple's
     // JWS signature, verified against the pinned Apple Root CA, not by JWT)
     router.HandleFunc("/api/apple/notifications", appleServerNotification).Methods("POST")
+    router.HandleFunc("/api/google/notifications", googlePlayNotification).Methods("POST")
 
     // Admin-only one-time backfill of past purchases via App Store Server API
     // (auth by ADMIN_SECRET_KEY in the request body)
