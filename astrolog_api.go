@@ -8215,6 +8215,7 @@ func main() {
     router.HandleFunc("/api/admin/usage-report", adminGuardMiddleware(adminUsageReport)).Methods("GET")
     router.HandleFunc("/api/admin/openai-costs", adminGuardMiddleware(adminOpenAICosts)).Methods("POST")
     router.HandleFunc("/api/admin/renewal-funnel", adminGuardMiddleware(adminRenewalFunnel)).Methods("GET")
+    router.HandleFunc("/api/admin/renewal-stats", adminGuardMiddleware(adminRenewalStats)).Methods("GET")
     // Send a push notification to a device (by device_id) or user (by email).
     // Admin secret + 2FA code required, same gate as the other admin actions.
     router.HandleFunc("/api/admin/send-push", adminGuardMiddleware(adminSendPush)).Methods("POST")
