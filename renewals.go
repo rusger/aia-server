@@ -42,6 +42,23 @@ var renewalWindows = []struct {
 	Days  int
 }{{"last_7d", 7}, {"last_30d", 30}, {"last_90d", 90}, {"all_time", 0}}
 
+// parseRenewalTS parses created_at robustly. The modernc/sqlite driver returns
+// DATETIME columns as RFC3339 ("2026-06-09T05:02:15Z") even though SQLite stores
+// "2026-06-09 05:02:15", so a single strict layout is not enough.
+func parseRenewalTS(s string) time.Time {
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	if len(s) >= 19 {
+		if t, err := time.Parse("2006-01-02 15:04:05", strings.Replace(s[:19], "T", " ", 1)); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 var cycleCats = []string{"new", "renewed", "failed", "expired", "autooff", "autoon"}
 
 // classifyApple maps an Apple notification (type, subtype) to a normalised
@@ -137,10 +154,7 @@ func computeRenewalAgg(query string, classify func(string, string) string) renew
 		cat := classify(t1, t2)
 		plan := planFromProductID(planSrc)
 
-		var ct time.Time
-		if len(createdAt) >= 19 {
-			ct, _ = time.Parse("2006-01-02 15:04:05", createdAt[:19])
-		}
+		ct := parseRenewalTS(createdAt)
 		for _, win := range renewalWindows {
 			inWindow := win.Days == 0 || (!ct.IsZero() && ct.After(now.AddDate(0, 0, -win.Days)))
 			if inWindow {
