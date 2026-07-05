@@ -4636,6 +4636,10 @@ func firstPurchaseEmail(lang string) (string, string) {
         "uk": {"Ласкаво просимо до Astrolytix Premium 🌟", "Дякуємо за оформлення підписки Astrolytix Premium!\n\nТепер вам відкрито всю персональну астрологію — докладні прогнози, періоди сили, лінію життя та безлімітні розбори.\n\nЯсного неба,\nКоманда Astrolytix"},
         "pl": {"Witamy w Astrolytix Premium 🌟", "Dziękujemy za subskrypcję Astrolytix Premium!\n\nTwoja pełna spersonalizowana astrologia jest już odblokowana — szczegółowe prognozy, okresy mocy, oś czasu życia i nieograniczone odczyty.\n\nPogodnego nieba,\nZespół Astrolytix"},
         "nl": {"Welkom bij Astrolytix Premium 🌟", "Bedankt voor je abonnement op Astrolytix Premium!\n\nJe volledige persoonlijke astrologie is nu ontgrendeld — gedetailleerde voorspellingen, krachtperioden, de levenslijn en onbeperkte readings.\n\nHeldere hemel,\nHet Astrolytix-team"},
+        "mr": {"Astrolytix Premium मध्ये आपले स्वागत आहे 🌟", "Astrolytix Premium ची सदस्यता घेतल्याबद्दल धन्यवाद!\n\nआता आपले संपूर्ण वैयक्तिक ज्योतिष अनलॉक झाले आहे — सविस्तर भविष्यवाण्या, शक्ती कालावधी, जीवनरेषा आणि अमर्याद रीडिंग.\n\nशुभेच्छा,\nAstrolytix टीम"},
+        "te": {"Astrolytix Premiumకు స్వాగతం 🌟", "Astrolytix Premium సభ్యత్వం తీసుకున్నందుకు ధన్యవాదాలు!\n\nఇప్పుడు మీ పూర్తి వ్యక్తిగత జ్యోతిష్యం అన్‌లాక్ అయింది — వివరమైన అంచనాలు, శక్తి కాలాలు, జీవిత కాలరేఖ మరియు అపరిమిత రీడింగ్‌లు.\n\nశుభాకాంక్షలతో,\nAstrolytix బృందం"},
+        "ta": {"Astrolytix Premium-க்கு வரவேற்கிறோம் 🌟", "Astrolytix Premium சந்தா எடுத்ததற்கு நன்றி!\n\nஇப்போது உங்கள் முழு தனிப்பயன் ஜோதிடம் திறக்கப்பட்டது — விரிவான கணிப்புகள், சக்தி காலங்கள், வாழ்க்கைக் காலவரிசை மற்றும் வரம்பற்ற ரீடிங்குகள்.\n\nநல்வாழ்த்துகளுடன்,\nAstrolytix குழு"},
+        "kn": {"Astrolytix Premiumಗೆ ಸ್ವಾಗತ 🌟", "Astrolytix Premium ಚಂದಾದಾರಿಕೆ ಪಡೆದದ್ದಕ್ಕೆ ಧನ್ಯವಾದಗಳು!\n\nಈಗ ನಿಮ್ಮ ಸಂಪೂರ್ಣ ವೈಯಕ್ತಿಕ ಜ್ಯೋತಿಷ್ಯ ಅನ್‌ಲಾಕ್ ಆಗಿದೆ — ವಿವರವಾದ ಮುನ್ಸೂಚನೆಗಳು, ಶಕ್ತಿ ಅವಧಿಗಳು, ಜೀವನ ಕಾಲರೇಖೆ ಮತ್ತು ಅಪರಿಮಿತ ರೀಡಿಂಗ್‌ಗಳು.\n\nಶುಭ ಹಾರೈಕೆಗಳೊಂದಿಗೆ,\nAstrolytix ತಂಡ"},
     }
     t, ok := m[lang]
     if !ok {
@@ -8396,6 +8400,8 @@ func main() {
     router.HandleFunc("/api/admin/openai-costs", adminGuardMiddleware(adminOpenAICosts)).Methods("POST")
     router.HandleFunc("/api/admin/renewal-funnel", adminGuardMiddleware(adminRenewalFunnel)).Methods("GET")
     router.HandleFunc("/api/admin/renewal-stats", adminGuardMiddleware(adminRenewalStats)).Methods("GET")
+    // D1 referral program stats for the Stellar Vault Referrals tab (see referral.go)
+    router.HandleFunc("/api/admin/referral-stats", adminGuardMiddleware(adminReferralStats)).Methods("GET")
     // Send a push notification to a device (by device_id) or user (by email).
     // Admin secret + 2FA code required, same gate as the other admin actions.
     router.HandleFunc("/api/admin/send-push", adminGuardMiddleware(adminSendPush)).Methods("POST")

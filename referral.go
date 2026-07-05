@@ -334,6 +334,30 @@ func referralPushText(lang, kind string) (string, string) {
 			[2]string{"🌟 ‏+شهر بريميوم", "حصلت على شهر من Astrolytix Premium — شكرًا لانضمامك بدعوة من صديق!"},
 			[2]string{"🌟 ‏+شهر بريميوم", "اشترك صديقك — حصلت على شهر من Astrolytix Premium!"},
 		},
+		"mr": {
+			[2]string{"🎉 +7 दिवस प्रीमियम", "मित्राचा कोड स्वीकारला गेला — आपल्याला एक आठवड्याचे Astrolytix Premium मिळाले!"},
+			[2]string{"🎉 +7 दिवस प्रीमियम", "आपल्या निमंत्रणावरून आपला मित्र Astrolytix मध्ये सामील झाला — आपल्याला एक आठवड्याचे Premium मिळाले!"},
+			[2]string{"🌟 +1 महिना प्रीमियम", "आपल्याला एक महिन्याचे Astrolytix Premium मिळाले — मित्राच्या निमंत्रणाने आल्याबद्दल धन्यवाद!"},
+			[2]string{"🌟 +1 महिना प्रीमियम", "आपल्या मित्राने सदस्यता घेतली — आपल्याला एक महिन्याचे Astrolytix Premium मिळाले!"},
+		},
+		"te": {
+			[2]string{"🎉 +7 రోజుల ప్రీమియం", "మీ స్నేహితుడి కోడ్ ఆమోదించబడింది — మీకు ఒక వారం Astrolytix Premium లభించింది!"},
+			[2]string{"🎉 +7 రోజుల ప్రీమియం", "మీ ఆహ్వానంతో మీ స్నేహితుడు Astrolytixలో చేరారు — మీకు ఒక వారం Premium లభించింది!"},
+			[2]string{"🌟 +1 నెల ప్రీమియం", "మీకు ఒక నెల Astrolytix Premium లభించింది — స్నేహితుడి ఆహ్వానంతో వచ్చినందుకు ధన్యవాదాలు!"},
+			[2]string{"🌟 +1 నెల ప్రీమియం", "మీ స్నేహితుడు సభ్యత్వం తీసుకున్నారు — మీకు ఒక నెల Astrolytix Premium లభించింది!"},
+		},
+		"ta": {
+			[2]string{"🎉 +7 நாட்கள் பிரீமியம்", "நண்பரின் குறியீடு ஏற்கப்பட்டது — உங்களுக்கு ஒரு வாரம் Astrolytix Premium கிடைத்தது!"},
+			[2]string{"🎉 +7 நாட்கள் பிரீமியம்", "உங்கள் அழைப்பில் உங்கள் நண்பர் Astrolytix-இல் இணைந்தார் — உங்களுக்கு ஒரு வாரம் Premium கிடைத்தது!"},
+			[2]string{"🌟 +1 மாதம் பிரீமியம்", "உங்களுக்கு ஒரு மாதம் Astrolytix Premium கிடைத்தது — நண்பரின் அழைப்பில் வந்ததற்கு நன்றி!"},
+			[2]string{"🌟 +1 மாதம் பிரீமியம்", "உங்கள் நண்பர் சந்தா எடுத்தார் — உங்களுக்கு ஒரு மாதம் Astrolytix Premium கிடைத்தது!"},
+		},
+		"kn": {
+			[2]string{"🎉 +7 ದಿನಗಳ ಪ್ರೀಮಿಯಂ", "ಸ್ನೇಹಿತರ ಕೋಡ್ ಸ್ವೀಕರಿಸಲಾಗಿದೆ — ನಿಮಗೆ ಒಂದು ವಾರದ Astrolytix Premium ಸಿಕ್ಕಿದೆ!"},
+			[2]string{"🎉 +7 ದಿನಗಳ ಪ್ರೀಮಿಯಂ", "ನಿಮ್ಮ ಆಹ್ವಾನದ ಮೇರೆಗೆ ನಿಮ್ಮ ಸ್ನೇಹಿತರು Astrolytix ಸೇರಿದ್ದಾರೆ — ನಿಮಗೆ ಒಂದು ವಾರದ Premium ಸಿಕ್ಕಿದೆ!"},
+			[2]string{"🌟 +1 ತಿಂಗಳ ಪ್ರೀಮಿಯಂ", "ನಿಮಗೆ ಒಂದು ತಿಂಗಳ Astrolytix Premium ಸಿಕ್ಕಿದೆ — ಸ್ನೇಹಿತರ ಆಹ್ವಾನದ ಮೂಲಕ ಬಂದದ್ದಕ್ಕೆ ಧನ್ಯವಾದಗಳು!"},
+			[2]string{"🌟 +1 ತಿಂಗಳ ಪ್ರೀಮಿಯಂ", "ನಿಮ್ಮ ಸ್ನೇಹಿತರು ಚಂದಾದಾರರಾಗಿದ್ದಾರೆ — ನಿಮಗೆ ಒಂದು ತಿಂಗಳ Astrolytix Premium ಸಿಕ್ಕಿದೆ!"},
+		},
 	}
 	t, ok := m[lang]
 	if !ok {
@@ -691,6 +715,18 @@ var referralLandingTexts = map[string]referralLandingText{
 	"ar": {"Astrolytix — دعوة", "صديقك يدعوك إلى Astrolytix — ستحصلان كلاكما على بريميوم!", "رمز الدعوة",
 		"ثبّت Astrolytix وأدخل هذا الرمز في الإعدادات ← ادعُ صديقًا.",
 		"تحصلان كلاكما على أسبوع من بريميوم عند الانضمام، وشهر لكل منكما عند شراء أي اشتراك."},
+	"mr": {"Astrolytix — निमंत्रण", "आपला मित्र आपल्याला Astrolytix वर आमंत्रित करत आहे — आपणा दोघांना प्रीमियम मिळेल!", "निमंत्रण कोड",
+		"Astrolytix इंस्टॉल करा आणि हा कोड सेटिंग्ज → मित्राला आमंत्रित करा मध्ये टाका.",
+		"सामील झाल्यावर आपणा दोघांना 1 आठवड्याचे प्रीमियम आणि कोणतीही सदस्यता खरेदी केल्यावर प्रत्येकी 1 महिना मिळेल."},
+	"te": {"Astrolytix — ఆహ్వానం", "మీ స్నేహితుడు మిమ్మల్ని Astrolytixకు ఆహ్వానిస్తున్నారు — మీ ఇద్దరికీ ప్రీమియం లభిస్తుంది!", "ఆహ్వాన కోడ్",
+		"Astrolytix ఇన్‌స్టాల్ చేసి, ఈ కోడ్‌ను సెట్టింగ్‌లు → స్నేహితుడిని ఆహ్వానించండి లో నమోదు చేయండి.",
+		"చేరినప్పుడు మీ ఇద్దరికీ 1 వారం ప్రీమియం, ఏదైనా సభ్యత్వం కొన్నప్పుడు ఒక్కొక్కరికి 1 నెల లభిస్తుంది."},
+	"ta": {"Astrolytix — அழைப்பு", "உங்கள் நண்பர் உங்களை Astrolytix-க்கு அழைக்கிறார் — இருவருக்கும் பிரீமியம் கிடைக்கும்!", "அழைப்புக் குறியீடு",
+		"Astrolytix-ஐ நிறுவி, இந்தக் குறியீட்டை அமைப்புகள் → நண்பரை அழையுங்கள் இல் உள்ளிடுங்கள்.",
+		"இணைந்ததும் இருவருக்கும் 1 வாரம் பிரீமியம், ஏதேனும் சந்தா வாங்கியதும் தலா 1 மாதம் கிடைக்கும்."},
+	"kn": {"Astrolytix — ಆಹ್ವಾನ", "ನಿಮ್ಮ ಸ್ನೇಹಿತರು ನಿಮ್ಮನ್ನು Astrolytixಗೆ ಆಹ್ವಾನಿಸುತ್ತಿದ್ದಾರೆ — ನಿಮ್ಮಿಬ್ಬರಿಗೂ ಪ್ರೀಮಿಯಂ ಸಿಗುತ್ತದೆ!", "ಆಹ್ವಾನ ಕೋಡ್",
+		"Astrolytix ಇನ್‌ಸ್ಟಾಲ್ ಮಾಡಿ, ಈ ಕೋಡ್ ಅನ್ನು ಸೆಟ್ಟಿಂಗ್‌ಗಳು → ಸ್ನೇಹಿತರನ್ನು ಆಹ್ವಾನಿಸಿ ನಲ್ಲಿ ನಮೂದಿಸಿ.",
+		"ಸೇರಿದಾಗ ನಿಮ್ಮಿಬ್ಬರಿಗೂ 1 ವಾರದ ಪ್ರೀಮಿಯಂ, ಯಾವುದೇ ಚಂದಾದಾರಿಕೆ ಖರೀದಿಸಿದಾಗ ತಲಾ 1 ತಿಂಗಳು ಸಿಗುತ್ತದೆ."},
 }
 
 // referralLandingLang picks the best supported language from Accept-Language.
@@ -878,4 +914,137 @@ func queryGooglePlaySubscriptionState(productID, purchaseToken string) (int, *ti
 		}
 	}
 	return pr.PaymentState, expiry, nil
+}
+
+// ---------------------------------------------------------------------------
+// Stellar Vault admin stats — GET /api/admin/referral-stats
+//
+// Feeds the dashboard's Referrals tab: who invited whom, what came of it
+// (install / purchase), and which rewards were granted. Auth mirrors
+// adminRenewalStats (admin_email + admin_secret query params on top of
+// adminGuardMiddleware's IP limiter).
+// ---------------------------------------------------------------------------
+
+func adminReferralStats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	adminEmail := r.URL.Query().Get("admin_email")
+	adminSecret := r.URL.Query().Get("admin_secret")
+	if !isAdminEmail(adminEmail) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+		return
+	}
+	if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+		return
+	}
+
+	ensureReferralSchema()
+
+	// Summary counters.
+	var totalClaims, installGrants, paidGrants, uniqueInviters, codesIssued int
+	db.QueryRow(`SELECT COUNT(*),
+		COUNT(install_reward_granted_at),
+		COUNT(paid_reward_granted_at),
+		COUNT(DISTINCT inviter_email)
+		FROM referrals`).Scan(&totalClaims, &installGrants, &paidGrants, &uniqueInviters)
+	db.QueryRow(`SELECT COUNT(*) FROM users WHERE referral_code IS NOT NULL AND referral_code != ''`).
+		Scan(&codesIssued)
+
+	// Full claims list, newest first. LEFT JOIN pulls the inviter's share code.
+	claims := []map[string]interface{}{}
+	rows, err := db.Query(`SELECT r.inviter_email, COALESCE(u.referral_code, r.code),
+			r.invitee_email, r.invitee_device_id, r.claimed_at,
+			COALESCE(r.install_reward_granted_at, ''), COALESCE(r.paid_reward_granted_at, '')
+		FROM referrals r LEFT JOIN users u ON u.email = r.inviter_email
+		ORDER BY r.claimed_at DESC LIMIT 1000`)
+	if err != nil {
+		log.Printf("⚠️ [referral] admin stats query failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var inviter, code, invitee, device, claimedAt, installAt, paidAt string
+		if err := rows.Scan(&inviter, &code, &invitee, &device, &claimedAt, &installAt, &paidAt); err != nil {
+			continue
+		}
+		result := "claimed"
+		daysEach := 0
+		if installAt != "" {
+			result = "install"
+			daysEach += referralInstallRewardDays
+		}
+		if paidAt != "" {
+			result = "purchase"
+			daysEach += referralPaidRewardDays
+		}
+		claims = append(claims, map[string]interface{}{
+			"inviter_email":     inviter,
+			"inviter_code":      code,
+			"invitee_email":     invitee,
+			"invitee_device_id": device,
+			"claimed_at":        claimedAt,
+			"install_reward_at": installAt,
+			"paid_reward_at":    paidAt,
+			"result":            result, // claimed | install | purchase (purchase implies install)
+			"days_each_side":    daysEach,
+		})
+	}
+
+	// Per-inviter leaderboard. Inviter install-reward days honor the cap the
+	// claim handler enforces (invitee days are never capped).
+	top := []map[string]interface{}{}
+	trows, err := db.Query(`SELECT r.inviter_email, COALESCE(u.referral_code, ''),
+			COUNT(*),
+			COUNT(r.install_reward_granted_at),
+			COUNT(r.paid_reward_granted_at),
+			MAX(r.claimed_at)
+		FROM referrals r LEFT JOIN users u ON u.email = r.inviter_email
+		GROUP BY r.inviter_email
+		ORDER BY COUNT(r.paid_reward_granted_at) DESC, COUNT(*) DESC
+		LIMIT 100`)
+	if err == nil {
+		defer trows.Close()
+		for trows.Next() {
+			var inviter, code, lastClaim string
+			var cnt, installs, paids int
+			if err := trows.Scan(&inviter, &code, &cnt, &installs, &paids, &lastClaim); err != nil {
+				continue
+			}
+			cappedInstalls := installs
+			if cappedInstalls > referralInstallRewardCap {
+				cappedInstalls = referralInstallRewardCap
+			}
+			top = append(top, map[string]interface{}{
+				"inviter_email": inviter,
+				"inviter_code":  code,
+				"claims":        cnt,
+				"installs":      installs,
+				"purchases":     paids,
+				"days_earned":   cappedInstalls*referralInstallRewardDays + paids*referralPaidRewardDays,
+				"last_claim_at": lastClaim,
+			})
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"summary": map[string]interface{}{
+			"codes_issued":    codesIssued,
+			"total_claims":    totalClaims,
+			"install_rewards": installGrants,
+			"paid_rewards":    paidGrants,
+			"unique_inviters": uniqueInviters,
+			// Days handed out across BOTH sides (invitee uncapped; the small
+			// over-count past an inviter's install cap is ignored here — the
+			// leaderboard shows the capped per-inviter number).
+			"days_granted_both_sides": 2 * (installGrants*referralInstallRewardDays + paidGrants*referralPaidRewardDays),
+		},
+		"top_inviters": top,
+		"claims":       claims,
+	})
 }
