@@ -34,6 +34,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -246,6 +247,7 @@ type pushTarget struct {
 	deviceID string
 	token    string
 	platform string
+	email    string
 }
 
 // resolvePushTargets returns the eligible (non-revoked, has-token) devices for
@@ -256,10 +258,10 @@ func resolvePushTargets(deviceID, email string) ([]pushTarget, error) {
 	var err error
 	switch {
 	case strings.TrimSpace(deviceID) != "":
-		rows, err = db.Query(`SELECT device_id, push_token, COALESCE(platform,'') FROM devices
+		rows, err = db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(email,'') FROM devices
 			WHERE device_id = ? AND revoked = 0 AND push_token IS NOT NULL AND push_token != ''`, deviceID)
 	case strings.TrimSpace(email) != "":
-		rows, err = db.Query(`SELECT device_id, push_token, COALESCE(platform,'') FROM devices
+		rows, err = db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(email,'') FROM devices
 			WHERE email = ? AND revoked = 0 AND push_token IS NOT NULL AND push_token != ''`,
 			strings.ToLower(strings.TrimSpace(email)))
 	default:
@@ -273,12 +275,110 @@ func resolvePushTargets(deviceID, email string) ([]pushTarget, error) {
 	var out []pushTarget
 	for rows.Next() {
 		var t pushTarget
-		if err := rows.Scan(&t.deviceID, &t.token, &t.platform); err != nil {
+		if err := rows.Scan(&t.deviceID, &t.token, &t.platform, &t.email); err != nil {
 			continue
 		}
 		out = append(out, t)
 	}
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// C1: server-side notification history
+//
+// Locally-scheduled astro events are recorded in the on-device history at
+// schedule time, but SERVER-initiated pushes (admin "full moon", CLI) were
+// never persisted anywhere, so they couldn't reliably appear in the app's
+// Settings → Notifications → History — especially on iOS (APNs shown natively;
+// the Dart tap handler only sees the payload) and for pushes delivered while
+// the app is backgrounded and never tapped. We therefore log every push we
+// SEND, keyed by account email, and expose it so the app can fetch + merge it
+// into its local history (deduped by payload). This is the platform-agnostic
+// half of the hybrid fix; the client also records what it can see directly.
+// ---------------------------------------------------------------------------
+
+var notifHistoryReady atomic.Bool
+
+// ensureNotificationHistorySchema creates the notification_history table on
+// first use. Mirrors ensureLanguageSchema: safe to call from every handler and
+// retries until it succeeds so a transient failure self-heals next request.
+func ensureNotificationHistorySchema() {
+	if notifHistoryReady.Load() {
+		return
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS notification_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		email TEXT NOT NULL,
+		device_id TEXT,
+		title TEXT,
+		body TEXT,
+		payload TEXT,
+		sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`); err != nil {
+		log.Printf("⚠️ notification_history schema failed: %v — will retry on next request", err)
+		return
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notif_hist_email ON notification_history(email, sent_at)`); err != nil {
+		log.Printf("⚠️ notification_history index failed: %v — will retry on next request", err)
+		return
+	}
+	notifHistoryReady.Store(true)
+}
+
+// recordNotificationHistory persists one sent push for a user account. Called
+// after a successful send; failures are logged but never block delivery.
+func recordNotificationHistory(email, deviceID, title, body, payload string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return
+	}
+	ensureNotificationHistorySchema()
+	if _, err := db.Exec(
+		`INSERT INTO notification_history (email, device_id, title, body, payload) VALUES (?, ?, ?, ?, ?)`,
+		email, deviceID, title, body, payload); err != nil {
+		log.Printf("⚠️ notification_history insert failed: %v", err)
+	}
+}
+
+// getUserNotificationHistory — GET /api/user/notification-history (JWT).
+// Returns the most recent server-sent pushes for the calling user's account so
+// the app can merge them into its on-device history (deduped by payload).
+func getUserNotificationHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	ensureNotificationHistorySchema()
+
+	claims, ok := r.Context().Value("claims").(*JWTClaims)
+	if !ok || claims.Email == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+
+	rows, err := db.Query(`SELECT title, body, payload, sent_at FROM notification_history
+		WHERE email = ? ORDER BY sent_at DESC LIMIT 100`, email)
+	if err != nil {
+		log.Printf("⚠️ notification_history query failed: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
+		return
+	}
+	defer rows.Close()
+
+	type histItem struct {
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+		Payload string `json:"payload"`
+		SentAt  string `json:"sent_at"`
+	}
+	items := []histItem{}
+	for rows.Next() {
+		var it histItem
+		if err := rows.Scan(&it.Title, &it.Body, &it.Payload, &it.SentAt); err != nil {
+			continue
+		}
+		items = append(items, it)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "notifications": items})
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +520,7 @@ func adminSendPush(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		sent++
+		recordNotificationHistory(t.email, t.deviceID, title, req.Message, req.Payload)
 	}
 
 	log.Printf("📣 Admin %s sent push (sent=%d, failed=%d, target=%q%s)",
@@ -487,6 +588,7 @@ func runSendPushCLI(args []string) {
 		}
 		fmt.Printf("✅ sent to %s (%s)\n", t.deviceID, t.platform)
 		ok++
+		recordNotificationHistory(t.email, t.deviceID, title, message, payload)
 	}
 	if ok == 0 {
 		os.Exit(1)

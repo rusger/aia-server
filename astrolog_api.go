@@ -260,6 +260,7 @@ type RecordPurchaseRequest struct {
     SubscriptionLength string `json:"subscription_length"`
     Store              string `json:"store"`             // "apple" or "google"
     AppAccountToken    string `json:"app_account_token"` // StoreKit appAccountToken (UUID) for S2S attribution
+    IsTrial            bool   `json:"is_trial"`          // true when this purchase is a free-trial intro period (C2: suppresses the first-paid email)
 }
 
 // Admin hardcoded emails (can grant subscriptions)
@@ -909,6 +910,13 @@ func initDB() error {
     }
     if _, iErr := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_app_account_token ON users(app_account_token)`); iErr != nil {
         log.Printf("⚠️ users.app_account_token index migration: %v", iErr)
+    }
+    // Migration: first_purchase_emailed_at — set once when the C2 welcome email
+    // is sent on a user's first PAID purchase, so it never sends twice.
+    if _, mErr := db.Exec(`ALTER TABLE users ADD COLUMN first_purchase_emailed_at DATETIME`); mErr != nil {
+        if !strings.Contains(mErr.Error(), "duplicate column") {
+            log.Printf("ℹ️ users.first_purchase_emailed_at migration note: %v", mErr)
+        }
     }
     // Backfill last_payment_method from latest purchase_history row per email.
     // Idempotent: only updates rows where the column is still NULL.
@@ -3497,6 +3505,11 @@ func applyAppleRenewal(txn *appleTransactionInfo) {
             return
         }
         log.Printf("🍎 [apple S2S] renewal applied: email=%s until=%v", email, expiry)
+        // C2: a DID_RENEW is a real paid charge — this is the first-paid moment
+        // for trial users (whose initial SUBSCRIBED was a free trial and was
+        // suppressed). The guard makes it fire only once, so ordinary monthly
+        // renewals after the welcome email do nothing.
+        maybeSendFirstPurchaseEmail(email)
         return
     }
 
@@ -3980,6 +3993,13 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // restore — keeping the funnel's "completed" count in lockstep with purchase_history.
     if newRows, raErr := insertRes.RowsAffected(); raErr == nil && newRows == 1 {
         emitPurchaseCompletedEvent(deviceID, req.ProductID, req.Store, "server_record_purchase")
+        // C2: welcome email on the user's first PAID purchase. Suppressed for
+        // free trials (req.IsTrial) — a trial user is emailed later, when the
+        // trial converts to a real charge (Apple S2S DID_RENEW). Guarded to
+        // fire exactly once per account.
+        if !req.IsTrial {
+            maybeSendFirstPurchaseEmail(email)
+        }
     }
 
     // Persist the StoreKit appAccountToken so future Apple S2S notifications
@@ -4430,16 +4450,6 @@ func isValidEmail(email string) bool {
 
 // Send email using SMTP (Office 365 / GoDaddy M365)
 func sendAuthCodeEmail(toEmail, code string) error {
-    // Parse the From address to get just the email part
-    fromEmail := SMTP_USER
-    fromName := "Astrolytix"
-    if strings.Contains(SMTP_FROM, "<") && strings.Contains(SMTP_FROM, ">") {
-        parts := strings.Split(SMTP_FROM, "<")
-        fromName = strings.TrimSpace(parts[0])
-        fromEmail = strings.TrimSuffix(parts[1], ">")
-    }
-
-    // Build the email message
     subject := "Your Astrolytix verification code"
     body := fmt.Sprintf(`Hello,
 
@@ -4451,6 +4461,21 @@ If you didn't request this code, please ignore this email.
 
 Best regards,
 Astrolytix Team`, code)
+    return sendPlainEmail(toEmail, subject, body)
+}
+
+// sendPlainEmail sends a plain-text email via Microsoft Graph (preferred) or
+// SMTP (fallback). Shared by transactional emails (auth codes, the
+// first-purchase welcome, …) so they all use the same transport selection.
+func sendPlainEmail(toEmail, subject, body string) error {
+    // Parse the From address to get just the email part
+    fromEmail := SMTP_USER
+    fromName := "Astrolytix"
+    if strings.Contains(SMTP_FROM, "<") && strings.Contains(SMTP_FROM, ">") {
+        parts := strings.Split(SMTP_FROM, "<")
+        fromName = strings.TrimSpace(parts[0])
+        fromEmail = strings.TrimSuffix(parts[1], ">")
+    }
 
     // Prefer Microsoft Graph (modern OAuth path); SMTP Basic Auth has been
     // progressively disabled by Microsoft tenant-by-tenant.
@@ -4524,6 +4549,90 @@ Astrolytix Team`, code)
     }
 
     return client.Quit()
+}
+
+// ---------------------------------------------------------------------------
+// C2: first-paid-purchase welcome email
+// ---------------------------------------------------------------------------
+
+// userAppLanguage returns the most recently reported in-app language for an
+// account (from the devices table), or "en" if unknown. Mirrors the "most
+// recent device per user" query used by the language stats in languages.go.
+func userAppLanguage(email string) string {
+    var lang string
+    db.QueryRow(`SELECT app_language FROM devices
+        WHERE email = ? AND app_language IS NOT NULL AND app_language != ''
+        ORDER BY language_updated_at DESC LIMIT 1`,
+        strings.ToLower(strings.TrimSpace(email))).Scan(&lang)
+    lang = strings.ToLower(strings.TrimSpace(lang))
+    if lang == "" {
+        return "en"
+    }
+    return lang
+}
+
+// firstPurchaseEmail returns the localized subject + body for the first-paid
+// welcome email, falling back to English for any unsupported language. Copy is
+// short plain-text (matches the Graph/SMTP transport). Translations mirror the
+// app's supported language set; refine wording as needed.
+func firstPurchaseEmail(lang string) (string, string) {
+    type tmpl struct{ subject, body string }
+    m := map[string]tmpl{
+        "en": {"Welcome to Astrolytix Premium 🌟", "Thank you for subscribing to Astrolytix Premium!\n\nYour full personalized astrology is now unlocked — detailed forecasts, power periods, the life timeline and unlimited readings.\n\nClear skies,\nThe Astrolytix Team"},
+        "ru": {"Добро пожаловать в Astrolytix Premium 🌟", "Спасибо за оформление подписки Astrolytix Premium!\n\nТеперь вам открыта полная персональная астрология — подробные прогнозы, периоды силы, линия жизни и безлимитные разборы.\n\nЯсного неба,\nКоманда Astrolytix"},
+        "es": {"Bienvenido a Astrolytix Premium 🌟", "¡Gracias por suscribirte a Astrolytix Premium!\n\nYa tienes desbloqueada toda tu astrología personalizada: pronósticos detallados, periodos de poder, la línea de vida y lecturas ilimitadas.\n\nCielos despejados,\nEl equipo de Astrolytix"},
+        "fr": {"Bienvenue sur Astrolytix Premium 🌟", "Merci de vous être abonné à Astrolytix Premium !\n\nToute votre astrologie personnalisée est maintenant débloquée : prévisions détaillées, périodes de puissance, la ligne de vie et des lectures illimitées.\n\nCiel dégagé,\nL'équipe Astrolytix"},
+        "de": {"Willkommen bei Astrolytix Premium 🌟", "Danke, dass du Astrolytix Premium abonniert hast!\n\nDeine komplette personalisierte Astrologie ist jetzt freigeschaltet – detaillierte Prognosen, Kraftperioden, die Lebenslinie und unbegrenzte Auswertungen.\n\nKlaren Himmel,\nDein Astrolytix-Team"},
+        "it": {"Benvenuto in Astrolytix Premium 🌟", "Grazie per esserti abbonato ad Astrolytix Premium!\n\nLa tua astrologia personalizzata completa è ora sbloccata: previsioni dettagliate, periodi di potere, la linea della vita e letture illimitate.\n\nCieli sereni,\nIl team di Astrolytix"},
+        "pt": {"Bem-vindo ao Astrolytix Premium 🌟", "Obrigado por assinar o Astrolytix Premium!\n\nToda a sua astrologia personalizada está agora desbloqueada: previsões detalhadas, períodos de poder, a linha da vida e leituras ilimitadas.\n\nCéus limpos,\nEquipe Astrolytix"},
+        "zh": {"欢迎使用 Astrolytix Premium 🌟", "感谢您订阅 Astrolytix Premium！\n\n您的完整个性化占星现已解锁——详细预测、能量时段、人生时间线以及无限次解读。\n\n晴空万里，\nAstrolytix 团队"},
+        "ja": {"Astrolytix Premium へようこそ 🌟", "Astrolytix Premium にご登録いただきありがとうございます！\n\n詳細な予報、パワーピリオド、ライフタイムライン、無制限のリーディングなど、あなた専用の占いがすべて解放されました。\n\n晴れやかな空を、\nAstrolytix チーム"},
+        "ko": {"Astrolytix Premium에 오신 것을 환영합니다 🌟", "Astrolytix Premium을 구독해 주셔서 감사합니다!\n\n상세 예보, 파워 피리어드, 인생 타임라인, 무제한 리딩 등 모든 맞춤 점성술이 이제 열렸습니다.\n\n맑은 하늘을 바라며,\nAstrolytix 팀"},
+        "hi": {"Astrolytix Premium में आपका स्वागत है 🌟", "Astrolytix Premium की सदस्यता लेने के लिए धन्यवाद!\n\nअब आपकी पूरी व्यक्तिगत ज्योतिष अनलॉक हो गई है — विस्तृत भविष्यवाणियाँ, शक्ति काल, जीवन रेखा और असीमित रीडिंग।\n\nशुभकामनाएँ,\nAstrolytix टीम"},
+        "ar": {"مرحبًا بك في Astrolytix Premium 🌟", "شكرًا لاشتراكك في Astrolytix Premium!\n\nأصبح كامل علم التنجيم المخصص لك متاحًا الآن — توقعات مفصلة، وفترات القوة، والخط الزمني للحياة، وقراءات غير محدودة.\n\nمع أطيب التمنيات،\nفريق Astrolytix"},
+        "tr": {"Astrolytix Premium'a hoş geldiniz 🌟", "Astrolytix Premium aboneliğiniz için teşekkürler!\n\nKişiselleştirilmiş astrolojinizin tamamı artık açık — ayrıntılı tahminler, güç dönemleri, yaşam zaman çizelgesi ve sınırsız yorumlar.\n\nAçık gökler dileğiyle,\nAstrolytix Ekibi"},
+        "uk": {"Ласкаво просимо до Astrolytix Premium 🌟", "Дякуємо за оформлення підписки Astrolytix Premium!\n\nТепер вам відкрито всю персональну астрологію — докладні прогнози, періоди сили, лінію життя та безлімітні розбори.\n\nЯсного неба,\nКоманда Astrolytix"},
+        "pl": {"Witamy w Astrolytix Premium 🌟", "Dziękujemy za subskrypcję Astrolytix Premium!\n\nTwoja pełna spersonalizowana astrologia jest już odblokowana — szczegółowe prognozy, okresy mocy, oś czasu życia i nieograniczone odczyty.\n\nPogodnego nieba,\nZespół Astrolytix"},
+        "nl": {"Welkom bij Astrolytix Premium 🌟", "Bedankt voor je abonnement op Astrolytix Premium!\n\nJe volledige persoonlijke astrologie is nu ontgrendeld — gedetailleerde voorspellingen, krachtperioden, de levenslijn en onbeperkte readings.\n\nHeldere hemel,\nHet Astrolytix-team"},
+    }
+    t, ok := m[lang]
+    if !ok {
+        t = m["en"]
+    }
+    return t.subject, t.body
+}
+
+// maybeSendFirstPurchaseEmail sends the welcome email the FIRST time a real
+// PAID charge is confirmed for an account, exactly once. The guard UPDATE flips
+// first_purchase_emailed_at from NULL for only the first caller, so it's
+// race-safe across the two paths that call it (the client purchase sync and the
+// Apple S2S renewal that follows a free trial). On send failure the flag is
+// cleared so a later paid event can retry. Fire-and-forget from callers.
+func maybeSendFirstPurchaseEmail(email string) {
+    email = strings.ToLower(strings.TrimSpace(email))
+    // Only real, deliverable addresses — skip Apple S2S placeholders
+    // ("apple:<otxn>") and any non-email account id.
+    if email == "" || strings.HasPrefix(email, "apple:") ||
+        !strings.Contains(email, "@") || !strings.Contains(email, ".") {
+        return
+    }
+    res, err := db.Exec(`UPDATE users SET first_purchase_emailed_at = CURRENT_TIMESTAMP
+        WHERE email = ? AND first_purchase_emailed_at IS NULL`, email)
+    if err != nil {
+        log.Printf("⚠️ first-purchase email guard failed for %s: %v", email, err)
+        return
+    }
+    if n, _ := res.RowsAffected(); n != 1 {
+        return // already emailed, or no matching user row
+    }
+    lang := userAppLanguage(email)
+    subject, body := firstPurchaseEmail(lang)
+    if err := sendPlainEmail(email, subject, body); err != nil {
+        log.Printf("⚠️ first-purchase email send failed for %s: %v — clearing guard to retry", email, err)
+        db.Exec(`UPDATE users SET first_purchase_emailed_at = NULL WHERE email = ?`, email)
+        return
+    }
+    log.Printf("✉️ first-purchase welcome email sent to %s (lang=%s)", email, lang)
 }
 
 // loginAuth implements LOGIN authentication for SMTP (required by Office 365)
@@ -8129,6 +8238,10 @@ func main() {
     // appearance. See languages.go.
     ensureLanguageSchema()
 
+    // Server-side notification history (C1): logs every push we send so the app
+    // can fetch + merge it into its on-device history. See push.go.
+    ensureNotificationHistorySchema()
+
     // Initialize analytics database
     if err := initAnalyticsDB(); err != nil {
         log.Printf("⚠️ Warning: Analytics database failed to initialize: %v", err)
@@ -8186,6 +8299,9 @@ func main() {
     router.HandleFunc("/api/user/language", jwtAuthMiddleware(setLanguage)).Methods("POST")
     // Accumulate per-screen time spent by this device (see screentime.go)
     router.HandleFunc("/api/user/screen-time", jwtAuthMiddleware(setScreenTime)).Methods("POST")
+    // Fetch server-sent push notifications so the app can merge them into its
+    // on-device history (see push.go — C1)
+    router.HandleFunc("/api/user/notification-history", jwtAuthMiddleware(getUserNotificationHistory)).Methods("GET")
 
     // T2.B partner invite endpoints
     router.HandleFunc("/api/invites/create", jwtAuthMiddleware(createInvite)).Methods("POST")
