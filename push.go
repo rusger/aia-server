@@ -272,12 +272,29 @@ func resolvePushTargets(deviceID, email string) ([]pushTarget, error) {
 	}
 	defer rows.Close()
 
+	// One physical device can appear under several account rows (e.g. the
+	// real email plus the <device_id>@device.astrolytix.app placeholder) with
+	// the SAME APNs token — sending to each row would deliver duplicate
+	// banners. Dedupe by token, preferring the row with a real
+	// (non-placeholder) email so notification history lands on the actual
+	// account.
+	isPlaceholder := func(email string) bool {
+		return email == "" || strings.HasSuffix(email, "@device.astrolytix.app")
+	}
 	var out []pushTarget
+	byToken := map[string]int{}
 	for rows.Next() {
 		var t pushTarget
 		if err := rows.Scan(&t.deviceID, &t.token, &t.platform, &t.email); err != nil {
 			continue
 		}
+		if i, ok := byToken[t.token]; ok {
+			if isPlaceholder(out[i].email) && !isPlaceholder(t.email) {
+				out[i] = t // same token, better-attributed account row
+			}
+			continue
+		}
+		byToken[t.token] = len(out)
 		out = append(out, t)
 	}
 	return out, nil
