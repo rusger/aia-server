@@ -2530,6 +2530,13 @@ func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
         log.Printf("✅ Existing device logged in: %s (plan: %s)", req.DeviceID, subscriptionType)
     }
 
+    // D1: referral-reward premium (only when no store subscription is active).
+    if subscriptionType != "paid" {
+        if _, ok := referralEntitlement(anonymousEmail, req.DeviceID); ok {
+            subscriptionType = "paid"
+        }
+    }
+
     // Persist the StoreKit appAccountToken so Apple S2S notifications can be
     // attributed to this account even if a purchase never syncs via the client.
     if req.AppAccountToken != "" {
@@ -2651,6 +2658,13 @@ func refreshAccessToken(w http.ResponseWriter, r *http.Request) {
         } else if time.Now().After(expiryTime) {
             log.Printf("⚠️ Subscription expired for %s on %s — downgrading to free", email, expiryTime.Format(time.RFC3339))
             subscriptionType = "free"
+        }
+    }
+
+    // D1: referral-reward premium (only when no store subscription is active).
+    if subscriptionType != "paid" {
+        if _, ok := referralEntitlement(email, claims.DeviceID); ok {
+            subscriptionType = "paid"
         }
     }
 
@@ -3059,6 +3073,17 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
                 lastPaymentMethod = dPay
                 log.Printf("🔗 [getUserInfo] %s entitled via device account %s", email, claims.DeviceID)
             }
+        }
+    }
+
+    // D1: referral-reward premium. Consulted ONLY when no store subscription
+    // is active, so a paying period always runs first and queued reward days
+    // wait (they activate lazily inside referralEntitlement). See referral.go.
+    if effectiveSubType != "paid" {
+        if until, ok := referralEntitlement(email, claims.DeviceID); ok {
+            effectiveSubType = "paid"
+            subscriptionExpiry = sql.NullString{String: until.UTC().Format("2006-01-02 15:04:05"), Valid: true}
+            log.Printf("🎁 [getUserInfo] %s entitled via referral reward until %v", email, until)
         }
     }
 
@@ -3510,6 +3535,10 @@ func applyAppleRenewal(txn *appleTransactionInfo) {
         // suppressed). The guard makes it fire only once, so ordinary monthly
         // renewals after the welcome email do nothing.
         maybeSendFirstPurchaseEmail(email)
+        // D1: DID_RENEW is also the first REAL charge for Apple trial users —
+        // the moment the 1-month referral reward becomes due. Guarded
+        // exactly-once in referral.go, so ordinary renewals do nothing.
+        maybeGrantReferralPaidReward(email, "")
         return
     }
 
@@ -3937,11 +3966,19 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // Insert purchase record. OR IGNORE collapses re-confirmations of the
     // same Apple/Google receipt (same tx_id) into one row per purchase —
     // see unique index idx_purchase_unique on (email, transaction_id, store).
+    // purchase_token + is_trial (D1/referral.go migration) let the Google
+    // trial re-verifier poll the Play API until the trial converts to a real
+    // charge — RTDN alone can't attribute that moment to a user.
+    ensureReferralSchema()
+    isTrialInt := 0
+    if req.IsTrial {
+        isTrialInt = 1
+    }
     query := `INSERT OR IGNORE INTO purchase_history
-              (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store, purchase_token, is_trial)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-    insertRes, err := tx.Exec(query, email, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store)
+    insertRes, err := tx.Exec(query, email, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store, req.PurchaseToken, isTrialInt)
     if err != nil {
         log.Printf("Error recording purchase: %v", err)
         w.WriteHeader(http.StatusInternalServerError)
@@ -3999,6 +4036,11 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
         // fire exactly once per account.
         if !req.IsTrial {
             maybeSendFirstPurchaseEmail(email)
+            // D1: a real (non-trial) charge by an invited user triggers the
+            // 1-month referral reward for both sides. Guarded exactly-once in
+            // referral.go; trial starts are excluded here, trial conversions
+            // arrive via applyAppleRenewal / the Google re-verifier instead.
+            maybeGrantReferralPaidReward(email, deviceID)
         }
     }
 
@@ -5125,6 +5167,15 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
                 subscriptionType, subscriptionLength = "paid", dLength
                 log.Printf("🔗 [verifyAuthCode] %s entitled via device account %s", email, deviceID)
             }
+        }
+    }
+
+    // D1: referral-reward premium (only when no store subscription is active —
+    // see referral.go for the queued-days model).
+    if subscriptionType != "paid" {
+        if _, ok := referralEntitlement(email, deviceID); ok {
+            subscriptionType = "paid"
+            log.Printf("🎁 [verifyAuthCode] %s entitled via referral reward", email)
         }
     }
 
@@ -8242,6 +8293,12 @@ func main() {
     // can fetch + merge it into its on-device history. See push.go.
     ensureNotificationHistorySchema()
 
+    // D1 referral program: referrals table + users/purchase_history columns,
+    // and the Google trial re-verification loop (catches trial→paid
+    // conversions RTDN can't attribute). See referral.go.
+    ensureReferralSchema()
+    startGoogleTrialReverifier()
+
     // Initialize analytics database
     if err := initAnalyticsDB(); err != nil {
         log.Printf("⚠️ Warning: Analytics database failed to initialize: %v", err)
@@ -8306,6 +8363,12 @@ func main() {
     // T2.B partner invite endpoints
     router.HandleFunc("/api/invites/create", jwtAuthMiddleware(createInvite)).Methods("POST")
     router.HandleFunc("/api/invites/{hash}", getInvite).Methods("GET")
+
+    // D1 referral program (see referral.go). /r/{code} is the public landing
+    // page for recipients without the app — needs an nginx location for /r/.
+    router.HandleFunc("/api/referral/info", jwtAuthMiddleware(referralInfo)).Methods("GET")
+    router.HandleFunc("/api/referral/claim", jwtAuthMiddleware(referralClaim)).Methods("POST")
+    router.HandleFunc("/r/{code}", referralLandingPage).Methods("GET")
 
     // Bot endpoints (BOT_API_SECRET required - no 2FA)
     router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
