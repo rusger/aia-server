@@ -552,6 +552,7 @@ var lunarNewTitle = map[string]string{
 	"en": "New Moon 🌑", "ru": "Новолуние 🌑", "es": "Luna Nueva 🌑", "fr": "Nouvelle Lune 🌑",
 	"de": "Neumond 🌑", "it": "Luna Nuova 🌑", "pt": "Lua Nova 🌑", "zh": "新月 🌑",
 	"ja": "新月 🌑", "ko": "신월 🌑", "hi": "अमावस्या 🌑", "ar": "القمر الجديد 🌑",
+	"mr": "अमावस्या 🌑", "te": "అమావాస్య 🌑", "ta": "அமாவாசை 🌑", "kn": "ಅಮಾವಾಸ್ಯೆ 🌑",
 }
 var lunarNewBody = map[string]string{
 	"en": "A New Moon rises today — a moment for fresh starts and intentions.",
@@ -566,11 +567,16 @@ var lunarNewBody = map[string]string{
 	"ko": "오늘은 신월입니다 — 새로운 시작의 순간.",
 	"hi": "आज अमावस्या है — नई शुरुआत का समय।",
 	"ar": "اليوم قمر جديد — وقت للبدايات الجديدة.",
+	"mr": "आज अमावस्या आहे — नव्या सुरुवातीची वेळ.",
+	"te": "ఈరోజు అమావాస్య — కొత్త ఆరంభాలకు తగిన సమయం.",
+	"ta": "இன்று அமாவாசை — புதிய தொடக்கங்களுக்கான நேரம்.",
+	"kn": "ಇಂದು ಅಮಾವಾಸ್ಯೆ — ಹೊಸ ಆರಂಭಗಳ ಸಮಯ.",
 }
 var lunarFullTitle = map[string]string{
 	"en": "Full Moon 🌕", "ru": "Полнолуние 🌕", "es": "Luna Llena 🌕", "fr": "Pleine Lune 🌕",
 	"de": "Vollmond 🌕", "it": "Luna Piena 🌕", "pt": "Lua Cheia 🌕", "zh": "满月 🌕",
 	"ja": "満月 🌕", "ko": "보름달 🌕", "hi": "पूर्णिमा 🌕", "ar": "اكتمال القمر 🌕",
+	"mr": "पौर्णिमा 🌕", "te": "పౌర్ణమి 🌕", "ta": "பௌர்ணமி 🌕", "kn": "ಹುಣ್ಣಿಮೆ 🌕",
 }
 var lunarFullBody = map[string]string{
 	"en": "A Full Moon rises today — a time of culmination and release.",
@@ -585,11 +591,16 @@ var lunarFullBody = map[string]string{
 	"ko": "오늘은 보름달입니다 — 절정과 비움의 시간.",
 	"hi": "आज पूर्णिमा है — पूर्णता और मुक्ति का समय।",
 	"ar": "اليوم اكتمال القمر — وقت الذروة والتحرر.",
+	"mr": "आज पौर्णिमा आहे — पूर्णत्व आणि मुक्तीची वेळ.",
+	"te": "ఈరోజు పౌర్ణమి — పరిపూర్ణత మరియు విముక్తికి సమయం.",
+	"ta": "இன்று பௌர்ணமி — நிறைவுக்கும் விடுதலைக்குமான நேரம்.",
+	"kn": "ಇಂದು ಹುಣ್ಣಿಮೆ — ಪೂರ್ಣತೆ ಮತ್ತು ಬಿಡುಗಡೆಯ ಸಮಯ.",
 }
 var solarEclipseTitle = map[string]string{
 	"en": "Solar Eclipse ☀️", "ru": "Солнечное затмение ☀️", "es": "Eclipse Solar ☀️", "fr": "Éclipse Solaire ☀️",
 	"de": "Sonnenfinsternis ☀️", "it": "Eclissi Solare ☀️", "pt": "Eclipse Solar ☀️", "zh": "日食 ☀️",
 	"ja": "日食 ☀️", "ko": "일식 ☀️", "hi": "सूर्य ग्रहण ☀️", "ar": "كسوف الشمس ☀️",
+	"mr": "सूर्यग्रहण ☀️", "te": "సూర్యగ్రహణం ☀️", "ta": "சூரிய கிரகணம் ☀️", "kn": "ಸೂರ್ಯಗ್ರಹಣ ☀️",
 }
 var solarEclipseBody = map[string]string{
 	"en": "A Solar Eclipse occurs around now — a powerful window for new beginnings.",
@@ -604,11 +615,16 @@ var solarEclipseBody = map[string]string{
 	"ko": "일식이 일어납니다 — 새로운 시작의 강력한 시기.",
 	"hi": "सूर्य ग्रहण हो रहा है — नई शुरुआत का शक्तिशाली अवसर।",
 	"ar": "يحدث كسوف للشمس — نافذة قوية للبدايات الجديدة.",
+	"mr": "सूर्यग्रहण होत आहे — नव्या सुरुवातीची शक्तिशाली संधी.",
+	"te": "సూర్యగ్రహణం జరుగుతోంది — కొత్త ఆరంభాలకు శక్తివంతమైన అవకాశం.",
+	"ta": "சூரிய கிரகணம் நிகழ்கிறது — புதிய தொடக்கங்களுக்கான வலிமையான தருணம்.",
+	"kn": "ಸೂರ್ಯಗ್ರಹಣ ನಡೆಯುತ್ತಿದೆ — ಹೊಸ ಆರಂಭಗಳಿಗೆ ಶಕ್ತಿಶಾಲಿ ಅವಕಾಶ.",
 }
 var lunarEclipseTitle = map[string]string{
 	"en": "Lunar Eclipse 🌙", "ru": "Лунное затмение 🌙", "es": "Eclipse Lunar 🌙", "fr": "Éclipse Lunaire 🌙",
 	"de": "Mondfinsternis 🌙", "it": "Eclissi Lunare 🌙", "pt": "Eclipse Lunar 🌙", "zh": "月食 🌙",
 	"ja": "月食 🌙", "ko": "월식 🌙", "hi": "चंद्र ग्रहण 🌙", "ar": "خسوف القمر 🌙",
+	"mr": "चंद्रग्रहण 🌙", "te": "చంద్రగ్రహణం 🌙", "ta": "சந்திர கிரகணம் 🌙", "kn": "ಚಂದ್ರಗ್ರಹಣ 🌙",
 }
 var lunarEclipseBody = map[string]string{
 	"en": "A Lunar Eclipse occurs around now — a time of culmination and release.",
@@ -623,11 +639,16 @@ var lunarEclipseBody = map[string]string{
 	"ko": "월식이 일어납니다 — 절정과 비움의 시간.",
 	"hi": "चंद्र ग्रहण हो रहा है — पूर्णता और मुक्ति का समय।",
 	"ar": "يحدث خسوف للقمر — وقت الذروة والتحرر.",
+	"mr": "चंद्रग्रहण होत आहे — पूर्णत्व आणि मुक्तीची वेळ.",
+	"te": "చంద్రగ్రహణం జరుగుతోంది — పరిపూర్ణత మరియు విముక్తికి సమయం.",
+	"ta": "சந்திர கிரகணம் நிகழ்கிறது — நிறைவுக்கும் விடுதலைக்குமான நேரம்.",
+	"kn": "ಚಂದ್ರಗ್ರಹಣ ನಡೆಯುತ್ತಿದೆ — ಪೂರ್ಣತೆ ಮತ್ತು ಬಿಡುಗಡೆಯ ಸಮಯ.",
 }
 var ingressTitleTmpl = map[string]string{
 	"en": "%s enters %s", "ru": "%s переходит в %s", "es": "%s entra en %s", "fr": "%s entre en %s",
 	"de": "%s tritt in %s ein", "it": "%s entra in %s", "pt": "%s entra em %s", "zh": "%s 进入 %s",
 	"ja": "%s が %s に入る", "ko": "%s, %s 입성", "hi": "%s का %s में प्रवेश", "ar": "%s يدخل %s",
+	"mr": "%s चा %s राशीत प्रवेश", "te": "%s %s రాశిలో ప్రవేశం", "ta": "%s %s ராசியில் பிரவேசம்", "kn": "%s %s ರಾಶಿಗೆ ಪ್ರವೇಶ",
 }
 var ingressBodyTmpl = map[string]string{
 	"en": "%s moves into %s — a slow, long-lasting shift in its themes.",
@@ -642,28 +663,32 @@ var ingressBodyTmpl = map[string]string{
 	"ko": "%s가 %s로 이동 — 느리고 오래 지속되는 변화.",
 	"hi": "%s %s में प्रवेश करता है — धीमा, दीर्घकालिक बदलाव।",
 	"ar": "%s ينتقل إلى %s — تحول بطيء وطويل الأمد.",
+	"mr": "%s %s राशीत प्रवेश करतो — संथ, दीर्घकालीन बदल.",
+	"te": "%s %s రాశిలోకి ప్రవేశిస్తుంది — నెమ్మదైన, దీర్ఘకాలిక మార్పు.",
+	"ta": "%s %s ராசியில் நுழைகிறது — மெதுவான, நீண்டகால மாற்றம்.",
+	"kn": "%s %s ರಾಶಿಯನ್ನು ಪ್ರವೇಶಿಸುತ್ತದೆ — ನಿಧಾನ, ದೀರ್ಘಕಾಲೀನ ಬದಲಾವಣೆ.",
 }
 
 var planetNames = map[string]map[string]string{
-	"Sun":     {"en": "Sun", "es": "Sol", "fr": "Soleil", "de": "Sonne", "it": "Sole", "pt": "Sol", "ru": "Солнце", "zh": "太阳", "ja": "太陽", "ko": "태양", "hi": "सूर्य", "ar": "الشمس"},
-	"Moon":    {"en": "Moon", "es": "Luna", "fr": "Lune", "de": "Mond", "it": "Luna", "pt": "Lua", "ru": "Луна", "zh": "月亮", "ja": "月", "ko": "달", "hi": "चंद्रमा", "ar": "القمر"},
-	"Jupiter": {"en": "Jupiter", "es": "Júpiter", "fr": "Jupiter", "de": "Jupiter", "it": "Giove", "pt": "Júpiter", "ru": "Юпитер", "zh": "木星", "ja": "木星", "ko": "목성", "hi": "बृहस्पति", "ar": "المشتري"},
-	"Saturn":  {"en": "Saturn", "es": "Saturno", "fr": "Saturne", "de": "Saturn", "it": "Saturno", "pt": "Saturno", "ru": "Сатурн", "zh": "土星", "ja": "土星", "ko": "토성", "hi": "शनि", "ar": "زحل"},
-	"Rahu":    {"en": "Rahu", "es": "Rahu", "fr": "Rahu", "de": "Rahu", "it": "Rahu", "pt": "Rahu", "ru": "Раху", "zh": "罗睺", "ja": "ラーフ", "ko": "라후", "hi": "राहु", "ar": "راهو"},
-	"Ketu":    {"en": "Ketu", "es": "Ketu", "fr": "Ketu", "de": "Ketu", "it": "Ketu", "pt": "Ketu", "ru": "Кету", "zh": "计都", "ja": "ケートゥ", "ko": "케투", "hi": "केतु", "ar": "كيتو"},
+	"Sun":     {"en": "Sun", "es": "Sol", "fr": "Soleil", "de": "Sonne", "it": "Sole", "pt": "Sol", "ru": "Солнце", "zh": "太阳", "ja": "太陽", "ko": "태양", "hi": "सूर्य", "ar": "الشمس", "mr": "सूर्य", "te": "సూర్యుడు", "ta": "சூரியன்", "kn": "ಸೂರ್ಯ"},
+	"Moon":    {"en": "Moon", "es": "Luna", "fr": "Lune", "de": "Mond", "it": "Luna", "pt": "Lua", "ru": "Луна", "zh": "月亮", "ja": "月", "ko": "달", "hi": "चंद्रमा", "ar": "القمر", "mr": "चंद्र", "te": "చంద్రుడు", "ta": "சந்திரன்", "kn": "ಚಂದ್ರ"},
+	"Jupiter": {"en": "Jupiter", "es": "Júpiter", "fr": "Jupiter", "de": "Jupiter", "it": "Giove", "pt": "Júpiter", "ru": "Юпитер", "zh": "木星", "ja": "木星", "ko": "목성", "hi": "बृहस्पति", "ar": "المشتري", "mr": "गुरु", "te": "గురువు", "ta": "குரு", "kn": "ಗುರು"},
+	"Saturn":  {"en": "Saturn", "es": "Saturno", "fr": "Saturne", "de": "Saturn", "it": "Saturno", "pt": "Saturno", "ru": "Сатурн", "zh": "土星", "ja": "土星", "ko": "토성", "hi": "शनि", "ar": "زحل", "mr": "शनि", "te": "శని", "ta": "சனி", "kn": "ಶನಿ"},
+	"Rahu":    {"en": "Rahu", "es": "Rahu", "fr": "Rahu", "de": "Rahu", "it": "Rahu", "pt": "Rahu", "ru": "Раху", "zh": "罗睺", "ja": "ラーフ", "ko": "라후", "hi": "राहु", "ar": "راهو", "mr": "राहू", "te": "రాహువు", "ta": "ராகு", "kn": "ರಾಹು"},
+	"Ketu":    {"en": "Ketu", "es": "Ketu", "fr": "Ketu", "de": "Ketu", "it": "Ketu", "pt": "Ketu", "ru": "Кету", "zh": "计都", "ja": "ケートゥ", "ko": "케투", "hi": "केतु", "ar": "كيتو", "mr": "केतू", "te": "కేతువు", "ta": "கேது", "kn": "ಕೇತು"},
 }
 
 var signNames = []map[string]string{
-	{"en": "Aries", "es": "Aries", "fr": "Bélier", "de": "Widder", "it": "Ariete", "pt": "Áries", "ru": "Овен", "zh": "白羊座", "ja": "牡羊座", "ko": "양자리", "hi": "मेष", "ar": "الحمل"},
-	{"en": "Taurus", "es": "Tauro", "fr": "Taureau", "de": "Stier", "it": "Toro", "pt": "Touro", "ru": "Телец", "zh": "金牛座", "ja": "牡牛座", "ko": "황소자리", "hi": "वृषभ", "ar": "الثور"},
-	{"en": "Gemini", "es": "Géminis", "fr": "Gémeaux", "de": "Zwillinge", "it": "Gemelli", "pt": "Gêmeos", "ru": "Близнецы", "zh": "双子座", "ja": "双子座", "ko": "쌍둥이자리", "hi": "मिथुन", "ar": "الجوزاء"},
-	{"en": "Cancer", "es": "Cáncer", "fr": "Cancer", "de": "Krebs", "it": "Cancro", "pt": "Câncer", "ru": "Рак", "zh": "巨蟹座", "ja": "蟹座", "ko": "게자리", "hi": "कर्क", "ar": "السرطان"},
-	{"en": "Leo", "es": "Leo", "fr": "Lion", "de": "Löwe", "it": "Leone", "pt": "Leão", "ru": "Лев", "zh": "狮子座", "ja": "獅子座", "ko": "사자자리", "hi": "सिंह", "ar": "الأسد"},
-	{"en": "Virgo", "es": "Virgo", "fr": "Vierge", "de": "Jungfrau", "it": "Vergine", "pt": "Virgem", "ru": "Дева", "zh": "处女座", "ja": "乙女座", "ko": "처녀자리", "hi": "कन्या", "ar": "العذراء"},
-	{"en": "Libra", "es": "Libra", "fr": "Balance", "de": "Waage", "it": "Bilancia", "pt": "Libra", "ru": "Весы", "zh": "天秤座", "ja": "天秤座", "ko": "천칭자리", "hi": "तुला", "ar": "الميزان"},
-	{"en": "Scorpio", "es": "Escorpio", "fr": "Scorpion", "de": "Skorpion", "it": "Scorpione", "pt": "Escorpião", "ru": "Скорпион", "zh": "天蝎座", "ja": "蠍座", "ko": "전갈자리", "hi": "वृश्चिक", "ar": "العقرب"},
-	{"en": "Sagittarius", "es": "Sagitario", "fr": "Sagittaire", "de": "Schütze", "it": "Sagittario", "pt": "Sagitário", "ru": "Стрелец", "zh": "射手座", "ja": "射手座", "ko": "궁수자리", "hi": "धनु", "ar": "القوس"},
-	{"en": "Capricorn", "es": "Capricornio", "fr": "Capricorne", "de": "Steinbock", "it": "Capricorno", "pt": "Capricórnio", "ru": "Козерог", "zh": "摩羯座", "ja": "山羊座", "ko": "염소자리", "hi": "मकर", "ar": "الجدي"},
-	{"en": "Aquarius", "es": "Acuario", "fr": "Verseau", "de": "Wassermann", "it": "Acquario", "pt": "Aquário", "ru": "Водолей", "zh": "水瓶座", "ja": "水瓶座", "ko": "물병자리", "hi": "कुंभ", "ar": "الدلو"},
-	{"en": "Pisces", "es": "Piscis", "fr": "Poissons", "de": "Fische", "it": "Pesci", "pt": "Peixes", "ru": "Рыбы", "zh": "双鱼座", "ja": "魚座", "ko": "물고기자리", "hi": "मीन", "ar": "الحوت"},
+	{"en": "Aries", "es": "Aries", "fr": "Bélier", "de": "Widder", "it": "Ariete", "pt": "Áries", "ru": "Овен", "zh": "白羊座", "ja": "牡羊座", "ko": "양자리", "hi": "मेष", "ar": "الحمل", "mr": "मेष", "te": "మేషం", "ta": "மேஷம்", "kn": "ಮೇಷ"},
+	{"en": "Taurus", "es": "Tauro", "fr": "Taureau", "de": "Stier", "it": "Toro", "pt": "Touro", "ru": "Телец", "zh": "金牛座", "ja": "牡牛座", "ko": "황소자리", "hi": "वृषभ", "ar": "الثور", "mr": "वृषभ", "te": "వృషభం", "ta": "ரிஷபம்", "kn": "ವೃಷಭ"},
+	{"en": "Gemini", "es": "Géminis", "fr": "Gémeaux", "de": "Zwillinge", "it": "Gemelli", "pt": "Gêmeos", "ru": "Близнецы", "zh": "双子座", "ja": "双子座", "ko": "쌍둥이자리", "hi": "मिथुन", "ar": "الجوزاء", "mr": "मिथुन", "te": "మిథునం", "ta": "மிதுனம்", "kn": "ಮಿಥುನ"},
+	{"en": "Cancer", "es": "Cáncer", "fr": "Cancer", "de": "Krebs", "it": "Cancro", "pt": "Câncer", "ru": "Рак", "zh": "巨蟹座", "ja": "蟹座", "ko": "게자리", "hi": "कर्क", "ar": "السرطان", "mr": "कर्क", "te": "కర్కాటకం", "ta": "கடகம்", "kn": "ಕರ್ಕಾಟಕ"},
+	{"en": "Leo", "es": "Leo", "fr": "Lion", "de": "Löwe", "it": "Leone", "pt": "Leão", "ru": "Лев", "zh": "狮子座", "ja": "獅子座", "ko": "사자자리", "hi": "सिंह", "ar": "الأسد", "mr": "सिंह", "te": "సింహం", "ta": "சிம்மம்", "kn": "ಸಿಂಹ"},
+	{"en": "Virgo", "es": "Virgo", "fr": "Vierge", "de": "Jungfrau", "it": "Vergine", "pt": "Virgem", "ru": "Дева", "zh": "处女座", "ja": "乙女座", "ko": "처녀자리", "hi": "कन्या", "ar": "العذراء", "mr": "कन्या", "te": "కన్య", "ta": "கன்னி", "kn": "ಕನ್ಯಾ"},
+	{"en": "Libra", "es": "Libra", "fr": "Balance", "de": "Waage", "it": "Bilancia", "pt": "Libra", "ru": "Весы", "zh": "天秤座", "ja": "天秤座", "ko": "천칭자리", "hi": "तुला", "ar": "الميزان", "mr": "तूळ", "te": "తుల", "ta": "துலாம்", "kn": "ತುಲಾ"},
+	{"en": "Scorpio", "es": "Escorpio", "fr": "Scorpion", "de": "Skorpion", "it": "Scorpione", "pt": "Escorpião", "ru": "Скорпион", "zh": "天蝎座", "ja": "蠍座", "ko": "전갈자리", "hi": "वृश्चिक", "ar": "العقرب", "mr": "वृश्चिक", "te": "వృశ్చికం", "ta": "விருச்சிகம்", "kn": "ವೃಶ್ಚಿಕ"},
+	{"en": "Sagittarius", "es": "Sagitario", "fr": "Sagittaire", "de": "Schütze", "it": "Sagittario", "pt": "Sagitário", "ru": "Стрелец", "zh": "射手座", "ja": "射手座", "ko": "궁수자리", "hi": "धनु", "ar": "القوس", "mr": "धनु", "te": "ధనుస్సు", "ta": "தனுசு", "kn": "ಧನು"},
+	{"en": "Capricorn", "es": "Capricornio", "fr": "Capricorne", "de": "Steinbock", "it": "Capricorno", "pt": "Capricórnio", "ru": "Козерог", "zh": "摩羯座", "ja": "山羊座", "ko": "염소자리", "hi": "मकर", "ar": "الجدي", "mr": "मकर", "te": "మకరం", "ta": "மகரம்", "kn": "ಮಕರ"},
+	{"en": "Aquarius", "es": "Acuario", "fr": "Verseau", "de": "Wassermann", "it": "Acquario", "pt": "Aquário", "ru": "Водолей", "zh": "水瓶座", "ja": "水瓶座", "ko": "물병자리", "hi": "कुंभ", "ar": "الدلو", "mr": "कुंभ", "te": "కుంభం", "ta": "கும்பம்", "kn": "ಕುಂಭ"},
+	{"en": "Pisces", "es": "Piscis", "fr": "Poissons", "de": "Fische", "it": "Pesci", "pt": "Peixes", "ru": "Рыбы", "zh": "双鱼座", "ja": "魚座", "ko": "물고기자리", "hi": "मीन", "ar": "الحوت", "mr": "मीन", "te": "మీనం", "ta": "மீனம்", "kn": "ಮೀನ"},
 }
