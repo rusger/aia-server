@@ -4681,6 +4681,72 @@ func maybeSendFirstPurchaseEmail(email string) {
     log.Printf("✉️ first-purchase welcome email sent to %s (lang=%s)", email, lang)
 }
 
+// adminSendEmail sends a one-off plain-text email to a user from the standard
+// Astrolytix transactional address. Same admin gate as send-push: allowlisted
+// admin email + admin secret + one-time 2FA code from /api/admin/request-code.
+func adminSendEmail(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    var req struct {
+        AdminEmail       string `json:"admin_email"`
+        AdminSecret      string `json:"admin_secret"`
+        VerificationCode string `json:"verification_code"`
+        To               string `json:"to"`
+        Subject          string `json:"subject"`
+        Body             string `json:"body"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid request"})
+        return
+    }
+
+    if !isAdminEmail(req.AdminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+    if ADMIN_SECRET_KEY != "" && req.AdminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+        return
+    }
+    if req.VerificationCode == "" {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Verification code required"})
+        return
+    }
+    var codeID int
+    var expiresAt time.Time
+    if err := db.QueryRow(`SELECT id, expires_at FROM auth_codes WHERE email = ? AND code = ? AND used = 0`,
+        req.AdminEmail, req.VerificationCode).Scan(&codeID, &expiresAt); err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid or expired verification code"})
+        return
+    }
+    if time.Now().After(expiresAt) {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Verification code has expired"})
+        return
+    }
+    db.Exec(`UPDATE auth_codes SET used = 1 WHERE id = ?`, codeID)
+
+    to := strings.ToLower(strings.TrimSpace(req.To))
+    if to == "" || !strings.Contains(to, "@") || !strings.Contains(to, ".") {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "valid 'to' address required"})
+        return
+    }
+    if strings.TrimSpace(req.Subject) == "" || strings.TrimSpace(req.Body) == "" {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "subject and body required"})
+        return
+    }
+
+    if err := sendPlainEmail(to, req.Subject, req.Body); err != nil {
+        log.Printf("❌ [adminSendEmail] send to %s failed: %v", to, err)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+        return
+    }
+    log.Printf("✉️ [adminSendEmail] sent to %s (subject: %s) by %s", to, req.Subject, req.AdminEmail)
+    json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "sent_to": to})
+}
+
 // loginAuth implements LOGIN authentication for SMTP (required by Office 365)
 type loginAuth struct {
     username, password string
@@ -8405,6 +8471,7 @@ func main() {
     // Send a push notification to a device (by device_id) or user (by email).
     // Admin secret + 2FA code required, same gate as the other admin actions.
     router.HandleFunc("/api/admin/send-push", adminGuardMiddleware(adminSendPush)).Methods("POST")
+    router.HandleFunc("/api/admin/send-email", adminGuardMiddleware(adminSendEmail)).Methods("POST")
 
     log.Println("✓ Registered routes:")
     log.Println("  [PUBLIC]    POST /api/user/register - Register device and get tokens")
