@@ -426,22 +426,40 @@ func deliverDueEvents() {
 	}
 
 	// All deliverable devices with a token (iOS → APNs, Android → FCM).
-	drows, err := db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(language,'en'), COALESCE(tz_offset_minutes,0)
+	// email is needed to record sends into notification_history (the app
+	// fetches that history to show server pushes in Settings → Notifications).
+	drows, err := db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(language,'en'), COALESCE(tz_offset_minutes,0), COALESCE(email,'')
 		FROM devices WHERE push_token IS NOT NULL AND push_token != '' AND revoked = 0`)
 	if err != nil {
 		log.Printf("⚠️ deliverDueEvents devices: %v", err)
 		return
 	}
 	type dev struct {
-		id, token, platform, lang string
-		tzMin                     int
+		id, token, platform, lang, email string
+		tzMin                            int
+	}
+	// One physical device can appear under several account rows (real email +
+	// <device_id>@device.astrolytix.app placeholder). The delivery claim is
+	// keyed by device_id so duplicates never double-send, but WHICH row wins
+	// decides the history attribution — dedupe preferring the real email.
+	isPlaceholder := func(email string) bool {
+		return email == "" || strings.HasSuffix(email, "@device.astrolytix.app")
 	}
 	var devs []dev
+	byDevice := map[string]int{}
 	for drows.Next() {
 		var d dev
-		if err := drows.Scan(&d.id, &d.token, &d.platform, &d.lang, &d.tzMin); err == nil {
-			devs = append(devs, d)
+		if err := drows.Scan(&d.id, &d.token, &d.platform, &d.lang, &d.tzMin, &d.email); err != nil {
+			continue
 		}
+		if i, ok := byDevice[d.id]; ok {
+			if isPlaceholder(devs[i].email) && !isPlaceholder(d.email) {
+				devs[i] = d
+			}
+			continue
+		}
+		byDevice[d.id] = len(devs)
+		devs = append(devs, d)
 	}
 	drows.Close()
 
@@ -449,6 +467,7 @@ func deliverDueEvents() {
 		// Nominal local target = (event date - lead) at local_hour, wall-clock.
 		nominal := time.Date(e.eventDate.Year(), e.eventDate.Month(), e.eventDate.Day(),
 			e.localHour, 0, 0, 0, time.UTC).AddDate(0, 0, -e.leadDays)
+		sent, failed := 0, 0
 		for _, d := range devs {
 			// Device reaches that wall-clock at UTC = nominal - offset.
 			deliverUTC := nominal.Add(-time.Duration(d.tzMin) * time.Minute)
@@ -465,12 +484,47 @@ func deliverDueEvents() {
 			}
 			title, body := eventText(e.kind, e.params, d.lang)
 			if err := sendPushToToken(d.platform, d.token, title, body, e.payld); err != nil {
+				failed++
+				if isDeadPushToken(err) {
+					// Token permanently invalid (app uninstalled / token rotated):
+					// clear it so the device drops out of the eligible set instead
+					// of failing again every 15-minute tick, and KEEP the claim —
+					// retrying the same dead token can never succeed.
+					log.Printf("🗑 clearing dead push token for %s (%s): %v", d.id, d.platform, err)
+					db.Exec(`UPDATE devices SET push_token = '' WHERE device_id = ? AND push_token = ?`, d.id, d.token)
+					continue
+				}
 				log.Printf("⚠️ event push to %s failed: %v", d.id, err)
-				// Roll back the claim so a later tick can retry.
+				// Transient failure — roll back the claim so a later tick retries.
 				db.Exec(`DELETE FROM push_event_deliveries WHERE event_id = ? AND device_id = ?`, e.id, d.id)
+				continue
 			}
+			sent++
+			// Mirror admin/CLI sends: persist to notification_history so the
+			// app's Settings → Notifications → History (which merges this
+			// endpoint) shows scheduled event pushes too. Without this the
+			// scheduled pushes were invisible in history even when delivered.
+			recordNotificationHistory(d.email, d.id, title, body, e.payld)
+		}
+		if sent > 0 || failed > 0 {
+			log.Printf("📅 event %d (%s): sent=%d failed=%d", e.id, e.kind, sent, failed)
 		}
 	}
+}
+
+// isDeadPushToken reports whether a push send error means the device token is
+// permanently invalid (as opposed to a transient network/service failure).
+// APNs: 410 Unregistered, or BadDeviceToken on BOTH environments (sendAPNs
+// already retried the other host before returning). FCM: 404 UNREGISTERED.
+func isDeadPushToken(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "Unregistered") || // APNs 410 / FCM "UNREGISTERED"
+		strings.Contains(s, "UNREGISTERED") ||
+		strings.Contains(s, "BadDeviceToken") ||
+		strings.Contains(s, "DeviceTokenNotForTopic")
 }
 
 func pushEventLoop() {
