@@ -157,7 +157,8 @@ var posRe = regexp.MustCompile(`(\d{1,2})([A-Za-z]{3})(\d{2})`)
 
 // siderealLongitudes returns planet -> ecliptic longitude (0..360, sidereal)
 // at the given date (noon UTC, geocentric so location is irrelevant).
-// Planet keys use the app's names: Jupiter, Saturn, Rahu, Ketu, Sun, Moon.
+// Planet keys use the app's names: Jupiter, Saturn, Rahu, Ketu, Sun, Moon,
+// Mercury, Venus, Mars.
 func siderealLongitudes(date time.Time) (map[string]float64, error) {
 	date = date.UTC()
 	args := []string{
@@ -174,6 +175,7 @@ func siderealLongitudes(date time.Time) (map[string]float64, error) {
 	prefix := map[string]string{
 		"Jupi": "Jupiter", "Satu": "Saturn", "Nort": "Rahu",
 		"Sun ": "Sun", "Moon": "Moon",
+		"Merc": "Mercury", "Venu": "Venus", "Mars": "Mars",
 	}
 	res := map[string]float64{}
 	for _, line := range strings.Split(string(out), "\n") {
@@ -252,6 +254,83 @@ func findIngresses(from, to time.Time) []ingressEvt {
 				}
 			}
 			prevSign[p] = ns
+		}
+	}
+	return out
+}
+
+type stationEvt struct {
+	planet string
+	retro  bool // true = turns retrograde, false = turns direct
+	date   time.Time
+}
+
+// findStations scans [from, to] for planetary stations (retrograde/direct
+// turns). Astrolog exposes longitudes only, so motion direction is the sign
+// of the longitude difference between noon samples: a station lies where
+// that sign flips. Coarse 5-day spans bracket the flip (the shortest retro
+// arc, Mercury's ~21 days, spans 4+ samples), then a day-by-day scan pins
+// the turn to a calendar day. The refinement is anchored to calendar days,
+// not to the scan grid, so recomputing on a later date yields the same
+// event day and INSERT OR IGNORE dedup holds. Rahu/Ketu (mean nodes,
+// always retrograde) and the luminaries never station.
+func findStations(from, to time.Time) []stationEvt {
+	planets := []string{"Mercury", "Venus", "Mars", "Jupiter", "Saturn"}
+	const stepDays = 5
+
+	// Memoized noon longitudes — one astrolog exec serves all planets and
+	// the day-scan refinement revisits dates.
+	memo := map[string]map[string]float64{}
+	lonsAt := func(t time.Time) map[string]float64 {
+		k := t.Format("2006-01-02")
+		if v, ok := memo[k]; ok {
+			return v
+		}
+		v, err := siderealLongitudes(t)
+		if err != nil {
+			return nil
+		}
+		memo[k] = v
+		return v
+	}
+	// Signed motion of planet across [t, t+days], normalized to (-180,180].
+	motion := func(p string, t time.Time, days int) (float64, bool) {
+		a := lonsAt(t)
+		b := lonsAt(t.AddDate(0, 0, days))
+		if a == nil || b == nil {
+			return 0, false
+		}
+		la, ok1 := a[p]
+		lb, ok2 := b[p]
+		if !ok1 || !ok2 {
+			return 0, false
+		}
+		return math.Mod(lb-la+540, 360) - 180, true
+	}
+
+	var out []stationEvt
+	for _, p := range planets {
+		prev := math.NaN()
+		for t := from; !t.AddDate(0, 0, stepDays).After(to); t = t.AddDate(0, 0, stepDays) {
+			d, ok := motion(p, t, stepDays)
+			if !ok || d == 0 {
+				continue
+			}
+			if !math.IsNaN(prev) && (d > 0) != (prev > 0) {
+				// Direction flipped inside (t-step, t+step) — find the first
+				// calendar day whose noon-to-noon motion has the new sign.
+				for dt := t.AddDate(0, 0, -stepDays); dt.Before(t.AddDate(0, 0, stepDays)); dt = dt.AddDate(0, 0, 1) {
+					dd, ok := motion(p, dt, 1)
+					if !ok || dd == 0 {
+						continue
+					}
+					if (dd > 0) != (prev > 0) {
+						out = append(out, stationEvt{planet: p, retro: dd < 0, date: dt})
+						break
+					}
+				}
+			}
+			prev = d
 		}
 	}
 	return out
@@ -382,6 +461,21 @@ func refreshPushEvents() {
 		payload := fmt.Sprintf("astro:slow_ingress:slow_ingress:%s:%s", ig.planet, day)
 		insert(ekey, "slow_ingress", ig.date,
 			map[string]interface{}{"planet": ig.planet, "signIdx": ig.signIdx}, payload)
+	}
+
+	// Stations (retrograde/direct turns) — next ~200 days. Frequent enough
+	// (Mercury alone turns ~8×/year) that a shorter horizon keeps the
+	// daily refresh cheap; delivery only looks a couple of days ahead.
+	for _, st := range findStations(now, now.AddDate(0, 0, 200)) {
+		day := st.date.Format("2006-01-02")
+		dir := "direct"
+		if st.retro {
+			dir = "retro"
+		}
+		ekey := fmt.Sprintf("station:%s:%s:%s", st.planet, dir, day)
+		payload := fmt.Sprintf("astro:station:station:%s:%s:%s", st.planet, dir, day)
+		insert(ekey, "station", st.date,
+			map[string]interface{}{"planet": st.planet, "retro": st.retro}, payload)
 	}
 
 	log.Printf("✓ refreshPushEvents done")
@@ -570,6 +664,16 @@ func eventText(kind, paramsJSON, lang string) (string, string) {
 		sn := signName(signIdx, lang)
 		return fmt.Sprintf(tr(ingressTitleTmpl, lang), pn, sn),
 			fmt.Sprintf(tr(ingressBodyTmpl, lang), pn, sn)
+	case "station":
+		planet, _ := p["planet"].(string)
+		retro, _ := p["retro"].(bool)
+		pn := planetName(planet, lang)
+		if retro {
+			return fmt.Sprintf(tr(stationRetroTitleTmpl, lang), pn),
+				fmt.Sprintf(tr(stationRetroBodyTmpl, lang), pn)
+		}
+		return fmt.Sprintf(tr(stationDirectTitleTmpl, lang), pn),
+			fmt.Sprintf(tr(stationDirectBodyTmpl, lang), pn)
 	}
 	return "Astrolytix", ""
 }
@@ -723,8 +827,60 @@ var ingressBodyTmpl = map[string]string{
 	"kn": "%s %s ರಾಶಿಯನ್ನು ಪ್ರವೇಶಿಸುತ್ತದೆ — ನಿಧಾನ, ದೀರ್ಘಕಾಲೀನ ಬದಲಾವಣೆ.",
 }
 
+var stationRetroTitleTmpl = map[string]string{
+	"en": "%s turns retrograde", "ru": "%s разворачивается вспять", "es": "%s entra en retrogradación", "fr": "%s devient rétrograde",
+	"de": "%s wird rückläufig", "it": "%s inizia il moto retrogrado", "pt": "%s inicia o movimento retrógrado", "zh": "%s 开始逆行",
+	"ja": "%s が逆行を開始", "ko": "%s 역행 시작", "hi": "%s वक्री हो रहा है", "ar": "%s يبدأ التراجع",
+	"mr": "%s वक्री होत आहे", "te": "%s వక్ర గమనం ప్రారంభం", "ta": "%s வக்கிர நடை தொடக்கம்", "kn": "%s ವಕ್ರ ಗತಿ ಆರಂಭ",
+}
+var stationRetroBodyTmpl = map[string]string{
+	"en": "%s stands still and turns retrograde — a weeks-long phase of review and rework begins.",
+	"ru": "%s замирает и начинает попятное движение — начинается многонедельная фаза пересмотра.",
+	"es": "%s se detiene e inicia la retrogradación — comienza una fase de revisión de varias semanas.",
+	"fr": "%s s'arrête et rétrograde — une phase de révision de plusieurs semaines commence.",
+	"de": "%s steht still und wird rückläufig — eine wochenlange Phase der Überprüfung beginnt.",
+	"it": "%s si ferma e inizia il moto retrogrado — comincia una fase di revisione di settimane.",
+	"pt": "%s para e inicia o movimento retrógrado — começa uma fase de revisão de semanas.",
+	"zh": "%s 停滞并开始逆行——为期数周的回顾与调整阶段开始。",
+	"ja": "%s が留まり逆行へ——数週間の見直し期間が始まります。",
+	"ko": "%s가 멈추고 역행을 시작합니다 — 몇 주간의 재검토 시기가 시작됩니다.",
+	"hi": "%s ठहरकर वक्री होता है — कई हफ्तों का पुनर्विचार काल शुरू होता है।",
+	"ar": "%s يتوقف ويبدأ التراجع — تبدأ مرحلة مراجعة تمتد لأسابيع.",
+	"mr": "%s थांबून वक्री होतो — अनेक आठवड्यांचा पुनर्विचाराचा काळ सुरू होतो.",
+	"te": "%s నిలిచి వక్రగతిలోకి మారుతుంది — వారాల పాటు సమీక్షా దశ మొదలవుతుంది.",
+	"ta": "%s நின்று வக்கிர நடைக்கு மாறுகிறது — பல வார மறுஆய்வு காலம் தொடங்குகிறது.",
+	"kn": "%s ನಿಂತು ವಕ್ರ ಗತಿಗೆ ತಿರುಗುತ್ತದೆ — ಹಲವು ವಾರಗಳ ಪುನರ್ ಪರಿಶೀಲನೆಯ ಹಂತ ಆರಂಭ.",
+}
+var stationDirectTitleTmpl = map[string]string{
+	"en": "%s turns direct", "ru": "%s снова в прямом движении", "es": "%s retoma el movimiento directo", "fr": "%s reprend sa marche directe",
+	"de": "%s wird wieder direktläufig", "it": "%s riprende il moto diretto", "pt": "%s retoma o movimento direto", "zh": "%s 恢复顺行",
+	"ja": "%s が順行に戻る", "ko": "%s 순행 복귀", "hi": "%s मार्गी हो रहा है", "ar": "%s يعود إلى المسار المباشر",
+	"mr": "%s मार्गी होत आहे", "te": "%s ఋజు గమనానికి తిరిగి", "ta": "%s நேர்நடைக்கு திரும்புகிறது", "kn": "%s ನೇರ ಗತಿಗೆ ಮರಳುತ್ತದೆ",
+}
+var stationDirectBodyTmpl = map[string]string{
+	"en": "%s stations and resumes direct motion — stalled matters can finally move forward.",
+	"ru": "%s останавливается и возобновляет прямое движение — застопорившиеся дела снова идут вперёд.",
+	"es": "%s se detiene y retoma el movimiento directo — lo estancado vuelve a avanzar.",
+	"fr": "%s marque une pause puis reprend sa marche directe — ce qui stagnait repart de l'avant.",
+	"de": "%s steht still und läuft wieder direkt — Blockiertes kommt wieder in Bewegung.",
+	"it": "%s si ferma e riprende il moto diretto — ciò che era in stallo torna a muoversi.",
+	"pt": "%s para e retoma o movimento direto — o que estava travado volta a andar.",
+	"zh": "%s 停滞后恢复顺行——停滞的事务重新向前推进。",
+	"ja": "%s が留まり順行へ——停滞していた物事が再び動き出します。",
+	"ko": "%s가 멈춘 뒤 순행으로 돌아섭니다 — 정체됐던 일들이 다시 움직입니다.",
+	"hi": "%s ठहरकर मार्गी होता है — रुके हुए काम फिर आगे बढ़ते हैं।",
+	"ar": "%s يتوقف ثم يستأنف مساره المباشر — ما كان متعثرًا يتحرك من جديد.",
+	"mr": "%s थांबून मार्गी होतो — रखडलेली कामे पुन्हा पुढे सरकतात.",
+	"te": "%s నిలిచి ఋజుగతికి మారుతుంది — ఆగిపోయిన పనులు మళ్లీ ముందుకు సాగుతాయి.",
+	"ta": "%s நின்று நேர்நடைக்கு திரும்புகிறது — தேங்கிய காரியங்கள் மீண்டும் முன்னேறுகின்றன.",
+	"kn": "%s ನಿಂತು ನೇರ ಗತಿಗೆ ಮರಳುತ್ತದೆ — ಸ್ಥಗಿತಗೊಂಡ ಕೆಲಸಗಳು ಮತ್ತೆ ಮುಂದುವರಿಯುತ್ತವೆ.",
+}
+
 var planetNames = map[string]map[string]string{
 	"Sun":     {"en": "Sun", "es": "Sol", "fr": "Soleil", "de": "Sonne", "it": "Sole", "pt": "Sol", "ru": "Солнце", "zh": "太阳", "ja": "太陽", "ko": "태양", "hi": "सूर्य", "ar": "الشمس", "mr": "सूर्य", "te": "సూర్యుడు", "ta": "சூரியன்", "kn": "ಸೂರ್ಯ"},
+	"Mercury": {"en": "Mercury", "es": "Mercurio", "fr": "Mercure", "de": "Merkur", "it": "Mercurio", "pt": "Mercúrio", "ru": "Меркурий", "zh": "水星", "ja": "水星", "ko": "수성", "hi": "बुध", "ar": "عطارد", "mr": "बुध", "te": "బుధుడు", "ta": "புதன்", "kn": "ಬುಧ"},
+	"Venus":   {"en": "Venus", "es": "Venus", "fr": "Vénus", "de": "Venus", "it": "Venere", "pt": "Vênus", "ru": "Венера", "zh": "金星", "ja": "金星", "ko": "금성", "hi": "शुक्र", "ar": "الزهرة", "mr": "शुक्र", "te": "శుక్రుడు", "ta": "சுக்கிரன்", "kn": "ಶುಕ್ರ"},
+	"Mars":    {"en": "Mars", "es": "Marte", "fr": "Mars", "de": "Mars", "it": "Marte", "pt": "Marte", "ru": "Марс", "zh": "火星", "ja": "火星", "ko": "화성", "hi": "मंगल", "ar": "المريخ", "mr": "मंगळ", "te": "కుజుడు", "ta": "செவ்வாய்", "kn": "ಮಂಗಳ"},
 	"Moon":    {"en": "Moon", "es": "Luna", "fr": "Lune", "de": "Mond", "it": "Luna", "pt": "Lua", "ru": "Луна", "zh": "月亮", "ja": "月", "ko": "달", "hi": "चंद्रमा", "ar": "القمر", "mr": "चंद्र", "te": "చంద్రుడు", "ta": "சந்திரன்", "kn": "ಚಂದ್ರ"},
 	"Jupiter": {"en": "Jupiter", "es": "Júpiter", "fr": "Jupiter", "de": "Jupiter", "it": "Giove", "pt": "Júpiter", "ru": "Юпитер", "zh": "木星", "ja": "木星", "ko": "목성", "hi": "बृहस्पति", "ar": "المشتري", "mr": "गुरु", "te": "గురువు", "ta": "குரு", "kn": "ಗುರು"},
 	"Saturn":  {"en": "Saturn", "es": "Saturno", "fr": "Saturne", "de": "Saturn", "it": "Saturno", "pt": "Saturno", "ru": "Сатурн", "zh": "土星", "ja": "土星", "ko": "토성", "hi": "शनि", "ar": "زحل", "mr": "शनि", "te": "శని", "ta": "சனி", "kn": "ಶನಿ"},
