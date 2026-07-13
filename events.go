@@ -38,6 +38,9 @@ func migratePushEvents() {
 	for _, stmt := range []string{
 		`ALTER TABLE devices ADD COLUMN language TEXT`,
 		`ALTER TABLE devices ADD COLUMN tz_offset_minutes INTEGER`,
+		// Comma-separated event groups the user muted in the app's
+		// notification settings: lunar,eclipse,ingress,station.
+		`ALTER TABLE devices ADD COLUMN disabled_push_kinds TEXT`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			log.Printf("ℹ️ devices migration note: %v", err)
@@ -522,15 +525,15 @@ func deliverDueEvents() {
 	// All deliverable devices with a token (iOS → APNs, Android → FCM).
 	// email is needed to record sends into notification_history (the app
 	// fetches that history to show server pushes in Settings → Notifications).
-	drows, err := db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(language,'en'), COALESCE(tz_offset_minutes,0), COALESCE(email,'')
+	drows, err := db.Query(`SELECT device_id, push_token, COALESCE(platform,''), COALESCE(language,'en'), COALESCE(tz_offset_minutes,0), COALESCE(email,''), COALESCE(disabled_push_kinds,'')
 		FROM devices WHERE push_token IS NOT NULL AND push_token != '' AND revoked = 0`)
 	if err != nil {
 		log.Printf("⚠️ deliverDueEvents devices: %v", err)
 		return
 	}
 	type dev struct {
-		id, token, platform, lang, email string
-		tzMin                            int
+		id, token, platform, lang, email, disabledKinds string
+		tzMin                                           int
 	}
 	// One physical device can appear under several account rows (real email +
 	// <device_id>@device.astrolytix.app placeholder). The delivery claim is
@@ -543,7 +546,7 @@ func deliverDueEvents() {
 	byDevice := map[string]int{}
 	for drows.Next() {
 		var d dev
-		if err := drows.Scan(&d.id, &d.token, &d.platform, &d.lang, &d.tzMin, &d.email); err != nil {
+		if err := drows.Scan(&d.id, &d.token, &d.platform, &d.lang, &d.tzMin, &d.email, &d.disabledKinds); err != nil {
 			continue
 		}
 		if i, ok := byDevice[d.id]; ok {
@@ -561,8 +564,14 @@ func deliverDueEvents() {
 		// Nominal local target = (event date - lead) at local_hour, wall-clock.
 		nominal := time.Date(e.eventDate.Year(), e.eventDate.Month(), e.eventDate.Day(),
 			e.localHour, 0, 0, 0, time.UTC).AddDate(0, 0, -e.leadDays)
+		group := eventKindGroup(e.kind)
 		sent, failed := 0, 0
 		for _, d := range devs {
+			// Honor the app's per-category notification settings: skip
+			// devices that muted this event group (lunar/eclipse/ingress/station).
+			if d.disabledKinds != "" && kindDisabled(d.disabledKinds, group) {
+				continue
+			}
 			// Device reaches that wall-clock at UTC = nominal - offset.
 			deliverUTC := nominal.Add(-time.Duration(d.tzMin) * time.Minute)
 			if now.Before(deliverUTC) || now.After(deliverUTC.Add(24*time.Hour)) {
@@ -604,6 +613,33 @@ func deliverDueEvents() {
 			log.Printf("📅 event %d (%s): sent=%d failed=%d", e.id, e.kind, sent, failed)
 		}
 	}
+}
+
+// eventKindGroup maps a push_events kind to the app's notification-settings
+// category group (what the app sends as disabled_kinds entries).
+func eventKindGroup(kind string) string {
+	switch kind {
+	case "lunar_new", "lunar_full":
+		return "lunar"
+	case "eclipse_solar", "eclipse_lunar":
+		return "eclipse"
+	case "slow_ingress":
+		return "ingress"
+	case "station":
+		return "station"
+	}
+	return kind
+}
+
+// kindDisabled reports whether group appears in the comma-separated
+// disabled_push_kinds list stored on the device row.
+func kindDisabled(disabledCSV, group string) bool {
+	for _, k := range strings.Split(disabledCSV, ",") {
+		if strings.TrimSpace(k) == group {
+			return true
+		}
+	}
+	return false
 }
 
 // isDeadPushToken reports whether a push send error means the device token is

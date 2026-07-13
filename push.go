@@ -413,10 +413,11 @@ func registerPushToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		PushToken string `json:"push_token"`
-		Platform  string `json:"platform"`
-		Language  string `json:"language"`
-		TZOffset  *int   `json:"tz_offset_minutes"`
+		PushToken     string   `json:"push_token"`
+		Platform      string   `json:"platform"`
+		Language      string   `json:"language"`
+		TZOffset      *int     `json:"tz_offset_minutes"`
+		DisabledKinds []string `json:"disabled_kinds"` // muted event groups: lunar,eclipse,ingress,station
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -432,21 +433,31 @@ func registerPushToken(w http.ResponseWriter, r *http.Request) {
 	if req.TZOffset != nil {
 		tz = *req.TZOffset
 	}
+	// Sanitize the muted-groups list to known values; store comma-separated.
+	var kinds []string
+	for _, k := range req.DisabledKinds {
+		switch strings.TrimSpace(k) {
+		case "lunar", "eclipse", "ingress", "station":
+			kinds = append(kinds, strings.TrimSpace(k))
+		}
+	}
+	disabledKinds := strings.Join(kinds, ",")
 
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
 	// Upsert onto the existing (email, device_id) row; create it if the device
 	// hasn't been recorded yet (relies on the unique index idx_devices_email_device).
 	_, err := db.Exec(`
-		INSERT INTO devices (email, device_id, platform, push_token, push_token_updated_at, last_seen, language, tz_offset_minutes)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
+		INSERT INTO devices (email, device_id, platform, push_token, push_token_updated_at, last_seen, language, tz_offset_minutes, disabled_push_kinds)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?)
 		ON CONFLICT(email, device_id) DO UPDATE SET
 			push_token = excluded.push_token,
 			push_token_updated_at = CURRENT_TIMESTAMP,
 			last_seen = CURRENT_TIMESTAMP,
 			platform = CASE WHEN excluded.platform != '' THEN excluded.platform ELSE devices.platform END,
 			language = CASE WHEN excluded.language != '' THEN excluded.language ELSE devices.language END,
-			tz_offset_minutes = excluded.tz_offset_minutes`,
-		email, claims.DeviceID, req.Platform, req.PushToken, req.Language, tz)
+			tz_offset_minutes = excluded.tz_offset_minutes,
+			disabled_push_kinds = excluded.disabled_push_kinds`,
+		email, claims.DeviceID, req.Platform, req.PushToken, req.Language, tz, disabledKinds)
 	if err != nil {
 		log.Printf("⚠️ push-token upsert failed: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
