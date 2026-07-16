@@ -32,6 +32,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -154,7 +155,10 @@ func notificationIDFromString(s string) int {
 
 // sendAPNs delivers a single alert push to one APNs device token. Returns nil
 // on success (HTTP 200) or an error describing the APNs rejection reason.
-func sendAPNs(deviceToken, title, body, payload string) error {
+// ttl > 0 sets the apns-expiration header so APNs drops the push instead of
+// storing it for an offline device past its relevance window; <= 0 omits the
+// header (APNs default storage) for messages that stay relevant.
+func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error {
 	c, err := loadAPNsConfig()
 	if err != nil {
 		return err
@@ -202,7 +206,12 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 		primary, secondary = secondary, primary
 	}
 
-	status, reason, err := sendAPNsToHost(c, jwt, primary, deviceToken, jsonBody)
+	var expiration int64
+	if ttl > 0 {
+		expiration = time.Now().Add(ttl).Unix()
+	}
+
+	status, reason, err := sendAPNsToHost(c, jwt, primary, deviceToken, jsonBody, expiration)
 	if err != nil {
 		return err
 	}
@@ -210,7 +219,7 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 		return nil
 	}
 	if status == http.StatusBadRequest && strings.Contains(reason, "BadDeviceToken") {
-		if status, reason, err = sendAPNsToHost(c, jwt, secondary, deviceToken, jsonBody); err != nil {
+		if status, reason, err = sendAPNsToHost(c, jwt, secondary, deviceToken, jsonBody, expiration); err != nil {
 			return err
 		}
 		if status == http.StatusOK {
@@ -222,7 +231,9 @@ func sendAPNs(deviceToken, title, body, payload string) error {
 
 // sendAPNsToHost POSTs the prepared payload to one APNs host and returns the
 // HTTP status code and response body (the rejection reason, if any).
-func sendAPNsToHost(c *apnsConfig, jwt, host, deviceToken string, jsonBody []byte) (int, string, error) {
+// expiration > 0 is a unix timestamp after which APNs discards the push
+// instead of delivering it late; 0 omits the header (APNs default storage).
+func sendAPNsToHost(c *apnsConfig, jwt, host, deviceToken string, jsonBody []byte, expiration int64) (int, string, error) {
 	url := fmt.Sprintf("https://%s/3/device/%s", host, deviceToken)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
@@ -232,6 +243,9 @@ func sendAPNsToHost(c *apnsConfig, jwt, host, deviceToken string, jsonBody []byt
 	req.Header.Set("apns-topic", c.bundleID)
 	req.Header.Set("apns-push-type", "alert")
 	req.Header.Set("apns-priority", "10")
+	if expiration > 0 {
+		req.Header.Set("apns-expiration", strconv.FormatInt(expiration, 10))
+	}
 
 	resp, err := apnsHTTPClient.Do(req)
 	if err != nil {
@@ -543,7 +557,9 @@ func adminSendPush(w http.ResponseWriter, r *http.Request) {
 	sent := 0
 	var failures []string
 	for _, t := range targets {
-		if err := sendPushToToken(t.platform, t.token, title, req.Message, req.Payload); err != nil {
+		// Admin pushes are organizational — worth delivering even if the
+		// device has been offline for a while, so no expiry (ttl 0).
+		if err := sendPushToToken(t.platform, t.token, title, req.Message, req.Payload, 0); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", t.deviceID, err))
 			continue
 		}
@@ -610,7 +626,7 @@ func runSendPushCLI(args []string) {
 
 	ok := 0
 	for _, t := range targets {
-		if err := sendPushToToken(t.platform, t.token, title, message, payload); err != nil {
+		if err := sendPushToToken(t.platform, t.token, title, message, payload, 0); err != nil {
 			fmt.Printf("❌ %s: %v\n", t.deviceID, err)
 			continue
 		}

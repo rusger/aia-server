@@ -144,7 +144,9 @@ func fcmAccessTokenValue(c *fcmConfig) (string, error) {
 }
 
 // sendFCM delivers a notification to one Android FCM registration token.
-func sendFCM(deviceToken, title, body, payload string) error {
+// ttl bounds how long FCM stores the message for an offline device; <= 0
+// keeps FCM's default (4 weeks) for messages that stay relevant.
+func sendFCM(deviceToken, title, body, payload string, ttl time.Duration) error {
 	c, err := loadFCMConfig()
 	if err != nil {
 		return err
@@ -154,15 +156,19 @@ func sendFCM(deviceToken, title, body, payload string) error {
 		return err
 	}
 
+	android := map[string]interface{}{
+		"priority": "high",
+	}
+	if ttl > 0 {
+		android["ttl"] = fmt.Sprintf("%ds", int(ttl/time.Second))
+	}
 	msg := map[string]interface{}{
 		"token": deviceToken,
 		"notification": map[string]string{
 			"title": title,
 			"body":  body,
 		},
-		"android": map[string]interface{}{
-			"priority": "high",
-		},
+		"android": android,
 	}
 	if payload != "" {
 		// The app reads data["payload"] to deep-link on tap.
@@ -195,9 +201,15 @@ func sendFCM(deviceToken, title, body, payload string) error {
 
 // sendPushToToken dispatches to the right transport for a device's platform:
 // Android → FCM, everything else (iOS / unknown) → APNs.
-func sendPushToToken(platform, token, title, body, payload string) error {
+//
+// ttl is the message's shelf life while the device is unreachable (off /
+// no network): time-sensitive pushes (astro events — "New Moon today") must
+// expire instead of being delivered days late when the phone comes back
+// online. Pass 0 for messages that stay relevant (admin/organizational),
+// keeping the transport defaults (FCM ~4 weeks, APNs limited storage).
+func sendPushToToken(platform, token, title, body, payload string, ttl time.Duration) error {
 	if strings.EqualFold(platform, "Android") {
-		return sendFCM(token, title, body, payload)
+		return sendFCM(token, title, body, payload, ttl)
 	}
-	return sendAPNs(token, title, body, payload)
+	return sendAPNs(token, title, body, payload, ttl)
 }

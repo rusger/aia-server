@@ -488,6 +488,13 @@ func refreshPushEvents() {
 // Delivery: timezone-aware, once per (event, device)
 // ===========================================================================
 
+// eventPushTTL bounds how long APNs/FCM may hold an astro-event push for an
+// unreachable device (off / no network). "New Moon today" delivered days
+// later is noise, so the message expires instead of being queued — unlike
+// admin/organizational pushes, which are sent without expiry. 12h keeps
+// delivery within the event's own day (sends go out at local morning).
+const eventPushTTL = 12 * time.Hour
+
 func deliverDueEvents() {
 	now := time.Now().UTC()
 
@@ -586,7 +593,7 @@ func deliverDueEvents() {
 				continue // already sent
 			}
 			title, body := eventText(e.kind, e.params, d.lang)
-			if err := sendPushToToken(d.platform, d.token, title, body, e.payld); err != nil {
+			if err := sendPushToToken(d.platform, d.token, title, body, e.payld, eventPushTTL); err != nil {
 				failed++
 				if isDeadPushToken(err) {
 					// Token permanently invalid (app uninstalled / token rotated):

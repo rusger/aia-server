@@ -398,7 +398,7 @@ func sendReferralPush(email, kind string) {
 	title, body := referralPushText(userAppLanguage(email), kind)
 	payload := "astro:referral:" + kind
 	for _, t := range targets {
-		if sendErr := sendAPNs(t.token, title, body, payload); sendErr != nil {
+		if sendErr := sendAPNs(t.token, title, body, payload, 0); sendErr != nil {
 			log.Printf("⚠️ [referral] push to %s failed: %v", t.deviceID, sendErr)
 			continue
 		}
