@@ -105,27 +105,86 @@ func classifyGoogle(name, _ string) string {
 	return "other"
 }
 
+// churnReasonCats: why a subscription ended, per expired/revoked event.
+//   voluntary           — user turned auto-renew off and the period ran out
+//   trial_not_converted — voluntary churn ≤8 days after first purchase with no
+//                         renewals ever: an intro/trial week that didn't convert
+//   billing             — payment failed (card declined, insufficient funds …)
+//   price_increase      — user didn't consent to a price increase
+//   refund              — refunded / access revoked by the store
+//   other               — store sent no usable reason
+var churnReasonCats = []string{"voluntary", "trial_not_converted", "billing", "price_increase", "refund", "other"}
+
+const trialChurnMaxDays = 8
+
+// appleChurnReason maps a churn event (EXPIRED / GRACE_PERIOD_EXPIRED /
+// REVOKE / REFUND) to a reason. Apple encodes it in the EXPIRED subtype; when
+// that is empty, fall back to what we saw earlier on the same subscription.
+func appleChurnReason(ntype, subtype string, s *subAgg) string {
+	switch ntype {
+	case "REVOKE", "REFUND":
+		return "refund"
+	case "GRACE_PERIOD_EXPIRED":
+		return "billing"
+	}
+	switch subtype {
+	case "VOLUNTARY":
+		return "voluntary"
+	case "BILLING_RETRY":
+		return "billing"
+	case "PRICE_INCREASE":
+		return "price_increase"
+	}
+	return inferChurnReason(s)
+}
+
+// googleChurnReason: Play RTDN carries no reason on SUBSCRIPTION_EXPIRED, so
+// it is always inferred from the preceding events of the subscription.
+func googleChurnReason(ntype, _ string, s *subAgg) string {
+	if ntype == "SUBSCRIPTION_REVOKED" {
+		return "refund"
+	}
+	return inferChurnReason(s)
+}
+
+func inferChurnReason(s *subAgg) string {
+	if s != nil {
+		if s.pendingFailed {
+			return "billing"
+		}
+		if s.autoOff {
+			return "voluntary"
+		}
+	}
+	return "other"
+}
+
 type subAgg struct {
-	alive      bool
-	autoOff    bool
-	renewCount int
-	plan       string
+	alive         bool
+	autoOff       bool
+	pendingFailed bool // saw failed-to-renew after the last successful cycle
+	renewCount    int
+	firstNew      time.Time
+	plan          string
 }
 
 type renewalAgg struct {
-	cycle  map[string]map[string]int // window -> category -> count
-	states map[string]int
-	byPlan map[string]map[string]int // plan -> {renewed,failed,expired}
-	total  int
+	cycle   map[string]map[string]int // window -> category -> count
+	states  map[string]int
+	byPlan  map[string]map[string]int // plan -> {renewed,failed,expired}
+	reasons map[string]map[string]int // window -> churn reason -> count
+	total   int
 }
 
 // computeRenewalAgg reads one source table (ordered by subscription key + time)
-// and aggregates cycle outcomes, subscription states and a by-plan split.
+// and aggregates cycle outcomes, subscription states, a by-plan split and a
+// churn-reason breakdown.
 // `query` must select: typeCol, subtypeCol, planSrcCol, subKeyCol, created_at.
-func computeRenewalAgg(query string, classify func(string, string) string) renewalAgg {
+func computeRenewalAgg(query string, classify func(string, string) string, churnReason func(string, string, *subAgg) string) renewalAgg {
 	agg := renewalAgg{
-		cycle:  map[string]map[string]int{},
-		byPlan: map[string]map[string]int{},
+		cycle:   map[string]map[string]int{},
+		byPlan:  map[string]map[string]int{},
+		reasons: map[string]map[string]int{},
 	}
 	for _, win := range renewalWindows {
 		m := map[string]int{}
@@ -133,6 +192,11 @@ func computeRenewalAgg(query string, classify func(string, string) string) renew
 			m[c] = 0
 		}
 		agg.cycle[win.Label] = m
+		r := map[string]int{}
+		for _, c := range churnReasonCats {
+			r[c] = 0
+		}
+		agg.reasons[win.Label] = r
 	}
 	subs := map[string]*subAgg{}
 	now := time.Now()
@@ -171,6 +235,23 @@ func computeRenewalAgg(query string, classify func(string, string) string) renew
 			agg.byPlan[plan][cat]++
 		}
 
+		// Churn reason: classify BEFORE this event mutates the sub state,
+		// since inference relies on what happened earlier on the same sub.
+		if cat == "expired" || cat == "revoke" {
+			s := subs[subKey] // nil when subKey is "" or unseen — fine
+			reason := churnReason(t1, t2, s)
+			if (reason == "voluntary" || reason == "other") && s != nil &&
+				s.renewCount == 0 && !s.firstNew.IsZero() && !ct.IsZero() &&
+				ct.Sub(s.firstNew) <= trialChurnMaxDays*24*time.Hour {
+				reason = "trial_not_converted"
+			}
+			for _, win := range renewalWindows {
+				if win.Days == 0 || (!ct.IsZero() && ct.After(now.AddDate(0, 0, -win.Days))) {
+					agg.reasons[win.Label][reason]++
+				}
+			}
+		}
+
 		if subKey != "" {
 			s := subs[subKey]
 			if s == nil {
@@ -182,10 +263,15 @@ func computeRenewalAgg(query string, classify func(string, string) string) renew
 			}
 			switch cat {
 			case "new":
-				s.alive, s.autoOff = true, false
+				s.alive, s.autoOff, s.pendingFailed = true, false, false
+				if s.firstNew.IsZero() && !ct.IsZero() {
+					s.firstNew = ct
+				}
 			case "renewed":
-				s.alive, s.autoOff = true, false
+				s.alive, s.autoOff, s.pendingFailed = true, false, false
 				s.renewCount++
+			case "failed":
+				s.pendingFailed = true
 			case "autooff":
 				s.autoOff = true
 			case "autoon":
@@ -219,10 +305,11 @@ func computeRenewalAgg(query string, classify func(string, string) string) renew
 
 func combineAggs(a, b renewalAgg) renewalAgg {
 	out := renewalAgg{
-		cycle:  map[string]map[string]int{},
-		byPlan: map[string]map[string]int{},
-		states: map[string]int{},
-		total:  a.total + b.total,
+		cycle:   map[string]map[string]int{},
+		byPlan:  map[string]map[string]int{},
+		states:  map[string]int{},
+		reasons: map[string]map[string]int{},
+		total:   a.total + b.total,
 	}
 	for _, win := range renewalWindows {
 		m := map[string]int{}
@@ -230,6 +317,11 @@ func combineAggs(a, b renewalAgg) renewalAgg {
 			m[c] = a.cycle[win.Label][c] + b.cycle[win.Label][c]
 		}
 		out.cycle[win.Label] = m
+		r := map[string]int{}
+		for _, c := range churnReasonCats {
+			r[c] = a.reasons[win.Label][c] + b.reasons[win.Label][c]
+		}
+		out.reasons[win.Label] = r
 	}
 	for _, src := range []map[string]map[string]int{a.byPlan, b.byPlan} {
 		for plan, m := range src {
@@ -304,12 +396,38 @@ func formatStates(states map[string]int) map[string]interface{} {
 	}
 }
 
+// formatReasons renders the churn-reason breakdown per window: absolute count
+// and share of everything churned in that window.
+func formatReasons(reasons map[string]map[string]int) map[string]interface{} {
+	out := map[string]interface{}{}
+	for label, m := range reasons {
+		total := 0
+		for _, c := range churnReasonCats {
+			total += m[c]
+		}
+		rs := map[string]interface{}{}
+		for _, c := range churnReasonCats {
+			var pct interface{}
+			if total > 0 {
+				pct = float64(m[c]) / float64(total)
+			}
+			rs[c] = map[string]interface{}{"count": m[c], "pct": pct}
+		}
+		out[label] = map[string]interface{}{
+			"total_churned": total,
+			"reasons":       rs,
+		}
+	}
+	return out
+}
+
 func formatPlatform(agg renewalAgg) map[string]interface{} {
 	return map[string]interface{}{
 		"total_events":        agg.total,
 		"cycle_outcomes":      formatCycle(agg.cycle),
 		"subscription_states": formatStates(agg.states),
 		"by_plan":             formatPlan(agg.byPlan),
+		"churn_reasons":       formatReasons(agg.reasons),
 	}
 }
 
@@ -337,12 +455,14 @@ func adminRenewalStats(w http.ResponseWriter, r *http.Request) {
 		 FROM apple_notifications
 		 ORDER BY original_transaction_id, created_at ASC, id ASC`,
 		classifyApple,
+		appleChurnReason,
 	)
 	google := computeRenewalAgg(
 		`SELECT notification_name, '', COALESCE(subscription_id,''), COALESCE(purchase_token,''), created_at
 		 FROM google_notifications
 		 ORDER BY purchase_token, created_at ASC, id ASC`,
 		classifyGoogle,
+		googleChurnReason,
 	)
 	combined := combineAggs(apple, google)
 
@@ -353,9 +473,10 @@ func adminRenewalStats(w http.ResponseWriter, r *http.Request) {
 		"coverage":            "apple+google",
 		"total_events":        combined.total,
 		"low_confidence":      allTimeDue < 20,
-		"cycle_outcomes":      formatCycle(combined.cycle),   // COMBINED (Apple+Google)
-		"subscription_states": formatStates(combined.states), // COMBINED
-		"by_plan":             formatPlan(combined.byPlan),   // COMBINED
+		"cycle_outcomes":      formatCycle(combined.cycle),     // COMBINED (Apple+Google)
+		"subscription_states": formatStates(combined.states),   // COMBINED
+		"by_plan":             formatPlan(combined.byPlan),     // COMBINED
+		"churn_reasons":       formatReasons(combined.reasons), // COMBINED
 		"by_platform": map[string]interface{}{
 			"apple":  formatPlatform(apple),
 			"google": formatPlatform(google),
@@ -364,6 +485,7 @@ func adminRenewalStats(w http.ResponseWriter, r *http.Request) {
 			"Top-level cycle_outcomes / subscription_states / by_plan are COMBINED Apple+Google. See by_platform for the split.",
 			"renewal_rate = renewed / (renewed + failed_to_renew + expired) for billing cycles that came due in the window — the cleanest monthly renewal rate.",
 			"auto_renew_off = active subs with auto-renew turned off (Apple AUTO_RENEW_DISABLED, Google SUBSCRIPTION_CANCELED); expected to churn at period end.",
+			"churn_reasons = WHY each expired/revoked sub left, per window, count + pct of total churned: voluntary (user cancelled), trial_not_converted (voluntary churn ≤8 days after first purchase, never renewed — an intro/trial that didn't convert), billing (card declined / insufficient funds), price_increase (didn't accept a price change), refund (revoked by store), other (no reason available). Apple reasons come from the EXPIRED subtype; Google is inferred from preceding RTDN events.",
 			"Google events arrive via Play RTDN; if google.total_events is 0, no Android events have been received yet.",
 			"low_confidence=true means <20 billing cycles overall — any rate is statistically noisy.",
 		},
