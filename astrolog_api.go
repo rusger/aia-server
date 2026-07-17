@@ -186,6 +186,10 @@ type ChatGPTProxyRequest struct {
     DeviceID    string             `json:"device_id"`
     Timestamp   int64              `json:"timestamp"`
     Signature   string             `json:"signature"`
+    // Optional cost-accounting tag. Lets overhead calls (the answer-specificity
+    // "barnum_judge" / "barnum_fix" passes) be logged in api_calls under their
+    // own call_type. Defaults to "chatgpt" when empty.
+    CallType    string             `json:"call_type,omitempty"`
 }
 
 // ChatGPT proxy response
@@ -1215,6 +1219,41 @@ func initAnalyticsDB() error {
         return fmt.Errorf("failed to create analytics_events table: %v", err)
     }
 
+    // Create barnum_stats table — answer-specificity / Barnum-statement
+    // telemetry, one row per interpretive AI answer. Aggregated BY FEATURE
+    // (screen / chat type), not by user, for the Stellar Vault dashboard.
+    //   sentences/anchored : deterministic anchor-density scan of the answer
+    //   specificity        : anchored/sentences on the FINAL answer (0..1)
+    //   judged             : 1 if the answer was sent to the LLM Barnum judge
+    //   barnum_found       : generic sentences the judge flagged in the original
+    //   barnum_after       : generic sentences remaining after the rewrite
+    //   corrected          : 1 if a corrective rewrite was applied
+    createBarnumTableSQL := `
+    CREATE TABLE IF NOT EXISTS barnum_stats (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        model TEXT,
+        language TEXT,
+        sentences INTEGER DEFAULT 0,
+        anchored INTEGER DEFAULT 0,
+        specificity REAL DEFAULT 0,
+        judged INTEGER DEFAULT 0,
+        barnum_found INTEGER DEFAULT 0,
+        barnum_after INTEGER DEFAULT 0,
+        corrected INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_barnum_feature ON barnum_stats(feature);
+    CREATE INDEX IF NOT EXISTS idx_barnum_date ON barnum_stats(created_at);
+    `
+
+    _, err = analyticsDB.Exec(createBarnumTableSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create barnum_stats table: %v", err)
+    }
+
     log.Println("✅ Analytics database initialized successfully")
     return nil
 }
@@ -1235,6 +1274,29 @@ func logAPICallWithTokens(deviceID, callType, model string, promptTokens, comple
             deviceID, callType, model, promptTokens, completionTokens, totalTokens, cachedTokens)
         if err != nil {
             log.Printf("⚠️ Failed to log API call: %v", err)
+        }
+    }()
+}
+
+// Insert one answer-specificity / Barnum telemetry row. Fire-and-forget,
+// best-effort — mirrors logAPICallWithTokens.
+func logBarnumReport(deviceID, feature, model, language string, sentences, anchored int, specificity float64, judged bool, barnumFound, barnumAfter int, corrected bool) {
+    if analyticsDB == nil {
+        return
+    }
+    judgedInt, correctedInt := 0, 0
+    if judged {
+        judgedInt = 1
+    }
+    if corrected {
+        correctedInt = 1
+    }
+    go func() {
+        _, err := analyticsDB.Exec(
+            `INSERT INTO barnum_stats (device_id, feature, model, language, sentences, anchored, specificity, judged, barnum_found, barnum_after, corrected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, feature, model, language, sentences, anchored, specificity, judgedInt, barnumFound, barnumAfter, correctedInt)
+        if err != nil {
+            log.Printf("⚠️ Failed to log barnum report: %v", err)
         }
     }()
 }
@@ -2962,8 +3024,14 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     log.Printf("✅ ChatGPT request successful, response length: %d, tokens: %d prompt (%d cached) + %d completion = %d total",
         len(content), promptTokens, cachedTokens, completionTokens, totalTokens)
 
-    // Log API call with token usage for analytics
-    logAPICallWithTokens(deviceID, "chatgpt", req.Model, promptTokens, completionTokens, totalTokens, cachedTokens)
+    // Log API call with token usage for analytics. call_type defaults to
+    // "chatgpt" but overhead passes (barnum_judge / barnum_fix) tag themselves
+    // so their cost stays separable in the usage reports.
+    callType := req.CallType
+    if callType == "" {
+        callType = "chatgpt"
+    }
+    logAPICallWithTokens(deviceID, callType, req.Model, promptTokens, completionTokens, totalTokens, cachedTokens)
 
     // Return success response
     json.NewEncoder(w).Encode(ChatGPTProxyResponse{
@@ -6318,6 +6386,171 @@ func adminToggleSuper(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// BarnumReportRequest is one answer-specificity telemetry row sent by the app
+// after an interpretive AI answer.
+type BarnumReportRequest struct {
+    Feature     string  `json:"feature"`
+    Model       string  `json:"model"`
+    Language    string  `json:"language"`
+    Sentences   int     `json:"sentences"`
+    Anchored    int     `json:"anchored"`
+    Specificity float64 `json:"specificity"`
+    Judged      bool    `json:"judged"`
+    BarnumFound int     `json:"barnum_found"`
+    BarnumAfter int     `json:"barnum_after"`
+    Corrected   bool    `json:"corrected"`
+}
+
+// barnumReport ingests one Barnum / answer-specificity telemetry row.
+// JWT-protected; the device identity comes from the token, never the body.
+func barnumReport(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+
+    var req BarnumReportRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid request body"})
+        return
+    }
+    if req.Feature == "" {
+        req.Feature = "other"
+    }
+
+    logBarnumReport(claims.DeviceID, req.Feature, req.Model, req.Language,
+        req.Sentences, req.Anchored, req.Specificity, req.Judged,
+        req.BarnumFound, req.BarnumAfter, req.Corrected)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+// adminGetBarnumStats returns answer-specificity / Barnum statistics aggregated
+// BY FEATURE (screen / chat type) for the Stellar Vault dashboard. Read-only,
+// gated by the admin_email + admin_secret query-param pattern. Optional ?days=N
+// limits the window (default 30; days=0 → all time).
+func adminGetBarnumStats(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+        return
+    }
+    if analyticsDB == nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Analytics database not initialized"})
+        return
+    }
+
+    days := 30
+    if d := r.URL.Query().Get("days"); d != "" {
+        if n, err := strconv.Atoi(d); err == nil && n >= 0 {
+            days = n
+        }
+    }
+
+    const selectSQL = `
+        SELECT feature,
+               COUNT(*)                                          AS answers,
+               COALESCE(SUM(judged), 0)                          AS judged,
+               COALESCE(SUM(corrected), 0)                       AS corrected,
+               COALESCE(AVG(specificity), 0)                     AS avg_spec,
+               COALESCE(SUM(barnum_found), 0)                    AS found,
+               COALESCE(SUM(barnum_found - barnum_after), 0)     AS fixed,
+               COALESCE(SUM(barnum_after), 0)                    AS remaining,
+               COALESCE(SUM(CASE WHEN barnum_found > 0 THEN 1 ELSE 0 END), 0) AS generic_answers
+        FROM barnum_stats`
+
+    var rows *sql.Rows
+    var err error
+    if days > 0 {
+        rows, err = analyticsDB.Query(selectSQL+`
+        WHERE created_at >= datetime('now', ?)
+        GROUP BY feature ORDER BY answers DESC`, fmt.Sprintf("-%d days", days))
+    } else {
+        rows, err = analyticsDB.Query(selectSQL + `
+        GROUP BY feature ORDER BY answers DESC`)
+    }
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+        return
+    }
+    defer rows.Close()
+
+    byFeature := []map[string]interface{}{}
+    var totAnswers, totJudged, totCorrected, totFound, totFixed, totRemaining, totGeneric int
+    var specWeighted float64
+
+    for rows.Next() {
+        var feature string
+        var answers, judged, corrected, found, fixed, remaining, generic int
+        var avgSpec float64
+        if err := rows.Scan(&feature, &answers, &judged, &corrected, &avgSpec, &found, &fixed, &remaining, &generic); err != nil {
+            continue
+        }
+        judgeRate, genericRate := 0.0, 0.0
+        if answers > 0 {
+            judgeRate = float64(judged) / float64(answers)
+            genericRate = float64(generic) / float64(answers)
+        }
+        byFeature = append(byFeature, map[string]interface{}{
+            "feature":          feature,
+            "answers":          answers,
+            "judged":           judged,
+            "judge_rate":       judgeRate,
+            "corrected":        corrected,
+            "avg_specificity":  avgSpec,
+            "barnum_found":     found,
+            "barnum_fixed":     fixed,
+            "barnum_remaining": remaining,
+            "generic_answers":  generic,
+            "generic_rate":     genericRate,
+        })
+        totAnswers += answers
+        totJudged += judged
+        totCorrected += corrected
+        totFound += found
+        totFixed += fixed
+        totRemaining += remaining
+        totGeneric += generic
+        specWeighted += avgSpec * float64(answers)
+    }
+
+    avgSpecificity := 0.0
+    if totAnswers > 0 {
+        avgSpecificity = specWeighted / float64(totAnswers)
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success":    true,
+        "days":       days,
+        "by_feature": byFeature,
+        "totals": map[string]interface{}{
+            "answers":          totAnswers,
+            "judged":           totJudged,
+            "corrected":        totCorrected,
+            "barnum_found":     totFound,
+            "barnum_fixed":     totFixed,
+            "barnum_remaining": totRemaining,
+            "generic_answers":  totGeneric,
+            "avg_specificity":  avgSpecificity,
+        },
+    })
+}
+
 // Admin endpoint to get analytics data
 func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -8412,6 +8645,7 @@ func main() {
     router.HandleFunc("/api/transit-year", jwtAuthMiddleware(calculateTransitYear)).Methods("POST")
     router.HandleFunc("/api/transit-multi-year", jwtAuthMiddleware(calculateTransitMultiYear)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
+    router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
@@ -8454,6 +8688,7 @@ func main() {
     router.HandleFunc("/api/admin/device-sharing", adminGuardMiddleware(adminDeviceSharing)).Methods("GET")
     router.HandleFunc("/api/admin/toggle-super", adminGuardMiddleware(adminToggleSuper)).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
+    router.HandleFunc("/api/admin/barnum-stats", adminGuardMiddleware(adminGetBarnumStats)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
     router.HandleFunc("/api/admin/user-appearance", adminGuardMiddleware(adminGetUserAppearance)).Methods("GET")
     router.HandleFunc("/api/admin/user-languages", adminGuardMiddleware(adminGetUserLanguages)).Methods("GET")
