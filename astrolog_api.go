@@ -1241,6 +1241,7 @@ func initAnalyticsDB() error {
         judged INTEGER DEFAULT 0,
         barnum_found INTEGER DEFAULT 0,
         barnum_after INTEGER DEFAULT 0,
+        barnum_symbolic INTEGER DEFAULT 0,
         corrected INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -1253,6 +1254,10 @@ func initAnalyticsDB() error {
     if err != nil {
         return fmt.Errorf("failed to create barnum_stats table: %v", err)
     }
+
+    // Additive column for DBs created before the is_symbolic diagnostic existed.
+    // Ignore errors - column may already exist.
+    analyticsDB.Exec(`ALTER TABLE barnum_stats ADD COLUMN barnum_symbolic INTEGER DEFAULT 0`)
 
     log.Println("✅ Analytics database initialized successfully")
     return nil
@@ -1280,7 +1285,7 @@ func logAPICallWithTokens(deviceID, callType, model string, promptTokens, comple
 
 // Insert one answer-specificity / Barnum telemetry row. Fire-and-forget,
 // best-effort — mirrors logAPICallWithTokens.
-func logBarnumReport(deviceID, feature, model, language string, sentences, anchored int, specificity float64, judged bool, barnumFound, barnumAfter int, corrected bool) {
+func logBarnumReport(deviceID, feature, model, language string, sentences, anchored int, specificity float64, judged bool, barnumFound, barnumAfter, barnumSymbolic int, corrected bool) {
     if analyticsDB == nil {
         return
     }
@@ -1293,8 +1298,8 @@ func logBarnumReport(deviceID, feature, model, language string, sentences, ancho
     }
     go func() {
         _, err := analyticsDB.Exec(
-            `INSERT INTO barnum_stats (device_id, feature, model, language, sentences, anchored, specificity, judged, barnum_found, barnum_after, corrected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            deviceID, feature, model, language, sentences, anchored, specificity, judgedInt, barnumFound, barnumAfter, correctedInt)
+            `INSERT INTO barnum_stats (device_id, feature, model, language, sentences, anchored, specificity, judged, barnum_found, barnum_after, barnum_symbolic, corrected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, feature, model, language, sentences, anchored, specificity, judgedInt, barnumFound, barnumAfter, barnumSymbolic, correctedInt)
         if err != nil {
             log.Printf("⚠️ Failed to log barnum report: %v", err)
         }
@@ -6395,10 +6400,11 @@ type BarnumReportRequest struct {
     Sentences   int     `json:"sentences"`
     Anchored    int     `json:"anchored"`
     Specificity float64 `json:"specificity"`
-    Judged      bool    `json:"judged"`
-    BarnumFound int     `json:"barnum_found"`
-    BarnumAfter int     `json:"barnum_after"`
-    Corrected   bool    `json:"corrected"`
+    Judged         bool `json:"judged"`
+    BarnumFound    int  `json:"barnum_found"`
+    BarnumAfter    int  `json:"barnum_after"`
+    BarnumSymbolic int  `json:"barnum_symbolic"`
+    Corrected      bool `json:"corrected"`
 }
 
 // barnumReport ingests one Barnum / answer-specificity telemetry row.
@@ -6425,7 +6431,7 @@ func barnumReport(w http.ResponseWriter, r *http.Request) {
 
     logBarnumReport(claims.DeviceID, req.Feature, req.Model, req.Language,
         req.Sentences, req.Anchored, req.Specificity, req.Judged,
-        req.BarnumFound, req.BarnumAfter, req.Corrected)
+        req.BarnumFound, req.BarnumAfter, req.BarnumSymbolic, req.Corrected)
 
     json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
@@ -6471,6 +6477,7 @@ func adminGetBarnumStats(w http.ResponseWriter, r *http.Request) {
                COALESCE(SUM(barnum_found), 0)                    AS found,
                COALESCE(SUM(barnum_found - barnum_after), 0)     AS fixed,
                COALESCE(SUM(barnum_after), 0)                    AS remaining,
+               COALESCE(SUM(barnum_symbolic), 0)                 AS symbolic,
                COALESCE(SUM(CASE WHEN barnum_found > 0 THEN 1 ELSE 0 END), 0) AS generic_answers
         FROM barnum_stats`
 
@@ -6491,14 +6498,14 @@ func adminGetBarnumStats(w http.ResponseWriter, r *http.Request) {
     defer rows.Close()
 
     byFeature := []map[string]interface{}{}
-    var totAnswers, totJudged, totCorrected, totFound, totFixed, totRemaining, totGeneric int
+    var totAnswers, totJudged, totCorrected, totFound, totFixed, totRemaining, totSymbolic, totGeneric int
     var specWeighted float64
 
     for rows.Next() {
         var feature string
-        var answers, judged, corrected, found, fixed, remaining, generic int
+        var answers, judged, corrected, found, fixed, remaining, symbolic, generic int
         var avgSpec float64
-        if err := rows.Scan(&feature, &answers, &judged, &corrected, &avgSpec, &found, &fixed, &remaining, &generic); err != nil {
+        if err := rows.Scan(&feature, &answers, &judged, &corrected, &avgSpec, &found, &fixed, &remaining, &symbolic, &generic); err != nil {
             continue
         }
         judgeRate, genericRate := 0.0, 0.0
@@ -6516,6 +6523,7 @@ func adminGetBarnumStats(w http.ResponseWriter, r *http.Request) {
             "barnum_found":     found,
             "barnum_fixed":     fixed,
             "barnum_remaining": remaining,
+            "barnum_symbolic":  symbolic,
             "generic_answers":  generic,
             "generic_rate":     genericRate,
         })
@@ -6525,6 +6533,7 @@ func adminGetBarnumStats(w http.ResponseWriter, r *http.Request) {
         totFound += found
         totFixed += fixed
         totRemaining += remaining
+        totSymbolic += symbolic
         totGeneric += generic
         specWeighted += avgSpec * float64(answers)
     }
@@ -6545,6 +6554,7 @@ func adminGetBarnumStats(w http.ResponseWriter, r *http.Request) {
             "barnum_found":     totFound,
             "barnum_fixed":     totFixed,
             "barnum_remaining": totRemaining,
+            "barnum_symbolic":  totSymbolic,
             "generic_answers":  totGeneric,
             "avg_specificity":  avgSpecificity,
         },
