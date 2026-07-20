@@ -1259,6 +1259,40 @@ func initAnalyticsDB() error {
     // Ignore errors - column may already exist.
     analyticsDB.Exec(`ALTER TABLE barnum_stats ADD COLUMN barnum_symbolic INTEGER DEFAULT 0`)
 
+    // ai_guard_events — one row per defensive-layer event in the app's AI
+    // pipeline (the guards are fail-open on the client, so this table is the
+    // only place their misses and saves become visible):
+    //   kind     : event discriminator — refusal_retry, llm_error,
+    //              grounding_violation, grounding_cut, barnum_rollback,
+    //              barnum_screen_reject, barnum_wholetext_fallback,
+    //              omission_fired, ...
+    //   count    : magnitude when the event carries one (violations found,
+    //              rewrites rejected); 1 for simple occurrences.
+    //   detail   : short non-PII note (error class, call type) — never
+    //              answer text.
+    createGuardTableSQL := `
+    CREATE TABLE IF NOT EXISTS ai_guard_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id TEXT NOT NULL,
+        feature TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        model TEXT DEFAULT '',
+        language TEXT DEFAULT '',
+        count INTEGER DEFAULT 1,
+        detail TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_guard_kind ON ai_guard_events(kind);
+    CREATE INDEX IF NOT EXISTS idx_guard_feature ON ai_guard_events(feature);
+    CREATE INDEX IF NOT EXISTS idx_guard_date ON ai_guard_events(created_at);
+    `
+
+    _, err = analyticsDB.Exec(createGuardTableSQL)
+    if err != nil {
+        return fmt.Errorf("failed to create ai_guard_events table: %v", err)
+    }
+
     log.Println("✅ Analytics database initialized successfully")
     return nil
 }
@@ -1302,6 +1336,27 @@ func logBarnumReport(deviceID, feature, model, language string, sentences, ancho
             deviceID, feature, model, language, sentences, anchored, specificity, judgedInt, barnumFound, barnumAfter, barnumSymbolic, correctedInt)
         if err != nil {
             log.Printf("⚠️ Failed to log barnum report: %v", err)
+        }
+    }()
+}
+
+// logGuardEvent inserts one AI-guard telemetry row (see ai_guard_events).
+func logGuardEvent(deviceID, feature, kind, model, language string, count int, detail string) {
+    if analyticsDB == nil {
+        return
+    }
+    if count < 1 {
+        count = 1
+    }
+    if len(detail) > 200 {
+        detail = detail[:200]
+    }
+    go func() {
+        _, err := analyticsDB.Exec(
+            `INSERT INTO ai_guard_events (device_id, feature, kind, model, language, count, detail) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, feature, kind, model, language, count, detail)
+        if err != nil {
+            log.Printf("⚠️ Failed to log guard event: %v", err)
         }
     }()
 }
@@ -6436,6 +6491,130 @@ func barnumReport(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
+// GuardEventRequest is one AI-guard telemetry row sent by the app when a
+// defensive layer of the AI pipeline fires (or fails). Counts only — never
+// answer text.
+type GuardEventRequest struct {
+    Feature  string `json:"feature"`
+    Kind     string `json:"kind"`
+    Model    string `json:"model"`
+    Language string `json:"language"`
+    Count    int    `json:"count"`
+    Detail   string `json:"detail"`
+}
+
+// aiGuardReport ingests one AI-guard telemetry row. JWT-protected; the
+// device identity comes from the token, never the body.
+func aiGuardReport(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    claims, ok := r.Context().Value("claims").(*JWTClaims)
+    if !ok {
+        w.WriteHeader(http.StatusUnauthorized)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+
+    var req GuardEventRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid request body"})
+        return
+    }
+    if req.Kind == "" {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "kind is required"})
+        return
+    }
+    if req.Feature == "" {
+        req.Feature = "other"
+    }
+
+    logGuardEvent(claims.DeviceID, req.Feature, req.Kind, req.Model,
+        req.Language, req.Count, req.Detail)
+
+    json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+// adminGetGuardStats returns AI-guard event statistics aggregated by kind and
+// feature for the Stellar Vault dashboard. Read-only, admin-gated. Optional
+// ?days=N limits the window (default 30; days=0 → all time).
+func adminGetGuardStats(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+
+    adminEmail := r.URL.Query().Get("admin_email")
+    adminSecret := r.URL.Query().Get("admin_secret")
+
+    if !isAdminEmail(adminEmail) {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+        return
+    }
+    if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+        return
+    }
+    if analyticsDB == nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Analytics database not initialized"})
+        return
+    }
+
+    days := 30
+    if d := r.URL.Query().Get("days"); d != "" {
+        if n, err := strconv.Atoi(d); err == nil && n >= 0 {
+            days = n
+        }
+    }
+
+    const selectSQL = `
+        SELECT kind, feature,
+               COUNT(*)               AS events,
+               COALESCE(SUM(count),0) AS total_count,
+               COUNT(DISTINCT device_id) AS devices,
+               MAX(created_at)        AS last_seen
+        FROM ai_guard_events`
+
+    var rows *sql.Rows
+    var err error
+    if days > 0 {
+        rows, err = analyticsDB.Query(selectSQL+`
+        WHERE created_at >= datetime('now', ?)
+        GROUP BY kind, feature ORDER BY kind, events DESC`, fmt.Sprintf("-%d days", days))
+    } else {
+        rows, err = analyticsDB.Query(selectSQL + `
+        GROUP BY kind, feature ORDER BY kind, events DESC`)
+    }
+    if err != nil {
+        json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+        return
+    }
+    defer rows.Close()
+
+    byKind := []map[string]interface{}{}
+    for rows.Next() {
+        var kind, feature, lastSeen string
+        var events, totalCount, devices int
+        if err := rows.Scan(&kind, &feature, &events, &totalCount, &devices, &lastSeen); err != nil {
+            continue
+        }
+        byKind = append(byKind, map[string]interface{}{
+            "kind":        kind,
+            "feature":     feature,
+            "events":      events,
+            "total_count": totalCount,
+            "devices":     devices,
+            "last_seen":   lastSeen,
+        })
+    }
+
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "success": true,
+        "days":    days,
+        "rows":    byKind,
+    })
+}
+
 // adminGetBarnumStats returns answer-specificity / Barnum statistics aggregated
 // BY FEATURE (screen / chat type) for the Stellar Vault dashboard. Read-only,
 // gated by the admin_email + admin_secret query-param pattern. Optional ?days=N
@@ -8656,6 +8835,7 @@ func main() {
     router.HandleFunc("/api/transit-multi-year", jwtAuthMiddleware(calculateTransitMultiYear)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
+    router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
@@ -8699,6 +8879,7 @@ func main() {
     router.HandleFunc("/api/admin/toggle-super", adminGuardMiddleware(adminToggleSuper)).Methods("POST")
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
     router.HandleFunc("/api/admin/barnum-stats", adminGuardMiddleware(adminGetBarnumStats)).Methods("GET")
+    router.HandleFunc("/api/admin/ai-guard-stats", adminGuardMiddleware(adminGetGuardStats)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
     router.HandleFunc("/api/admin/user-appearance", adminGuardMiddleware(adminGetUserAppearance)).Methods("GET")
     router.HandleFunc("/api/admin/user-languages", adminGuardMiddleware(adminGetUserLanguages)).Methods("GET")
