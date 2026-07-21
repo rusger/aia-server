@@ -2853,27 +2853,116 @@ func validateChatGPTSignature(req ChatGPTProxyRequest) bool {
     return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
 }
 
+// Daily AI-call ceilings by entitlement tier. These are ABUSE caps set well
+// above real usage (measured free p90≈11, paid peak≈192 calls/day), NOT
+// normal-use budgets — a legitimate user should never hit them. A limit of 0
+// means unlimited (super). Chosen by the owner 2026-07-21.
+const (
+    aiLimitFree  = 25  // free, past the 7-day trial
+    aiLimitTrial = 80  // free, within 7 days of account creation (server trial)
+    aiLimitPaid  = 300 // active paid subscriber
+)
+
+// entitlementNotExpired reports whether a paid subscription_expiry is still in
+// the future. A NULL/empty expiry means no-expiry (lifetime) → still valid.
+// Mirrors the multi-format parsing in getUserInfo (Go stores times with tz).
+func entitlementNotExpired(expiry sql.NullString) bool {
+    if !expiry.Valid || expiry.String == "" {
+        return true
+    }
+    formats := []string{
+        "2006-01-02 15:04:05.999999999 -0700 MST",
+        "2006-01-02 15:04:05.999999999 +0000 UTC",
+        "2006-01-02 15:04:05",
+        time.RFC3339,
+    }
+    for _, f := range formats {
+        if t, err := time.Parse(f, expiry.String); err == nil {
+            return time.Now().Before(t)
+        }
+    }
+    return true // unparseable → fail open, treat as valid (matches getUserInfo)
+}
+
+// userEntitlement reads the caller's paid/super status from the DB — the single
+// source of truth. The client's JWT/claims are NEVER trusted for this. Uses the
+// same OR-with-device attribution as getUserInfo: a subscription may be tied to
+// the anonymous device account (device_id + "@device.astrolytix.app") rather
+// than the email account, so both are checked.
+func userEntitlement(email, deviceID string) (paid bool, super bool) {
+    check := func(id string) {
+        var subType string
+        var expiry sql.NullString
+        var isSuper int
+        if err := db.QueryRow(
+            `SELECT subscription_type, subscription_expiry, COALESCE(is_super,0) FROM users WHERE email = ?`,
+            id).Scan(&subType, &expiry, &isSuper); err != nil {
+            return
+        }
+        if isSuper == 1 {
+            super = true
+        }
+        if subType == "paid" && entitlementNotExpired(expiry) {
+            paid = true
+        }
+    }
+    check(email)
+    if (!paid || !super) && deviceID != "" && !strings.HasSuffix(email, "@device.astrolytix.app") {
+        check(deviceID + "@device.astrolytix.app")
+    }
+    return
+}
+
+// withinTrialWindow reports whether the account is inside its server-side 7-day
+// trial, anchored on users.created_at — NOT the client's SharedPreferences
+// "first use" timestamp, which resets when the app's data is cleared (an
+// infinite-trial hole). True if EITHER the email or the device account is
+// younger than 7 days.
+func withinTrialWindow(email, deviceID string) bool {
+    fresh := func(id string) bool {
+        var ageDays sql.NullFloat64
+        if err := db.QueryRow(
+            `SELECT julianday('now') - julianday(created_at) FROM users WHERE email = ?`,
+            id).Scan(&ageDays); err != nil {
+            return false
+        }
+        return ageDays.Valid && ageDays.Float64 < 7.0
+    }
+    if fresh(email) {
+        return true
+    }
+    if deviceID != "" && !strings.HasSuffix(email, "@device.astrolytix.app") {
+        return fresh(deviceID + "@device.astrolytix.app")
+    }
+    return false
+}
+
+// aiDailyLimitForUser returns the per-day chatgpt ceiling for this identity and
+// a short tier label for logging. A returned limit of 0 means unlimited.
+func aiDailyLimitForUser(email, deviceID string) (int, string) {
+    paid, super := userEntitlement(email, deviceID)
+    if super {
+        return 0, "super"
+    }
+    if paid {
+        return aiLimitPaid, "paid"
+    }
+    if withinTrialWindow(email, deviceID) {
+        return aiLimitTrial, "trial"
+    }
+    return aiLimitFree, "free"
+}
+
 // enforceModelForUser clamps the client-requested OpenAI model to what the
 // caller's DB-backed entitlement allows. The client picks a model from the
 // server-provided config (/api/user/info), but a patched APK can request
-// anything — so the tier check must happen here, against users.is_super, not
-// against whatever the app claims. Free/trial/paid may use MODEL_PREMIUM and
+// anything — so the tier check must happen here, against the DB, not against
+// whatever the app claims. Free/trial/paid may use MODEL_PREMIUM and
 // MODEL_ECONOMY (the freemium design gives AI to everyone); MODEL_SUPER is
 // is_super only. Unknown model strings (including legacy "o1"/"gpt-4o" from
 // old clients) are clamped, not rejected, so outdated apps keep working.
 func enforceModelForUser(email, deviceID, requested string) string {
-    isSuper := false
-    var flag sql.NullInt64
-    if err := db.QueryRow(`SELECT COALESCE(is_super,0) FROM users WHERE email = ?`, email).Scan(&flag); err == nil && flag.Valid && flag.Int64 == 1 {
-        isSuper = true
-    }
-    // Same OR-with-device rule as getUserInfo: super may be attributed to the
-    // anonymous device account rather than the email account.
-    if !isSuper && deviceID != "" && !strings.HasSuffix(email, "@device.astrolytix.app") {
-        if err := db.QueryRow(`SELECT COALESCE(is_super,0) FROM users WHERE email = ?`, deviceID+"@device.astrolytix.app").Scan(&flag); err == nil && flag.Valid && flag.Int64 == 1 {
-            isSuper = true
-        }
-    }
+    _, isSuper := userEntitlement(email, deviceID)
 
     if isSuper {
         switch requested {
@@ -2953,6 +3042,30 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
             Error:   "Rate limit exceeded. Please try again.",
         })
         return
+    }
+
+    // Daily AI ceiling by DB entitlement — the non-spoofable backstop against a
+    // patched free client spamming premium AI. Counted per device from the same
+    // api_calls log used for cost reporting. Returns 402 (not 429) so the client
+    // treats it as terminal and does NOT retry. Counting today's already-logged
+    // calls slightly under-counts a burst (logging is async) — acceptable for a
+    // coarse cost cap sitting far above real usage.
+    if limit, tier := aiDailyLimitForUser(claims.Email, deviceID); limit > 0 {
+        used := 0
+        if analyticsDB != nil {
+            analyticsDB.QueryRow(
+                `SELECT count(*) FROM api_calls WHERE device_id = ? AND call_type = 'chatgpt' AND created_at >= date('now')`,
+                deviceID).Scan(&used)
+        }
+        if used >= limit {
+            log.Printf("🚫 Daily AI limit reached: device=%s tier=%s used=%d limit=%d", deviceID, tier, used, limit)
+            w.WriteHeader(http.StatusPaymentRequired)
+            json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+                Success: false,
+                Error:   "Daily AI limit reached. Upgrade to Pro for higher limits.",
+            })
+            return
+        }
     }
 
     log.Printf("🤖 Proxying ChatGPT request for device: %s, model: %s", deviceID, req.Model)
