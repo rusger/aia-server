@@ -2853,6 +2853,44 @@ func validateChatGPTSignature(req ChatGPTProxyRequest) bool {
     return hmac.Equal([]byte(req.Signature), []byte(expectedSig))
 }
 
+// enforceModelForUser clamps the client-requested OpenAI model to what the
+// caller's DB-backed entitlement allows. The client picks a model from the
+// server-provided config (/api/user/info), but a patched APK can request
+// anything — so the tier check must happen here, against users.is_super, not
+// against whatever the app claims. Free/trial/paid may use MODEL_PREMIUM and
+// MODEL_ECONOMY (the freemium design gives AI to everyone); MODEL_SUPER is
+// is_super only. Unknown model strings (including legacy "o1"/"gpt-4o" from
+// old clients) are clamped, not rejected, so outdated apps keep working.
+func enforceModelForUser(email, deviceID, requested string) string {
+    isSuper := false
+    var flag sql.NullInt64
+    if err := db.QueryRow(`SELECT COALESCE(is_super,0) FROM users WHERE email = ?`, email).Scan(&flag); err == nil && flag.Valid && flag.Int64 == 1 {
+        isSuper = true
+    }
+    // Same OR-with-device rule as getUserInfo: super may be attributed to the
+    // anonymous device account rather than the email account.
+    if !isSuper && deviceID != "" && !strings.HasSuffix(email, "@device.astrolytix.app") {
+        if err := db.QueryRow(`SELECT COALESCE(is_super,0) FROM users WHERE email = ?`, deviceID+"@device.astrolytix.app").Scan(&flag); err == nil && flag.Valid && flag.Int64 == 1 {
+            isSuper = true
+        }
+    }
+
+    if isSuper {
+        switch requested {
+        case MODEL_SUPER, MODEL_PREMIUM, MODEL_ECONOMY:
+            return requested
+        }
+        log.Printf("🔒 Model %q not in config — clamped to %s (super user %s)", requested, MODEL_SUPER, email)
+        return MODEL_SUPER
+    }
+    switch requested {
+    case MODEL_PREMIUM, MODEL_ECONOMY:
+        return requested
+    }
+    log.Printf("🔒 Model %q not allowed for non-super %s — clamped to %s", requested, email, MODEL_PREMIUM)
+    return MODEL_PREMIUM
+}
+
 // Proxy ChatGPT requests (keeps API key on server)
 func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -2890,6 +2928,9 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 
     // Use device_id from JWT claims (more secure than trusting request body)
     deviceID := claims.DeviceID
+
+    // Server-side entitlement check: never trust the client's model choice
+    req.Model = enforceModelForUser(claims.Email, deviceID, req.Model)
 
     // Check IP rate limit first (protects against mass-device attacks)
     clientIP := getClientIP(r)
