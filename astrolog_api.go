@@ -3471,6 +3471,17 @@ func verifyGooglePlayPurchase(productID, purchaseToken string, isSubscription bo
     log.Printf("🔍 Google Play API response (%d): %s", resp.StatusCode, string(body))
 
     if resp.StatusCode != 200 {
+        // 400/404/410 mean Google does not recognize the token — a forged or
+        // revoked purchase, NOT an outage. Must fail closed: recordPurchase
+        // treats a returned error as "verification unavailable" and records
+        // the purchase anyway, which is exactly how Lucky Patcher-style fake
+        // tokens got accepted (see purchase_history cleanup 2026-07-21).
+        // 401/403 = our own credentials problem, 5xx = Google outage — those
+        // stay fail-open via error return.
+        if resp.StatusCode == 400 || resp.StatusCode == 404 || resp.StatusCode == 410 {
+            log.Printf("❌ Google Play rejected purchase token (%d) — treating as invalid", resp.StatusCode)
+            return false, nil, nil
+        }
         return false, nil, fmt.Errorf("Google Play API error: %s", string(body))
     }
 
