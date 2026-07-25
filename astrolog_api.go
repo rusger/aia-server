@@ -197,6 +197,14 @@ type ChatGPTProxyResponse struct {
     Success bool   `json:"success"`
     Content string `json:"content,omitempty"`
     Error   string `json:"error,omitempty"`
+    // Code is a stable machine-readable reason the client can branch on
+    // ("daily_limit"), so hitting the AI quota shows the upgrade sheet instead
+    // of a generic error. Old clients ignore the extra field.
+    Code string `json:"code,omitempty"`
+    // Tier and ResetAt let that sheet say something true about the limit
+    // without the app hardcoding numbers that change server-side.
+    Tier    string `json:"tier,omitempty"`
+    ResetAt string `json:"reset_at,omitempty"`
 }
 
 // Email auth request - request code
@@ -1011,6 +1019,12 @@ func initDB() error {
         if !strings.Contains(mErr.Error(), "duplicate column") {
             log.Printf("ℹ️ devices.push_token_updated_at migration note: %v", mErr)
         }
+    }
+
+    // Device identity: the reinstall-proof anchor for the trial and the daily
+    // AI quota (see identity.go). Backfills itself from users on first boot.
+    if err := initIdentityTables(); err != nil {
+        return err
     }
 
     // Purchase history
@@ -2608,6 +2622,14 @@ func registerOrUpdateUser(w http.ResponseWriter, r *http.Request) {
     anonymousEmail := fmt.Sprintf("%s@device.astrolytix.app", req.DeviceID)
     log.Printf("📱 [registerOrUpdateUser] Device registration: %s", req.DeviceID)
 
+    // Resolve which identity owns this install's trial and daily AI quota
+    // (identity.go). Done here because this is the only place we still see the
+    // fingerprint header and the client IP. The trial is granted at most once
+    // per identity, so a reinstall no longer buys another 7 days at the trial
+    // rate — it lands on the free tier instead.
+    identity := resolveDeviceIdentity(req.DeviceID, r.Header.Get("X-Device-Fingerprint"), clientIP)
+    grantTrialIfEligible(identity, req.DeviceID)
+
     // Check if user already exists
     var existingType, existingLength string
     var subscriptionExpiry sql.NullString
@@ -2913,12 +2935,23 @@ func userEntitlement(email, deviceID string) (paid bool, super bool) {
     return
 }
 
-// withinTrialWindow reports whether the account is inside its server-side 7-day
-// trial, anchored on users.created_at — NOT the client's SharedPreferences
-// "first use" timestamp, which resets when the app's data is cleared (an
-// infinite-trial hole). True if EITHER the email or the device account is
-// younger than 7 days.
+// withinTrialWindow reports whether the caller is inside the server-side 7-day
+// trial.
+//
+// The anchor is the DEVICE IDENTITY (identity.go), not users.created_at: a
+// reinstall creates a new anonymous account, so anchoring on the account gave
+// an unlimited supply of fresh trials at 80 AI calls/day — the same
+// infinite-trial hole the client's SharedPreferences anchor had, one layer
+// down. Signing up with a new email on the same device does not restart it
+// either, since the grant belongs to the device, not the address.
+//
+// The pre-identity rule (either account younger than 7 days) is kept only for
+// devices with no identity row yet, so nobody mid-trial is cut off during
+// rollout.
 func withinTrialWindow(email, deviceID string) bool {
+    if active, known := identityTrialState(deviceID); known {
+        return active
+    }
     fresh := func(id string) bool {
         var ageDays sql.NullFloat64
         if err := db.QueryRow(
@@ -3051,18 +3084,18 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // calls slightly under-counts a burst (logging is async) — acceptable for a
     // coarse cost cap sitting far above real usage.
     if limit, tier := aiDailyLimitForUser(claims.Email, deviceID); limit > 0 {
-        used := 0
-        if analyticsDB != nil {
-            analyticsDB.QueryRow(
-                `SELECT count(*) FROM api_calls WHERE device_id = ? AND call_type = 'chatgpt' AND created_at >= date('now')`,
-                deviceID).Scan(&used)
-        }
+        // Counted across every install sharing this device's identity, so
+        // wiping the app does not hand out a fresh allowance (identity.go).
+        used := dailyChatGPTCount(deviceID)
         if used >= limit {
             log.Printf("🚫 Daily AI limit reached: device=%s tier=%s used=%d limit=%d", deviceID, tier, used, limit)
             w.WriteHeader(http.StatusPaymentRequired)
             json.NewEncoder(w).Encode(ChatGPTProxyResponse{
                 Success: false,
                 Error:   "Daily AI limit reached. Upgrade to Pro for higher limits.",
+                Code:    "daily_limit",
+                Tier:    tier,
+                ResetAt: time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02") + "T00:00:00Z",
             })
             return
         }
@@ -8993,6 +9026,7 @@ func main() {
     // Admin-only one-time backfill of past purchases via App Store Server API
     // (auth by ADMIN_SECRET_KEY in the request body)
     router.HandleFunc("/api/admin/appstore-backfill", appleBackfillHandler).Methods("POST")
+    router.HandleFunc("/api/admin/expiry-sync", expirySyncHandler).Methods("POST")
 
     // Protected endpoints (JWT required)
     router.HandleFunc("/api/astrolog", jwtAuthMiddleware(calculateChart)).Methods("POST")
