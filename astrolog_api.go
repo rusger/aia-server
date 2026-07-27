@@ -2889,7 +2889,36 @@ const (
     aiLimitFree  = 10  // free, past the 7-day trial (lowered 15→10 2026-07-27: cost cut after the July token spike; free p90≈12, so the heaviest fifth of free days feel it)
     aiLimitTrial = 40  // free, within 7 days of account creation (lowered 80→40 2026-07-27: 95% of honest trial device-days sit ≤40; the old 80 let one trial device burn ~500k tokens/day)
     aiLimitPaid  = 300 // active paid subscriber
+
+    // aiOverheadFactor bounds ALL AI proxy calls (any call_type) at this
+    // multiple of the tier limit. The primary ceiling counts only 'chatgpt'
+    // rows and the tag comes from the request body, so a patched client could
+    // label everything as overhead and never hit it (2026-07-27 paywall
+    // review). One honest answer spawns at most ~5 calls (answer + up to 2
+    // grounding fixes + claim audit + barnum stages), so legitimate traffic
+    // cannot reach this ceiling.
+    aiOverheadFactor = 5
 )
+
+// aiOverheadCallTypes is the allowlist of overhead tags the client may put in
+// a /api/chatgpt request. Anything else — including an empty tag — is treated
+// as a user-visible answer ('chatgpt', fully quota-counted), so a spoofed
+// label can only ever make quota accounting STRICTER, never looser.
+var aiOverheadCallTypes = map[string]bool{
+    "grounding_fix":   true,
+    "claim_audit":     true,
+    "barnum_judge":    true,
+    "barnum_fix":      true,
+    "barnum_point_fix": true,
+}
+
+// normalizeAICallType clamps a client-supplied call_type to the allowlist.
+func normalizeAICallType(requested string) (callType string, overhead bool) {
+    if aiOverheadCallTypes[requested] {
+        return requested, true
+    }
+    return "chatgpt", false
+}
 
 // entitlementNotExpired reports whether a paid subscription_expiry is still in
 // the future. A NULL/empty expiry means no-expiry (lifetime) → still valid.
@@ -3083,6 +3112,10 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    // Clamp the client-supplied call tag before it can influence quota
+    // accounting or the cost reports.
+    callType, overhead := normalizeAICallType(req.CallType)
+
     // Daily AI ceiling by DB entitlement — the non-spoofable backstop against a
     // patched free client spamming premium AI. Counted per device from the same
     // api_calls log used for cost reporting. Returns 402 (not 429) so the client
@@ -3090,11 +3123,32 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // calls slightly under-counts a burst (logging is async) — acceptable for a
     // coarse cost cap sitting far above real usage.
     if limit, tier := aiDailyLimitForUser(claims.Email, deviceID); limit > 0 {
+        // Primary ceiling: user-visible answers only. Overhead passes are our
+        // own retries/audits, not the user's questions — they skip this check
+        // so the day's final allowed answer still gets its correction pass.
         // Counted across every install sharing this device's identity, so
         // wiping the app does not hand out a fresh allowance (identity.go).
-        used := dailyChatGPTCount(deviceID)
-        if used >= limit {
-            log.Printf("🚫 Daily AI limit reached: device=%s tier=%s used=%d limit=%d", deviceID, tier, used, limit)
+        if !overhead {
+            used := dailyChatGPTCount(deviceID)
+            if used >= limit {
+                log.Printf("🚫 Daily AI limit reached: device=%s tier=%s used=%d limit=%d", deviceID, tier, used, limit)
+                w.WriteHeader(http.StatusPaymentRequired)
+                json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+                    Success: false,
+                    Error:   "Daily AI limit reached. Upgrade to Pro for higher limits.",
+                    Code:    "daily_limit",
+                    Tier:    tier,
+                    ResetAt: time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02") + "T00:00:00Z",
+                })
+                return
+            }
+        }
+        // Secondary ceiling: every AI proxy call regardless of tag. This is
+        // what makes the backstop hold even when the tag is spoofed — an
+        // all-overhead client is capped here instead of running unlimited.
+        if total := dailyAICallCount(deviceID); total >= limit*aiOverheadFactor {
+            log.Printf("🚫 Daily AI total ceiling reached: device=%s tier=%s total=%d ceiling=%d (call_type=%s)",
+                deviceID, tier, total, limit*aiOverheadFactor, callType)
             w.WriteHeader(http.StatusPaymentRequired)
             json.NewEncoder(w).Encode(ChatGPTProxyResponse{
                 Success: false,
@@ -3277,13 +3331,10 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     log.Printf("✅ ChatGPT request successful, response length: %d, tokens: %d prompt (%d cached) + %d completion = %d total",
         len(content), promptTokens, cachedTokens, completionTokens, totalTokens)
 
-    // Log API call with token usage for analytics. call_type defaults to
-    // "chatgpt" but overhead passes (barnum_judge / barnum_fix) tag themselves
-    // so their cost stays separable in the usage reports.
-    callType := req.CallType
-    if callType == "" {
-        callType = "chatgpt"
-    }
+    // Log API call with token usage for analytics. callType was normalized
+    // against the allowlist before the quota checks — overhead passes
+    // (grounding_fix / claim_audit / barnum_*) stay separable in the usage
+    // reports, unknown client-supplied tags have been clamped to "chatgpt".
     logAPICallWithTokens(deviceID, callType, req.Model, promptTokens, completionTokens, totalTokens, cachedTokens)
 
     // Return success response

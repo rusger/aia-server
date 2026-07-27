@@ -482,6 +482,39 @@ func dailyChatGPTCount(deviceID string) int {
 	return used
 }
 
+// dailyAICallCount counts today's OpenAI-proxy calls of ANY call_type across
+// the same identity group — the basis of the secondary (anti-spoof) ceiling.
+// Chart work ('astrolog', 'transit-year', 'transit-multi-year') is deliberately
+// excluded: it is local CPU-bound computation with its own limiter, and a
+// single transit-year request logs hundreds of rows that would otherwise
+// swallow the AI allowance.
+func dailyAICallCount(deviceID string) int {
+	if analyticsDB == nil {
+		return 0
+	}
+	ids := quotaDeviceIDs(deviceID)
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]interface{}, 0, len(ids)+len(aiOverheadCallTypes)+1)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	typePlaceholders := "?"
+	args = append(args, "chatgpt")
+	for ct := range aiOverheadCallTypes {
+		typePlaceholders += ",?"
+		args = append(args, ct)
+	}
+	var used int
+	if err := analyticsDB.QueryRow(
+		`SELECT count(*) FROM api_calls
+		 WHERE device_id IN (`+placeholders+`)
+		   AND call_type IN (`+typePlaceholders+`) AND created_at >= date('now')`, args...).Scan(&used); err != nil {
+		log.Printf("⚠️ dailyAICallCount(%s): %v", deviceID, err)
+		return 0
+	}
+	return used
+}
+
 // revokeTrialForDevice withdraws the trial of the identity behind a device —
 // the targeted lever for a proven abuser, used instead of a ban. The install
 // keeps working on the free tier. Returns the identity it acted on.
