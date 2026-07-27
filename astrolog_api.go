@@ -1871,8 +1871,11 @@ func sanitizeTime(timeStr string) (string, error) {
 }
 
 func sanitizeTimezone(tz string) (string, error) {
+    // Real-world UTC offsets span -12:00 (Baker Island) to +14:00 (Kiribati
+    // Line Islands), with fractional zones in between (Chatham +12:45, NZDT
+    // +13). The old +12 cap rejected every such birth ("Invalid timezone").
     tzFloat, err := strconv.ParseFloat(tz, 64)
-    if err != nil || tzFloat < -12 || tzFloat > 12 {
+    if err != nil || tzFloat < -12 || tzFloat > 14 {
         return "", fmt.Errorf("invalid timezone")
     }
     return tz, nil
