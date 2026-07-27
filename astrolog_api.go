@@ -2880,8 +2880,8 @@ func validateChatGPTSignature(req ChatGPTProxyRequest) bool {
 // normal-use budgets — a legitimate user should never hit them. A limit of 0
 // means unlimited (super). Chosen by the owner 2026-07-21.
 const (
-    aiLimitFree  = 15  // free, past the 7-day trial (lowered 25→15 as a mild conversion lever: 15 sits just above the free p90 of 12, so only the heaviest ~13% of AI-using free users feel it)
-    aiLimitTrial = 80  // free, within 7 days of account creation (server trial)
+    aiLimitFree  = 10  // free, past the 7-day trial (lowered 15→10 2026-07-27: cost cut after the July token spike; free p90≈12, so the heaviest fifth of free days feel it)
+    aiLimitTrial = 40  // free, within 7 days of account creation (lowered 80→40 2026-07-27: 95% of honest trial device-days sit ≤40; the old 80 let one trial device burn ~500k tokens/day)
     aiLimitPaid  = 300 // active paid subscriber
 )
 
