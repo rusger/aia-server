@@ -18,6 +18,7 @@ import (
     "io"
     "log"
     "math/big"
+    "net"
     "net/http"
     "net/smtp"
     "net/url"
@@ -543,29 +544,31 @@ func adminGuardMiddleware(next http.HandlerFunc) http.HandlerFunc {
     }
 }
 
-// Helper to extract client IP from request (handles proxies)
+// Helper to extract client IP from request (handles proxies).
+// Forwarded headers are only trusted when the request actually arrived through
+// the local nginx reverse proxy. On a direct hit to :8081 they are supplied by
+// the caller and must be ignored, otherwise anyone can spoof an allowlisted IP.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (set by proxies like Caddy, nginx)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Take first IP (original client)
-		ips := strings.Split(xff, ",")
-		return strings.TrimSpace(ips[0])
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
 	}
 
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return xri
+	if host == "127.0.0.1" || host == "::1" {
+		// nginx overwrites X-Real-IP with $remote_addr, so it cannot be forged.
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			return xri
+		}
+		// Fall back to X-Forwarded-For. nginx appends the peer it observed via
+		// $proxy_add_x_forwarded_for, so the LAST element is the trustworthy
+		// one — the first is whatever the client chose to send.
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			ips := strings.Split(xff, ",")
+			return strings.TrimSpace(ips[len(ips)-1])
+		}
 	}
 
-	// Fall back to RemoteAddr (may include port)
-	ip := r.RemoteAddr
-	// Remove port if present
-	if colonIdx := strings.LastIndex(ip, ":"); colonIdx != -1 {
-		ip = ip[:colonIdx]
-	}
-	return ip
+	return host
 }
 
 // botRenewalURL returns the external renewal URL (Telegram bot deep link),
