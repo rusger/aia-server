@@ -2910,6 +2910,9 @@ var aiOverheadCallTypes = map[string]bool{
     "barnum_judge":    true,
     "barnum_fix":      true,
     "barnum_point_fix": true,
+    // Validation sub-calls of the external-horoscope-check chats (added
+    // 2026-07-28, ships in the app AFTER this server change is deployed).
+    "external_check": true,
 }
 
 // normalizeAICallType clamps a client-supplied call_type to the allowlist.

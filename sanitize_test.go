@@ -2,6 +2,13 @@ package main
 
 import "testing"
 
+func TestExternalCheckTagAllowlisted(t *testing.T) {
+	got, overhead := normalizeAICallType("external_check")
+	if got != "external_check" || !overhead {
+		t.Errorf("normalizeAICallType(external_check) = (%q, %v), want (external_check, true)", got, overhead)
+	}
+}
+
 // The +12 cap used to reject every birth east of UTC+12 — NZDT (+13),
 // Chatham (+12.75), Kiribati Line Islands (+14). Found by the 2026-07-27
 // ephemeris accuracy audit (tools/forecast_cli, phase 1 edge cases).
