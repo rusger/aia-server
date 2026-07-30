@@ -9153,6 +9153,8 @@ func main() {
     router.HandleFunc("/api/admin/renewal-stats", adminGuardMiddleware(adminRenewalStats)).Methods("GET")
     // D1 referral program stats for the Stellar Vault Referrals tab (see referral.go)
     router.HandleFunc("/api/admin/referral-stats", adminGuardMiddleware(adminReferralStats)).Methods("GET")
+    // Monthly P&L: net store revenue vs token spend (Stellar Vault Finance tab, see finance.go)
+    router.HandleFunc("/api/admin/finance-stats", adminGuardMiddleware(adminFinanceStats)).Methods("GET")
     // Send a push notification to a device (by device_id) or user (by email).
     // Admin secret + 2FA code required, same gate as the other admin actions.
     router.HandleFunc("/api/admin/send-push", adminGuardMiddleware(adminSendPush)).Methods("POST")
@@ -9178,6 +9180,7 @@ func main() {
     log.Println("  [ADMIN]     GET  /api/admin/download-db - Download database backup (2FA required)")
     log.Println("  [ADMIN]     GET  /api/admin/usage-report - Detailed usage report by email & date (2FA required)")
     log.Println("  [ADMIN]     POST /api/admin/openai-costs - Proxy OpenAI Costs & Usage APIs (key not stored)")
+    log.Println("  [ADMIN]     GET  /api/admin/finance-stats - Monthly net revenue vs token spend (admin only)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
