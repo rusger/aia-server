@@ -356,3 +356,77 @@ func TestRevokeTrialForDevice(t *testing.T) {
 		t.Errorf("revoked device: got (%d,%q), want (%d,free) — not a ban", limit, tier, aiLimitFree)
 	}
 }
+
+// TestHardwareDriftAdoptsIdentityOnLogin: an OS update changed the hardware
+// half of a device_id (seen live 2026-08-03); login must fold the drifted id
+// back into the group so the daily quota keeps counting both variants as one.
+func TestHardwareDriftAdoptsIdentityOnLogin(t *testing.T) {
+	setupIdentityTestDBs(t)
+	const uuid = "cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc9"
+	old := "V1UGS35H.75-14-9-3-1-2|" + uuid
+	drifted := "V1UGS35H.75-14-9-3-1-3|" + uuid
+
+	di := register(t, old, "fp-of-that-phone", "203.0.113.42")
+	addChatCalls(t, old, 6)
+
+	adoptIdentityOnLogin(drifted)
+
+	got, ok := lookupIdentity(drifted)
+	if !ok || got.key != di.key || got.kind != di.kind {
+		t.Fatalf("drifted id identity = (%+v, %v), want inherited (%+v)", got, ok, di)
+	}
+	if n := dailyChatGPTCount(drifted); n != 6 {
+		t.Errorf("quota via drifted id sees %d calls, want 6 (one shared allowance)", n)
+	}
+	addChatCalls(t, drifted, 2)
+	if n := dailyChatGPTCount(old); n != 8 {
+		t.Errorf("quota via original id sees %d calls, want 8", n)
+	}
+	// Adoption must not mint a second trial: same identity_key, same grant.
+	if active, known := identityTrialState(drifted); !known || !active {
+		t.Errorf("drifted id trial state = (%v,%v), want the original's active grant", active, known)
+	}
+}
+
+// TestAdoptIgnoresNonUUIDSuffix: the uuid goes into a LIKE pattern, so a
+// crafted device_id ending in a wildcard must not be able to match — and
+// join — someone else's identity group.
+func TestAdoptIgnoresNonUUIDSuffix(t *testing.T) {
+	setupIdentityTestDBs(t)
+	register(t, "HW|cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc9", "fp-victim", "203.0.113.42")
+
+	for _, dev := range []string{"EVIL|%", "EVIL|_", "EVIL|", "EVIL", "EVIL|cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc%"} {
+		adoptIdentityOnLogin(dev)
+		if _, ok := lookupIdentity(dev); ok {
+			t.Errorf("%q must not adopt an identity", dev)
+		}
+	}
+}
+
+// TestAdoptUnknownUUIDDoesNothing: a device with no sibling rows stays
+// unregistered — /user/register remains the only place a fresh identity (and
+// possibly a trial) is created.
+func TestAdoptUnknownUUIDDoesNothing(t *testing.T) {
+	setupIdentityTestDBs(t)
+	dev := "HW|aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	adoptIdentityOnLogin(dev)
+	if _, ok := lookupIdentity(dev); ok {
+		t.Error("login alone must not create an identity for an unseen uuid")
+	}
+	if active, known := identityTrialState(dev); known || active {
+		t.Error("unseen device must still fall back to the pre-identity rule")
+	}
+}
+
+// TestAdoptKnownDeviceOnlyTouches: a device that already has its identity row
+// keeps it untouched (no re-keying), login just bumps last_seen.
+func TestAdoptKnownDeviceOnlyTouches(t *testing.T) {
+	setupIdentityTestDBs(t)
+	dev := "HW|11111111-2222-4333-8444-555555555555"
+	di := register(t, dev, "fp-x", "203.0.113.42")
+	adoptIdentityOnLogin(dev)
+	got, ok := lookupIdentity(dev)
+	if !ok || got.key != di.key || got.kind != di.kind {
+		t.Errorf("identity changed by login: got (%+v,%v), want %+v", got, ok, di)
+	}
+}

@@ -275,6 +275,84 @@ func resolveDeviceIdentity(deviceID, fingerprint, ip string) deviceIdentity {
 	return di
 }
 
+// installUUID returns the install-UUID half of a composite device_id, or ""
+// when the suffix is not a canonical UUID. The strict shape check doubles as
+// input sanitising: the suffix goes into a LIKE pattern in
+// adoptIdentityOnLogin, and a client-crafted device_id ending in "%" or "_"
+// must not be able to match — and join — an arbitrary identity group.
+func installUUID(deviceID string) string {
+	i := strings.Index(deviceID, "|")
+	if i < 0 {
+		return ""
+	}
+	u := deviceID[i+1:]
+	if len(u) != 36 {
+		return ""
+	}
+	for pos, c := range u {
+		switch pos {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return ""
+			}
+		default:
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return ""
+			}
+		}
+	}
+	return u
+}
+
+// adoptIdentityOnLogin keeps an install inside its identity group when the
+// hardware half of its device_id drifts (seen live 2026-08-03: an OS update
+// moved a device from "V1UGS35H.75-14-9-3-1-2|<uuid>" to "…-1-3|<uuid>").
+// Identity rows are normally created only at /user/register, the one place
+// the fingerprint header is available; login carries no fingerprint, so a
+// drifted id would otherwise sit outside its group and collect a fresh daily
+// AI allowance. The install UUID lives in secure storage and survives the
+// drift, so an unknown device_id inherits the identity of the most recent row
+// sharing its UUID. No trial is granted here — that stays a register-only
+// decision (the inherited identity_key already carries whatever grant exists).
+func adoptIdentityOnLogin(deviceID string) {
+	if deviceID == "" || db == nil {
+		return
+	}
+	if _, ok := lookupIdentity(deviceID); ok {
+		if _, err := db.Exec(
+			`UPDATE device_identity SET last_seen = CURRENT_TIMESTAMP WHERE device_id = ?`,
+			deviceID); err != nil {
+			log.Printf("⚠️ adoptIdentityOnLogin touch(%s): %v", deviceID, err)
+		}
+		return
+	}
+	uuid := installUUID(deviceID)
+	if uuid == "" {
+		return
+	}
+	var key, kind, ipB string
+	err := db.QueryRow(`
+		SELECT identity_key, kind, ip_bucket FROM device_identity
+		WHERE device_id LIKE '%|' || ?
+		ORDER BY last_seen DESC LIMIT 1`, uuid).Scan(&key, &kind, &ipB)
+	if err == sql.ErrNoRows {
+		return // genuinely new install: register owns fresh-identity creation
+	}
+	if err != nil {
+		log.Printf("⚠️ adoptIdentityOnLogin(%s): %v", deviceID, err)
+		return
+	}
+	if _, err := db.Exec(`
+		INSERT INTO device_identity (device_id, identity_key, kind, hw_prefix, ip_bucket, last_seen)
+		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(device_id) DO NOTHING`,
+		deviceID, key, kind, hwPrefix(deviceID), ipB); err != nil {
+		log.Printf("⚠️ adoptIdentityOnLogin insert(%s): %v", deviceID, err)
+		return
+	}
+	log.Printf("🔑 Identity adopted after hardware drift: device=%s identity=%s kind=%s", deviceID, key, kind)
+}
+
 // bucketInstalls lists the installs seen recently from one (build id, IP /24).
 func bucketInstalls(hw, ipb string) []string {
 	if hw == "" || ipb == "" || db == nil {
