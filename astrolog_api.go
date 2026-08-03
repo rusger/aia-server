@@ -5638,6 +5638,10 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     // Record login in history
     db.Exec(`INSERT INTO login_history (email, device_id) VALUES (?, ?)`, email, deviceID)
 
+    // Keep the trial/quota identity group intact when the hardware half of the
+    // device_id has drifted since registration (identity.go).
+    adoptIdentityOnLogin(deviceID)
+
     // Register / re-activate this device session (powers My Devices + the limit)
     registerDevice(email, deviceID, strings.TrimSpace(req.DeviceName), strings.TrimSpace(req.Platform))
 

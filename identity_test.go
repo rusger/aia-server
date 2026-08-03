@@ -356,3 +356,138 @@ func TestRevokeTrialForDevice(t *testing.T) {
 		t.Errorf("revoked device: got (%d,%q), want (%d,free) — not a ban", limit, tier, aiLimitFree)
 	}
 }
+
+// TestHardwareDriftAdoptsIdentityOnLogin: an OS update changed the hardware
+// half of a device_id (seen live 2026-08-03); login must fold the drifted id
+// back into the group so the daily quota keeps counting both variants as one.
+func TestHardwareDriftAdoptsIdentityOnLogin(t *testing.T) {
+	setupIdentityTestDBs(t)
+	const uuid = "cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc9"
+	old := "V1UGS35H.75-14-9-3-1-2|" + uuid
+	drifted := "V1UGS35H.75-14-9-3-1-3|" + uuid
+
+	di := register(t, old, "fp-of-that-phone", "203.0.113.42")
+	addChatCalls(t, old, 6)
+
+	adoptIdentityOnLogin(drifted)
+
+	got, ok := lookupIdentity(drifted)
+	if !ok || got.key != di.key || got.kind != di.kind {
+		t.Fatalf("drifted id identity = (%+v, %v), want inherited (%+v)", got, ok, di)
+	}
+	if got.hwPrefix != "V1UGS35H.75-14-9-3-1-3" {
+		t.Errorf("adopted row hw_prefix = %q, want the NEW hardware half", got.hwPrefix)
+	}
+	if n := dailyChatGPTCount(drifted); n != 6 {
+		t.Errorf("quota via drifted id sees %d calls, want 6 (one shared allowance)", n)
+	}
+	addChatCalls(t, drifted, 2)
+	if n := dailyChatGPTCount(old); n != 8 {
+		t.Errorf("quota via original id sees %d calls, want 8", n)
+	}
+	// Adoption must not mint a second trial: same identity_key, same grant.
+	if active, known := identityTrialState(drifted); !known || !active {
+		t.Errorf("drifted id trial state = (%v,%v), want the original's active grant", active, known)
+	}
+}
+
+// TestHardwareDriftAdoptsWeakIdentity: the same drift for a fingerprint-less
+// (weak) install. The inherited key is "dev:<old-id>", so this only merges if
+// quotaDeviceIDs unions by identity_key for every kind — the r1 review gap.
+func TestHardwareDriftAdoptsWeakIdentity(t *testing.T) {
+	setupIdentityTestDBs(t)
+	const uuid = "cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc9"
+	old := "V1UGS35H.75-14-9-3-1-2|" + uuid
+	drifted := "V1UGS35H.75-14-9-3-1-3|" + uuid
+
+	di := register(t, old, "", "203.0.113.42") // no fingerprint header
+	if di.kind != identityWeak {
+		t.Fatalf("precondition: fingerprint-less register must be weak, got %q", di.kind)
+	}
+	addChatCalls(t, old, 6)
+
+	adoptIdentityOnLogin(drifted)
+
+	if got, ok := lookupIdentity(drifted); !ok || got.key != di.key || got.kind != identityWeak {
+		t.Fatalf("drifted id identity = (%+v, %v), want inherited weak (%+v)", got, ok, di)
+	}
+	if n := dailyChatGPTCount(drifted); n != 6 {
+		t.Errorf("quota via drifted id sees %d calls, want 6 (one shared allowance)", n)
+	}
+	addChatCalls(t, drifted, 2)
+	if n := dailyChatGPTCount(old); n != 8 {
+		t.Errorf("quota via original id sees %d calls, want 8", n)
+	}
+}
+
+// TestWeakIdentitiesStayIndependent: the kind-agnostic union must not group
+// strangers — two distinct fingerprint-less installs keep separate allowances
+// (their "dev:<id>" keys are unique per install).
+func TestWeakIdentitiesStayIndependent(t *testing.T) {
+	setupIdentityTestDBs(t)
+	a := "QKR1.191246.002|aaaaaaaa-1111-4111-8111-111111111111"
+	b := "QKR1.191246.002|bbbbbbbb-2222-4222-8222-222222222222"
+	register(t, a, "", "198.51.100.7")
+	register(t, b, "", "198.51.100.7")
+	addChatCalls(t, a, 5)
+	if n := dailyChatGPTCount(b); n != 0 {
+		t.Errorf("neighbour install sees %d foreign calls, want 0", n)
+	}
+}
+
+// TestAdoptIgnoresNonUUIDSuffix: the uuid goes into a LIKE pattern, so a
+// crafted device_id ending in a wildcard must not be able to match — and
+// join — someone else's identity group.
+func TestAdoptIgnoresNonUUIDSuffix(t *testing.T) {
+	setupIdentityTestDBs(t)
+	register(t, "HW|cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc9", "fp-victim", "203.0.113.42")
+
+	for _, dev := range []string{"EVIL|%", "EVIL|_", "EVIL|", "EVIL", "EVIL|cc4d0f36-3afb-4c17-ae74-7f8b3dafcdc%"} {
+		adoptIdentityOnLogin(dev)
+		if _, ok := lookupIdentity(dev); ok {
+			t.Errorf("%q must not adopt an identity", dev)
+		}
+	}
+}
+
+// TestAdoptUnknownUUIDDoesNothing: a device with no sibling rows stays
+// unregistered — /user/register remains the only place a fresh identity (and
+// possibly a trial) is created.
+func TestAdoptUnknownUUIDDoesNothing(t *testing.T) {
+	setupIdentityTestDBs(t)
+	dev := "HW|aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	adoptIdentityOnLogin(dev)
+	if _, ok := lookupIdentity(dev); ok {
+		t.Error("login alone must not create an identity for an unseen uuid")
+	}
+	if active, known := identityTrialState(dev); known || active {
+		t.Error("unseen device must still fall back to the pre-identity rule")
+	}
+}
+
+// TestAdoptKnownDeviceOnlyTouches: a device that already has its identity row
+// keeps it untouched (no re-keying), login just bumps last_seen.
+func TestAdoptKnownDeviceOnlyTouches(t *testing.T) {
+	setupIdentityTestDBs(t)
+	dev := "HW|11111111-2222-4333-8444-555555555555"
+	di := register(t, dev, "fp-x", "203.0.113.42")
+	if _, err := db.Exec(
+		`UPDATE device_identity SET last_seen = datetime('now', '-10 day') WHERE device_id = ?`,
+		dev); err != nil {
+		t.Fatalf("backdate last_seen: %v", err)
+	}
+	adoptIdentityOnLogin(dev)
+	got, ok := lookupIdentity(dev)
+	if !ok || got.key != di.key || got.kind != di.kind {
+		t.Errorf("identity changed by login: got (%+v,%v), want %+v", got, ok, di)
+	}
+	var ageDays float64
+	if err := db.QueryRow(
+		`SELECT julianday('now') - julianday(last_seen) FROM device_identity WHERE device_id = ?`,
+		dev).Scan(&ageDays); err != nil {
+		t.Fatalf("read last_seen: %v", err)
+	}
+	if ageDays > 1 {
+		t.Errorf("last_seen still %.1f days old — login must bump it", ageDays)
+	}
+}
