@@ -496,10 +496,12 @@ func identityTrialState(deviceID string) (active bool, known bool) {
 }
 
 // quotaDeviceIDs returns every install whose AI calls count against the same
-// daily allowance as deviceID: itself, plus the other installs of the same
-// physical device (strong identity), plus the rest of its bucket when that
-// bucket is churning. The bucket clause is applied regardless of kind, so
-// rotating a spoofed fingerprint does not escape the group.
+// daily allowance as deviceID: itself, plus every install sharing its
+// identity_key (the other installs of a strong-identified physical device, or
+// a hardware-drifted variant that adoptIdentityOnLogin folded back in), plus
+// the rest of its bucket when that bucket is churning. The bucket clause is
+// applied regardless of kind, so rotating a spoofed fingerprint does not
+// escape the group.
 func quotaDeviceIDs(deviceID string) []string {
 	ids := []string{deviceID}
 	seen := map[string]bool{deviceID: true}
@@ -525,9 +527,12 @@ func quotaDeviceIDs(deviceID string) []string {
 		}
 	}
 
-	if di.kind == identityStrong {
-		add(`SELECT device_id FROM device_identity WHERE identity_key = ?`, di.key)
-	}
+	// Union by identity_key for EVERY kind, not just strong: weak ("dev:<id>")
+	// and legacy ("legacy:<id>") keys are unique per install, so the union is a
+	// no-op for them — except when adoptIdentityOnLogin deliberately shared the
+	// key with a hardware-drifted device_id, which is exactly when the two
+	// variants must count one allowance.
+	add(`SELECT device_id FROM device_identity WHERE identity_key = ?`, di.key)
 	if bucketChurning(di.hwPrefix, di.ipBucket) {
 		add(fmt.Sprintf(`SELECT device_id FROM device_identity
 			WHERE hw_prefix = ? AND ip_bucket = ?
