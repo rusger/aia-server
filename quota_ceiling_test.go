@@ -24,7 +24,7 @@ func addTaggedCalls(t *testing.T, deviceID, callType string, n int) {
 }
 
 func TestNormalizeAICallType(t *testing.T) {
-	for _, ct := range []string{"grounding_fix", "claim_audit", "barnum_judge", "barnum_fix", "barnum_point_fix"} {
+	for _, ct := range []string{"grounding_fix", "claim_audit", "barnum_judge", "barnum_fix", "barnum_point_fix", "yoga_fix"} {
 		got, overhead := normalizeAICallType(ct)
 		if got != ct || !overhead {
 			t.Errorf("normalizeAICallType(%q) = (%q, %v), want (%q, true)", ct, got, overhead, ct)

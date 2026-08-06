@@ -2913,6 +2913,11 @@ var aiOverheadCallTypes = map[string]bool{
     // Validation sub-calls of the external-horoscope-check chats (added
     // 2026-07-28, ships in the app AFTER this server change is deployed).
     "external_check": true,
+    // Corrective "weave the lead active yogas into the horoscope" call —
+    // fires only when the deterministic check finds ZERO of the directive's
+    // yogas named in the reading (added 2026-08-06, owner-approved; the app
+    // sends this tag AFTER this server change is deployed).
+    "yoga_fix": true,
 }
 
 // normalizeAICallType clamps a client-supplied call_type to the allowlist.
