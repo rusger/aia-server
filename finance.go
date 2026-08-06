@@ -129,6 +129,7 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 var financeOverheadTypes = map[string]bool{
 	"grounding_fix": true, "claim_audit": true, "barnum_judge": true,
 	"barnum_fix": true, "barnum_point_fix": true, "external_check": true,
+	"yoga_fix": true,
 }
 
 // ---------------------------------------------------------------------------
