@@ -23,6 +23,7 @@ import (
 	"log"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -567,24 +568,38 @@ func deliverDueEvents() {
 	}
 	drows.Close()
 
-	for _, e := range evs {
-		// Nominal local target = (event date - lead) at local_hour, wall-clock.
-		nominal := time.Date(e.eventDate.Year(), e.eventDate.Month(), e.eventDate.Day(),
-			e.localHour, 0, 0, 0, time.UTC).AddDate(0, 0, -e.leadDays)
-		group := eventKindGroup(e.kind)
-		sent, failed := 0, 0
-		for _, d := range devs {
+	// One device gets ONE push per delivery window even when several events
+	// fall due together (an eclipse day is always also a lunation day, and
+	// stations/ingresses can coincide). Loop devices-outer: collect every
+	// event due for this device now, claim them all, then send a single
+	// (possibly grouped) push composed by composeEventPush.
+	sentTotal, failedTotal := 0, 0
+	for _, d := range devs {
+		var due []ev
+		for _, e := range evs {
 			// Honor the app's per-category notification settings: skip
 			// devices that muted this event group (lunar/eclipse/ingress/station).
-			if d.disabledKinds != "" && kindDisabled(d.disabledKinds, group) {
+			if d.disabledKinds != "" && kindDisabled(d.disabledKinds, eventKindGroup(e.kind)) {
 				continue
 			}
-			// Device reaches that wall-clock at UTC = nominal - offset.
+			// Nominal local target = (event date - lead) at local_hour,
+			// wall-clock; the device reaches it at UTC = nominal - offset.
+			nominal := time.Date(e.eventDate.Year(), e.eventDate.Month(), e.eventDate.Day(),
+				e.localHour, 0, 0, 0, time.UTC).AddDate(0, 0, -e.leadDays)
 			deliverUTC := nominal.Add(-time.Duration(d.tzMin) * time.Minute)
 			if now.Before(deliverUTC) || now.After(deliverUTC.Add(24*time.Hour)) {
 				continue
 			}
-			// Claim (event, device) atomically; skip if already delivered.
+			due = append(due, e)
+		}
+		if len(due) == 0 {
+			continue
+		}
+		// Claim each (event, device) atomically; drop already-delivered
+		// ones. A lunation suppressed by composeEventPush is still claimed —
+		// the eclipse push covers it, so it must never fire alone later.
+		var claimed []ev
+		for _, e := range due {
 			res, err := db.Exec(`INSERT OR IGNORE INTO push_event_deliveries (event_id, device_id) VALUES (?, ?)`, e.id, d.id)
 			if err != nil {
 				continue
@@ -592,34 +607,125 @@ func deliverDueEvents() {
 			if n, _ := res.RowsAffected(); n == 0 {
 				continue // already sent
 			}
-			title, body := eventText(e.kind, e.params, d.lang)
-			if err := sendPushToToken(d.platform, d.token, title, body, e.payld, eventPushTTL); err != nil {
-				failed++
-				if isDeadPushToken(err) {
-					// Token permanently invalid (app uninstalled / token rotated):
-					// clear it so the device drops out of the eligible set instead
-					// of failing again every 15-minute tick, and KEEP the claim —
-					// retrying the same dead token can never succeed.
-					log.Printf("🗑 clearing dead push token for %s (%s): %v", d.id, d.platform, err)
-					db.Exec(`UPDATE devices SET push_token = '' WHERE device_id = ? AND push_token = ?`, d.id, d.token)
-					continue
-				}
-				log.Printf("⚠️ event push to %s failed: %v", d.id, err)
-				// Transient failure — roll back the claim so a later tick retries.
-				db.Exec(`DELETE FROM push_event_deliveries WHERE event_id = ? AND device_id = ?`, e.id, d.id)
+			claimed = append(claimed, e)
+		}
+		if len(claimed) == 0 {
+			continue
+		}
+		items := make([]dueItem, len(claimed))
+		for i, e := range claimed {
+			items[i] = dueItem{kind: e.kind, params: e.params, payload: e.payld}
+		}
+		title, body, payload := composeEventPush(items, d.lang)
+		if err := sendPushToToken(d.platform, d.token, title, body, payload, eventPushTTL); err != nil {
+			failedTotal++
+			if isDeadPushToken(err) {
+				// Token permanently invalid (app uninstalled / token rotated):
+				// clear it so the device drops out of the eligible set instead
+				// of failing again every 15-minute tick, and KEEP the claims —
+				// retrying the same dead token can never succeed.
+				log.Printf("🗑 clearing dead push token for %s (%s): %v", d.id, d.platform, err)
+				db.Exec(`UPDATE devices SET push_token = '' WHERE device_id = ? AND push_token = ?`, d.id, d.token)
 				continue
 			}
-			sent++
-			// Mirror admin/CLI sends: persist to notification_history so the
-			// app's Settings → Notifications → History (which merges this
-			// endpoint) shows scheduled event pushes too. Without this the
-			// scheduled pushes were invisible in history even when delivered.
-			recordNotificationHistory(d.email, d.id, title, body, e.payld)
+			log.Printf("⚠️ event push to %s failed: %v", d.id, err)
+			// Transient failure — roll back every claim so a later tick
+			// retries the whole group.
+			for _, e := range claimed {
+				db.Exec(`DELETE FROM push_event_deliveries WHERE event_id = ? AND device_id = ?`, e.id, d.id)
+			}
+			continue
 		}
-		if sent > 0 || failed > 0 {
-			log.Printf("📅 event %d (%s): sent=%d failed=%d", e.id, e.kind, sent, failed)
+		sentTotal++
+		// Mirror admin/CLI sends: persist to notification_history so the
+		// app's Settings → Notifications → History (which merges this
+		// endpoint) shows scheduled event pushes too. Without this the
+		// scheduled pushes were invisible in history even when delivered.
+		recordNotificationHistory(d.email, d.id, title, body, payload)
+	}
+	if sentTotal > 0 || failedTotal > 0 {
+		log.Printf("📅 event pushes: sent=%d failed=%d", sentTotal, failedTotal)
+	}
+}
+
+// ===========================================================================
+// Grouping: one push per device per delivery window
+// ===========================================================================
+
+// dueItem is the composable slice of a due push_events row.
+type dueItem struct {
+	kind, params, payload string
+}
+
+// eventKindRank orders group members by significance; the top-ranked member
+// donates the deep-link payload so a tap still lands on a relevant screen.
+func eventKindRank(kind string) int {
+	switch kind {
+	case "eclipse_solar", "eclipse_lunar":
+		return 0
+	case "slow_ingress":
+		return 1
+	case "station":
+		return 2
+	default: // lunar_new / lunar_full
+		return 3
+	}
+}
+
+// composeEventPush merges the events due together for one device into a
+// single push. A lone event keeps its normal text and payload. An eclipse
+// swallows the same-window lunation outright — a solar eclipse IS the New
+// Moon and a lunar eclipse IS the Full Moon, so two pushes would describe
+// one astronomical moment. Anything still plural becomes a localized digest
+// under the shared "your events for this day" title, carrying the
+// top-ranked member's payload.
+func composeEventPush(items []dueItem, lang string) (title, body, payload string) {
+	hasSolarEclipse, hasLunarEclipse := false, false
+	for _, it := range items {
+		switch it.kind {
+		case "eclipse_solar":
+			hasSolarEclipse = true
+		case "eclipse_lunar":
+			hasLunarEclipse = true
 		}
 	}
+	var kept []dueItem
+	for _, it := range items {
+		if (it.kind == "lunar_new" && hasSolarEclipse) ||
+			(it.kind == "lunar_full" && hasLunarEclipse) {
+			continue
+		}
+		kept = append(kept, it)
+	}
+	sort.SliceStable(kept, func(i, j int) bool {
+		return eventKindRank(kept[i].kind) < eventKindRank(kept[j].kind)
+	})
+	if len(kept) == 1 {
+		t, b := eventText(kept[0].kind, kept[0].params, lang)
+		return t, b, kept[0].payload
+	}
+	var sb strings.Builder
+	for i, it := range kept {
+		t, b := eventText(it.kind, it.params, lang)
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString("• " + t + " — " + b)
+	}
+	return tr(groupedEventsTitle, lang), sb.String(), kept[0].payload
+}
+
+// Mirrors the app's EventNotificationText.groupedEventsTitle so local and
+// server digests read identically.
+var groupedEventsTitle = map[string]string{
+	"en": "Your events for this day", "ru": "Ваши события на этот день",
+	"es": "Tus eventos de este día", "fr": "Vos événements de ce jour",
+	"de": "Deine Ereignisse an diesem Tag", "it": "I tuoi eventi di questo giorno",
+	"pt": "Seus eventos deste dia", "zh": "你当天的事件",
+	"ja": "この日のイベント", "ko": "오늘의 이벤트",
+	"hi": "इस दिन की आपकी घटनाएँ", "ar": "أحداثك لهذا اليوم",
+	"mr": "या दिवसाच्या तुमच्या घटना", "te": "ఈ రోజు మీ సంఘటనలు",
+	"ta": "இந்த நாளுக்கான உங்கள் நிகழ்வுகள்", "kn": "ಈ ದಿನದ ನಿಮ್ಮ ಘಟನೆಗಳು",
 }
 
 // eventKindGroup maps a push_events kind to the app's notification-settings
