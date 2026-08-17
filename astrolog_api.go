@@ -6882,6 +6882,105 @@ func adminGetGuardStats(w http.ResponseWriter, r *http.Request) {
     })
 }
 
+// adminGetGuardForms returns the DISTINCT flagged-FORM snippets captured in
+// ai_guard_events.detail — the word-form fix-worklist built from real
+// content (owner decision 17.08.2026, feedback-loop). Read-only, admin-
+// gated. The detail is astrology-interpretation prose with no PII (birth
+// data lives in the chart input, not the answer). Optional ?days=N (default
+// 7; 0 = all time), ?kind=K (default extcheck_item_doubtful; '*' = any),
+// ?limit=N (default 500).
+func adminGetGuardForms(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	adminEmail := r.URL.Query().Get("admin_email")
+	adminSecret := r.URL.Query().Get("admin_secret")
+
+	if !isAdminEmail(adminEmail) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+		return
+	}
+	if ADMIN_SECRET_KEY != "" && adminSecret != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+		return
+	}
+	if analyticsDB == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Analytics database not initialized"})
+		return
+	}
+
+	days := 7
+	if d := r.URL.Query().Get("days"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil && n >= 0 {
+			days = n
+		}
+	}
+	kind := "extcheck_item_doubtful"
+	if k := r.URL.Query().Get("kind"); k != "" {
+		kind = k
+	}
+	limit := 500
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 5000 {
+			limit = n
+		}
+	}
+
+	sqlStr := `
+		SELECT detail, language,
+		       COUNT(*)                  AS events,
+		       COALESCE(SUM(count),0)    AS total_count,
+		       COUNT(DISTINCT device_id) AS devices,
+		       MIN(created_at)           AS first_seen,
+		       MAX(created_at)           AS last_seen
+		FROM ai_guard_events
+		WHERE detail != ''`
+	args := []interface{}{}
+	if days > 0 {
+		sqlStr += ` AND created_at >= datetime('now', ?)`
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+	if kind != "*" {
+		sqlStr += ` AND kind = ?`
+		args = append(args, kind)
+	}
+	sqlStr += ` GROUP BY detail, language ORDER BY events DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := analyticsDB.Query(sqlStr, args...)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	forms := []map[string]interface{}{}
+	for rows.Next() {
+		var detail, language, firstSeen, lastSeen string
+		var events, totalCount, devices int
+		if err := rows.Scan(&detail, &language, &events, &totalCount, &devices, &firstSeen, &lastSeen); err != nil {
+			continue
+		}
+		forms = append(forms, map[string]interface{}{
+			"detail":      detail,
+			"language":    language,
+			"events":      events,
+			"total_count": totalCount,
+			"devices":     devices,
+			"first_seen":  firstSeen,
+			"last_seen":   lastSeen,
+		})
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"days":    days,
+		"kind":    kind,
+		"rows":    forms,
+	})
+}
+
 // adminGetBarnumStats returns answer-specificity / Barnum statistics aggregated
 // BY FEATURE (screen / chat type) for the Stellar Vault dashboard. Read-only,
 // gated by the admin_email + admin_secret query-param pattern. Optional ?days=N
@@ -9148,6 +9247,7 @@ func main() {
     router.HandleFunc("/api/admin/analytics", adminGuardMiddleware(adminGetAnalytics)).Methods("GET")
     router.HandleFunc("/api/admin/barnum-stats", adminGuardMiddleware(adminGetBarnumStats)).Methods("GET")
     router.HandleFunc("/api/admin/ai-guard-stats", adminGuardMiddleware(adminGetGuardStats)).Methods("GET")
+    router.HandleFunc("/api/admin/guard-forms", adminGuardMiddleware(adminGetGuardForms)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
     router.HandleFunc("/api/admin/user-appearance", adminGuardMiddleware(adminGetUserAppearance)).Methods("GET")
     router.HandleFunc("/api/admin/user-languages", adminGuardMiddleware(adminGetUserLanguages)).Methods("GET")
