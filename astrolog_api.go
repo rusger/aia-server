@@ -6972,6 +6972,11 @@ func adminGetGuardForms(w http.ResponseWriter, r *http.Request) {
 			"last_seen":   lastSeen,
 		})
 	}
+	// A mid-iteration driver error must not truncate the worklist silently.
+	if err := rows.Err(); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
