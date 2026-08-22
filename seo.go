@@ -43,9 +43,9 @@ const (
 	seoAppStoreURL = "https://apps.apple.com/app/astrolytix/id6759404465"
 	seoPlayURL     = "https://play.google.com/store/apps/details?id=com.astrolytix.app"
 	seoInstagram   = "https://www.instagram.com/astrolytix/"
-	// seoYouTube is filled in once the channel URL is known (owner); an
-	// empty value simply omits the link and the sameAs entry.
-	seoYouTube = ""
+	// seoYouTube: owner's channel (2026-08-22); an empty value would omit
+	// the link and the sameAs entry.
+	seoYouTube = "https://youtube.com/@astrolytix.official"
 )
 
 // Moon's mean daily motion, used to shift a noon longitude to the exact
@@ -663,7 +663,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 	b.WriteString("<style>" + seoCSS + "</style>\n")
 	b.WriteString("<script type=\"application/ld+json\">" + seoJSONLD(lang, rel, pg, canonical, generated) + "</script>\n")
 	b.WriteString("</head>\n<body>\n")
-	b.WriteString("<header class=\"top\"><a class=\"brand\" href=\"" + seoSiteURL + "/\">Astrolytix</a><nav><a href=\"" + seoBaseURL + "/" + lang + "/\">" + esc(seoT("nav_calendar", lang, nil)) + "</a></nav></header>\n")
+	b.WriteString("<header class=\"top\"><a class=\"brand\" href=\"" + seoSiteURL + "/\">Astrolytix</a><nav><a href=\"" + seoSiteURL + "/\">" + esc(seoT("nav_back_home", lang, nil)) + "</a><a href=\"" + seoBaseURL + "/" + lang + "/\">" + esc(seoT("nav_calendar", lang, nil)) + "</a></nav></header>\n")
 	b.WriteString("<main>\n<div class=\"wrap\">\n" + pg.body + "</div>\n")
 	if rel != "index.html" {
 		b.WriteString("<p class=\"note\">" + esc(seoT("other_years", lang, nil)) + ": ")
