@@ -209,48 +209,24 @@ func computeSeoYear(year int) (*seoYearData, error) {
 	if len(stations) == 0 {
 		return nil, fmt.Errorf("no stations found in %d±200d — ephemeris unavailable?", year)
 	}
-	sort.Slice(stations, func(i, j int) bool { return stations[i].date.Before(stations[j].date) })
 	if os.Getenv("SEO_DEBUG") != "" {
 		for _, s := range stations {
 			log.Printf("station %s retro=%v %s", s.planet, s.retro, s.date.Format("2006-01-02"))
 		}
 	}
+	signAt := func(planet string, day time.Time) (int, error) {
+		l, err := lons.at(day)
+		if err != nil {
+			return 0, err
+		}
+		return signOf(l[planet]), nil
+	}
 	for _, p := range seoRetroPlanets {
-		var open *seoRetroPeriod
-		for _, s := range stations {
-			if s.planet != p {
-				continue
-			}
-			if s.retro {
-				if open != nil {
-					return nil, fmt.Errorf("%s: two retro stations without a direct station between %s and %s", p, open.start.Format("2006-01-02"), s.date.Format("2006-01-02"))
-				}
-				sl, err := lons.at(s.date)
-				if err != nil {
-					return nil, err
-				}
-				open = &seoRetroPeriod{planet: p, start: s.date, startSign: signOf(sl[p])}
-				continue
-			}
-			if open == nil {
-				continue // direct station whose retro start lies before the scan window
-			}
-			el, err := lons.at(s.date)
-			if err != nil {
-				return nil, err
-			}
-			open.end = s.date
-			open.endSign = signOf(el[p])
-			if open.end.Year() >= year && open.start.Year() <= year {
-				d.retro[p] = append(d.retro[p], *open)
-			}
-			open = nil
+		periods, err := pairRetroPeriods(stations, p, year, signAt)
+		if err != nil {
+			return nil, err
 		}
-		if open != nil && open.start.Year() <= year {
-			// Retro start inside the window but the direct station is beyond
-			// it: can only happen if the margin is too small — fail loudly.
-			return nil, fmt.Errorf("%s: retro period starting %s has no direct station within scan window", p, open.start.Format("2006-01-02"))
-		}
+		d.retro[p] = periods
 	}
 
 	// Moon phases: walk the year with the events.go finders.
@@ -325,6 +301,55 @@ func moonLonShift(noonLon float64, dt time.Duration) float64 {
 		lon += 360
 	}
 	return lon
+}
+
+// pairRetroPeriods turns the station list of one planet into retrograde
+// periods (retro station → next direct station) that overlap `year`. Pure
+// apart from signAt, so it is unit-tested with synthetic stations. A direct
+// station with no open period (its retro start precedes the scan window) is
+// skipped; a retro station that never closes, or two retro stations in a
+// row, are scan-window/ephemeris faults and fail loudly.
+func pairRetroPeriods(stations []stationEvt, planet string, year int, signAt func(planet string, day time.Time) (int, error)) ([]seoRetroPeriod, error) {
+	sorted := make([]stationEvt, 0, len(stations))
+	for _, s := range stations {
+		if s.planet == planet {
+			sorted = append(sorted, s)
+		}
+	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].date.Before(sorted[j].date) })
+
+	var out []seoRetroPeriod
+	var open *seoRetroPeriod
+	for _, s := range sorted {
+		if s.retro {
+			if open != nil {
+				return nil, fmt.Errorf("%s: two retro stations without a direct station between %s and %s", planet, open.start.Format("2006-01-02"), s.date.Format("2006-01-02"))
+			}
+			idx, err := signAt(planet, s.date)
+			if err != nil {
+				return nil, err
+			}
+			open = &seoRetroPeriod{planet: planet, start: s.date, startSign: idx}
+			continue
+		}
+		if open == nil {
+			continue
+		}
+		idx, err := signAt(planet, s.date)
+		if err != nil {
+			return nil, err
+		}
+		open.end = s.date
+		open.endSign = idx
+		if open.end.Year() >= year && open.start.Year() <= year {
+			out = append(out, *open)
+		}
+		open = nil
+	}
+	if open != nil && open.start.Year() <= year {
+		return nil, fmt.Errorf("%s: retro period starting %s has no direct station within scan window", planet, open.start.Format("2006-01-02"))
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -634,7 +659,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 	b.WriteString("<meta property=\"og:title\" content=\"" + esc(pg.title) + "\">\n<meta property=\"og:description\" content=\"" + esc(truncDesc(pg.desc)) + "\">\n<meta property=\"og:url\" content=\"" + canonical + "\">\n<meta property=\"og:type\" content=\"article\">\n<meta property=\"og:site_name\" content=\"Astrolytix\">\n")
 	b.WriteString("<link rel=\"icon\" href=\"/logo-star.svg\" type=\"image/svg+xml\">\n")
 	b.WriteString("<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n")
-	b.WriteString("<link href=\"https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Raleway:wght@400;600&display=swap\" rel=\"stylesheet\">\n")
+	b.WriteString("<link href=\"https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&amp;family=Raleway:wght@400;600&amp;display=swap\" rel=\"stylesheet\">\n")
 	b.WriteString("<style>" + seoCSS + "</style>\n")
 	b.WriteString("<script type=\"application/ld+json\">" + seoJSONLD(lang, rel, pg, canonical, generated) + "</script>\n")
 	b.WriteString("</head>\n<body>\n")
