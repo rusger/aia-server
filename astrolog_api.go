@@ -9128,6 +9128,12 @@ func main() {
         runSendPushCLI(os.Args[2:])
         return
     }
+    // CLI subcommand: generate the static SEO calendar pages, then exit.
+    //   ./astrolog_api seo-gen <outdir> [year ...]   (see seo.go)
+    if len(os.Args) >= 2 && os.Args[1] == "seo-gen" {
+        runSeoGenCLI(os.Args[2:])
+        return
+    }
 
     // Initialize JWT secret (load or generate)
     if err := initJWTSecret(); err != nil {
