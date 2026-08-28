@@ -878,7 +878,14 @@ func emitDeviceLimitEvent(deviceID, platform string, activeCount int) {
 // Initialize database
 func initDB() error {
     var err error
-    db, err = sql.Open("sqlite", "./users.db")
+    // WAL + busy_timeout: database/sql runs a CONNECTION POOL, and without a
+    // busy timeout concurrent writes fail instantly with SQLITE_BUSY — 52
+    // "database is locked" errors/day across refresh, push-token, quota and
+    // logging paths (verified in journal 2026-08-28). WAL lets readers run
+    // alongside the single writer; busy_timeout makes contending writers
+    // wait up to 5s instead of erroring. _pragma applies per new connection.
+    db, err = sql.Open("sqlite",
+        "file:./users.db?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
     if err != nil {
         return fmt.Errorf("failed to open database: %v", err)
     }
@@ -1130,7 +1137,10 @@ func initDB() error {
 // Initialize analytics database (separate from main db for analytical data)
 func initAnalyticsDB() error {
     var err error
-    analyticsDB, err = sql.Open("sqlite", "./analytics.db")
+    // Same WAL + busy_timeout treatment as users.db — the api_calls /
+    // guard-event writers were the loudest SQLITE_BUSY sources.
+    analyticsDB, err = sql.Open("sqlite",
+        "file:./analytics.db?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
     if err != nil {
         return fmt.Errorf("failed to open analytics database: %v", err)
     }
