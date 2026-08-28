@@ -1285,8 +1285,15 @@ func initAnalyticsDB() error {
     //              omission_fired, ...
     //   count    : magnitude when the event carries one (violations found,
     //              rewrites rejected); 1 for simple occurrences.
-    //   detail   : short non-PII note (error class, call type) — never
-    //              answer text.
+    //   detail   : short non-PII note (error class, call type) or flagged-
+    //              FORM snippets for the fix-worklist (owner decision
+    //              17.08.2026) — never PII, never full answer text.
+    //   app_version     : client build that emitted the event — before this
+    //              column the version had to be reconstructed by joining
+    //              analytics_events on device_id.
+    //   ruleset_version : guard/validator ruleset the client ran — the only
+    //              way to tell "the model got worse" from "the validator
+    //              got stricter" when rates move.
     createGuardTableSQL := `
     CREATE TABLE IF NOT EXISTS ai_guard_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1297,6 +1304,8 @@ func initAnalyticsDB() error {
         language TEXT DEFAULT '',
         count INTEGER DEFAULT 1,
         detail TEXT DEFAULT '',
+        app_version TEXT DEFAULT '',
+        ruleset_version TEXT DEFAULT '',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -1308,6 +1317,16 @@ func initAnalyticsDB() error {
     _, err = analyticsDB.Exec(createGuardTableSQL)
     if err != nil {
         return fmt.Errorf("failed to create ai_guard_events table: %v", err)
+    }
+
+    // Migration for databases created before the version columns
+    // (idempotent — sqlite errors if exists, we ignore).
+    for _, col := range []string{"app_version", "ruleset_version"} {
+        if _, mErr := analyticsDB.Exec(`ALTER TABLE ai_guard_events ADD COLUMN ` + col + ` TEXT DEFAULT ''`); mErr != nil {
+            if !strings.Contains(mErr.Error(), "duplicate column") {
+                log.Printf("ℹ️ ai_guard_events.%s migration note: %v", col, mErr)
+            }
+        }
     }
 
     log.Println("✅ Analytics database initialized successfully")
@@ -1357,21 +1376,41 @@ func logBarnumReport(deviceID, feature, model, language string, sentences, ancho
     }()
 }
 
+// maxGuardDetailBytes caps ai_guard_events.detail. The client clamps to 500
+// CHARS (CJK = 3 bytes each) — 2000 bytes is a safety net against oversized
+// payloads, not the working limit.
+const maxGuardDetailBytes = 2000
+
+// clampDetail cuts s to at most maxGuardDetailBytes WITHOUT splitting a
+// UTF-8 rune. The old byte slice (`detail[:200]`) cut CJK characters in
+// half — 10 of the first 107 live snippets landed with an invalid UTF-8
+// tail (triage 2026-08-28).
+func clampDetail(s string) string {
+    if len(s) <= maxGuardDetailBytes {
+        return s
+    }
+    cut := maxGuardDetailBytes
+    // Back off past any UTF-8 continuation bytes (0b10xxxxxx) so the cut
+    // lands on a rune start.
+    for cut > 0 && s[cut]&0xC0 == 0x80 {
+        cut--
+    }
+    return s[:cut]
+}
+
 // logGuardEvent inserts one AI-guard telemetry row (see ai_guard_events).
-func logGuardEvent(deviceID, feature, kind, model, language string, count int, detail string) {
+func logGuardEvent(deviceID, feature, kind, model, language string, count int, detail, appVersion, rulesetVersion string) {
     if analyticsDB == nil {
         return
     }
     if count < 1 {
         count = 1
     }
-    if len(detail) > 200 {
-        detail = detail[:200]
-    }
+    detail = clampDetail(detail)
     go func() {
         _, err := analyticsDB.Exec(
-            `INSERT INTO ai_guard_events (device_id, feature, kind, model, language, count, detail) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            deviceID, feature, kind, model, language, count, detail)
+            `INSERT INTO ai_guard_events (device_id, feature, kind, model, language, count, detail, app_version, ruleset_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, feature, kind, model, language, count, detail, appVersion, rulesetVersion)
         if err != nil {
             log.Printf("⚠️ Failed to log guard event: %v", err)
         }
@@ -6768,6 +6807,9 @@ type GuardEventRequest struct {
     Language string `json:"language"`
     Count    int    `json:"count"`
     Detail   string `json:"detail"`
+    // Optional since 2026-08-28; older clients simply omit them.
+    AppVersion     string `json:"app_version"`
+    RulesetVersion string `json:"ruleset_version"`
 }
 
 // aiGuardReport ingests one AI-guard telemetry row. JWT-protected; the
@@ -6798,7 +6840,7 @@ func aiGuardReport(w http.ResponseWriter, r *http.Request) {
     }
 
     logGuardEvent(claims.DeviceID, req.Feature, req.Kind, req.Model,
-        req.Language, req.Count, req.Detail)
+        req.Language, req.Count, req.Detail, req.AppVersion, req.RulesetVersion)
 
     json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
