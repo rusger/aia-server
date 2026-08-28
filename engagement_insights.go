@@ -215,8 +215,9 @@ tr:nth-child(even){background:#fafafa}
 		  JOIN (SELECT device_id, MAX(created_at) allmx FROM analytics_events GROUP BY 1) t
 		    ON t.device_id = lm.device_id
 		  WHERE t.allmx < datetime('now','-14 days'))
-		SELECT e.event_name, COUNT(*) n FROM analytics_events e
+		SELECT e.event_name, COUNT(DISTINCT e.device_id) n FROM analytics_events e
 		JOIN churned c ON c.device_id = e.device_id AND c.mx = e.created_at
+		WHERE e.event_type != 'session'
 		GROUP BY 1 ORDER BY n DESC LIMIT 12`)
 	insightsTable(sb, "Последнее осмысленное действие ушедших", "на чём именно людей потеряли (session-события исключены)", []string{"последнее событие", "устройств"}, rows, err)
 
