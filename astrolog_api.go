@@ -9341,6 +9341,7 @@ func main() {
     router.HandleFunc("/api/admin/referral-stats", adminGuardMiddleware(adminReferralStats)).Methods("GET")
     // Monthly P&L: net store revenue vs token spend (Stellar Vault Finance tab, see finance.go)
     router.HandleFunc("/api/admin/finance-stats", adminGuardMiddleware(adminFinanceStats)).Methods("GET")
+    router.HandleFunc("/api/admin/engagement-insights", adminGuardMiddleware(adminEngagementInsights)).Methods("GET")
     // Send a push notification to a device (by device_id) or user (by email).
     // Admin secret + 2FA code required, same gate as the other admin actions.
     router.HandleFunc("/api/admin/send-push", adminGuardMiddleware(adminSendPush)).Methods("POST")
