@@ -3133,6 +3133,14 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // Use device_id from JWT claims (more secure than trusting request body)
     deviceID := claims.DeviceID
 
+    // Silent crisis screen on the user's own words. Never blocks or changes
+    // the LLM call — on a hit the localized hotline block is prepended to the
+    // normal reply below. Content is deliberately kept out of the log line.
+    crisisHit, crisisLang := detectCrisis(lastUserMessage(req.Messages))
+    if crisisHit {
+        log.Printf("🆘 Crisis markers detected: device=%s lang=%s", deviceID, crisisLang)
+    }
+
     // Server-side entitlement check: never trust the client's model choice
     req.Model = enforceModelForUser(claims.Email, deviceID, req.Model)
 
@@ -3383,6 +3391,12 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // (grounding_fix / claim_audit / barnum_*) stay separable in the usage
     // reports, unknown client-supplied tags have been clamped to "chatgpt".
     logAPICallWithTokens(deviceID, callType, req.Model, promptTokens, completionTokens, totalTokens, cachedTokens)
+
+    // Crisis screen hit: hand the hotline block to the user ABOVE the normal
+    // answer, as ordinary message text — old clients render it with no change.
+    if crisisHit {
+        content = crisisNotice(crisisLang) + "\n\n———\n\n" + content
+    }
 
     // Return success response
     json.NewEncoder(w).Encode(ChatGPTProxyResponse{
