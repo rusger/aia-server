@@ -9278,6 +9278,7 @@ func main() {
     router.HandleFunc("/api/transit-year", jwtAuthMiddleware(calculateTransitYear)).Methods("POST")
     router.HandleFunc("/api/transit-multi-year", jwtAuthMiddleware(calculateTransitMultiYear)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
+    router.HandleFunc("/api/chatgpt-stream", jwtAuthMiddleware(chatGPTStreamProxy)).Methods("POST")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
