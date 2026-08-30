@@ -97,6 +97,14 @@ func ensureArbiterTable() error {
 	return arbiterTableErr
 }
 
+func trimForLog(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 500 {
+		return s[:500]
+	}
+	return s
+}
+
 func clampArbiterField(s string) string {
 	if len(s) <= maxArbiterFieldBytes {
 		return s
@@ -229,36 +237,51 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 	_ = ensureArbiterTable()
 	model := arbiterModel()
 
-	noop := func(reason string) {
-		logArbiter(req.Feature, model, false, reason, "", req.Answer, req.Answer, req.FactBasis)
+	// Every outcome is logged (owner order 2026-08-30: success / no-change /
+	// refusal / error / limit — all of it, for the running audit). `detail`
+	// carries the specific reason (e.g. the claude -p error text).
+	noop := func(reason, detail string) {
+		logArbiter(req.Feature, model, false, reason, detail, req.Answer, req.Answer, req.FactBasis)
 		json.NewEncoder(w).Encode(ArbiterResponse{Success: true, Changed: false, Corrected: req.Answer, Reason: reason})
 	}
 
 	// Kill-switch without redeploy: ARBITER_DISABLED=1 => logged no-op.
 	if os.Getenv("ARBITER_DISABLED") == "1" {
-		noop("arbiter_disabled")
+		noop("arbiter_disabled", "")
 		return
 	}
 	if strings.TrimSpace(req.Answer) == "" {
-		noop("empty_answer")
+		noop("empty_answer", "")
 		return
 	}
 
+	// claude -p via the owner's Claude Max. If the subscription has run out or
+	// hit a temporary limit — or any other failure — we skip the correction and
+	// ship the original answer UNCHANGED, but we LOG the failure (limit vs other
+	// error) so the audit sees exactly what was skipped and why.
 	reply, err := callClaudeCLI(arbiterPrompt(req.FactBasis, req.Answer))
 	if err != nil {
-		log.Printf("⚠️ arbiter call failed: %v", err)
-		noop("arbiter_error")
+		es := err.Error()
+		low := strings.ToLower(es)
+		reason := "arbiter_error"
+		if strings.Contains(low, "limit") || strings.Contains(low, "quota") ||
+			strings.Contains(low, "usage") || strings.Contains(low, "rate") ||
+			strings.Contains(low, "subscription") || strings.Contains(low, "credit") {
+			reason = "arbiter_limit" // subscription exhausted / throttled
+		}
+		log.Printf("⚠️ arbiter %s: %v", reason, err)
+		noop(reason, es)
 		return
 	}
 	changed, changes, corrected, ok := parseArbiterJSON(reply)
 	if !ok || strings.TrimSpace(corrected) == "" {
-		noop("arbiter_unparsable")
+		noop("arbiter_unparsable", trimForLog(reply))
 		return
 	}
 	// Guard against a runaway rewrite: if the "corrected" text is wildly
 	// different in length, distrust it and keep the original.
 	if changed && looksLikeRunaway(req.Answer, corrected) {
-		noop("arbiter_runaway_rejected")
+		noop("arbiter_runaway_rejected", "")
 		return
 	}
 	summary := strings.Join(changes, " | ")
