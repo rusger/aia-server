@@ -9,11 +9,11 @@ package main
 // what the client swaps in behind the scenes; every arbitration is logged
 // server-side for audit and improvement.
 //
-// Model path: the owner asked for `claude -p`, but the server has no Node/Claude
-// CLI, so this calls the Anthropic API directly over HTTPS (same shape as the
-// OpenAI proxy). Set ANTHROPIC_API_KEY (and optionally ARBITER_MODEL) in the
-// server env to activate. WITHOUT the key the endpoint is a logged no-op: it
-// returns the answer unchanged and never breaks a user reply.
+// Model: runs `claude -p` (headless) via the server's authenticated Claude Max
+// login (~/.local/bin/claude) — no API key needed (owner order 2026-08-30).
+// Kill-switch ARBITER_DISABLED=1 => logged no-op. Any exec error / unparsable /
+// runaway-length rewrite also returns the answer UNCHANGED (logged), so a user
+// reply is never broken.
 //
 // Privacy: de-identified like the guard corpus — no device id is stored; the
 // fact basis is the computed chart the model already saw (birth-date headers
@@ -21,13 +21,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -40,11 +42,29 @@ var (
 	arbiterTableErr  error
 )
 
+// Model label recorded in the audit log. Empty ARBITER_MODEL => the Claude
+// CLI's configured default (Opus 5 on this server).
 func arbiterModel() string {
 	if m := os.Getenv("ARBITER_MODEL"); m != "" {
 		return m
 	}
-	return "claude-sonnet-4-5" // override via ARBITER_MODEL to pin an exact id
+	return "claude-cli-default"
+}
+
+func serverHome() string {
+	if h := os.Getenv("HOME"); h != "" {
+		return h
+	}
+	return "/home/ruslan"
+}
+
+// claudeBin is the absolute path to the `claude` binary (found via a login
+// shell: ~/.local/bin/claude). Overridable with CLAUDE_BIN.
+func claudeBin() string {
+	if b := os.Getenv("CLAUDE_BIN"); b != "" {
+		return b
+	}
+	return filepath.Join(serverHome(), ".local/bin/claude")
 }
 
 func ensureArbiterTable() error {
@@ -146,46 +166,28 @@ Return ONLY a JSON object, no prose:
 Return the JSON now.`
 }
 
-// callAnthropic sends one message to the Anthropic API and returns the text.
-func callAnthropic(prompt string) (string, error) {
-	key := os.Getenv("ANTHROPIC_API_KEY")
-	if key == "" {
-		return "", fmt.Errorf("no ANTHROPIC_API_KEY")
+// callClaudeCLI runs `claude -p` headless (owner order 2026-08-30) using the
+// server's authenticated Claude Max login — no API key. The prompt is piped on
+// stdin; the reply is read from stdout. Runs as the service user (ruslan) with
+// HOME set so the CLI finds its auth.
+func callClaudeCLI(prompt string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+	args := []string{"-p", "--output-format", "text"}
+	if m := os.Getenv("ARBITER_MODEL"); m != "" {
+		args = append(args, "--model", m)
 	}
-	body, _ := json.Marshal(map[string]interface{}{
-		"model":      arbiterModel(),
-		"max_tokens": 3000,
-		"messages":   []map[string]string{{"role": "user", "content": prompt}},
-	})
-	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(body))
-	if err != nil {
-		return "", err
+	cmd := exec.CommandContext(ctx, claudeBin(), args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Dir = serverHome()
+	cmd.Env = append(os.Environ(), "HOME="+serverHome())
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("claude -p failed: %v: %s", err, strings.TrimSpace(errb.String()))
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", key)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	client := &http.Client{Timeout: 90 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("anthropic %d: %s", resp.StatusCode, string(raw[:min(len(raw), 300)]))
-	}
-	var out struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", err
-	}
-	if len(out.Content) == 0 {
-		return "", fmt.Errorf("empty content")
-	}
-	return out.Content[0].Text, nil
+	return out.String(), nil
 }
 
 // parseArbiterJSON extracts the {changed,changes,corrected} object from the
@@ -232,8 +234,9 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(ArbiterResponse{Success: true, Changed: false, Corrected: req.Answer, Reason: reason})
 	}
 
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		noop("arbiter_disabled_no_key")
+	// Kill-switch without redeploy: ARBITER_DISABLED=1 => logged no-op.
+	if os.Getenv("ARBITER_DISABLED") == "1" {
+		noop("arbiter_disabled")
 		return
 	}
 	if strings.TrimSpace(req.Answer) == "" {
@@ -241,7 +244,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reply, err := callAnthropic(arbiterPrompt(req.FactBasis, req.Answer))
+	reply, err := callClaudeCLI(arbiterPrompt(req.FactBasis, req.Answer))
 	if err != nil {
 		log.Printf("⚠️ arbiter call failed: %v", err)
 		noop("arbiter_error")
