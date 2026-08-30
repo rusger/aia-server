@@ -1,0 +1,350 @@
+package main
+
+// Arbiter layer (owner request 2026-08-30): a SECOND model ("dublyor") on the
+// server cross-checks a generated astrology answer against the computed chart
+// facts and applies the MINIMAL edits needed to remove claims the facts don't
+// support — chiefly yogas the model named whose condition doesn't hold (the
+// interpretive-fidelity run showed GPT-4o fabricating yogas on 4/8 charts, a
+// failure the position-only grounding cannot catch). The corrected text is
+// what the client swaps in behind the scenes; every arbitration is logged
+// server-side for audit and improvement.
+//
+// Model path: the owner asked for `claude -p`, but the server has no Node/Claude
+// CLI, so this calls the Anthropic API directly over HTTPS (same shape as the
+// OpenAI proxy). Set ANTHROPIC_API_KEY (and optionally ARBITER_MODEL) in the
+// server env to activate. WITHOUT the key the endpoint is a logged no-op: it
+// returns the answer unchanged and never breaks a user reply.
+//
+// Privacy: de-identified like the guard corpus — no device id is stored; the
+// fact basis is the computed chart the model already saw (birth-date headers
+// stripped upstream).
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+)
+
+const maxArbiterFieldBytes = 120000
+
+var (
+	arbiterTableOnce sync.Once
+	arbiterTableErr  error
+)
+
+func arbiterModel() string {
+	if m := os.Getenv("ARBITER_MODEL"); m != "" {
+		return m
+	}
+	return "claude-sonnet-4-5" // override via ARBITER_MODEL to pin an exact id
+}
+
+func ensureArbiterTable() error {
+	arbiterTableOnce.Do(func() {
+		if analyticsDB == nil {
+			arbiterTableErr = fmt.Errorf("analytics DB not initialized")
+			return
+		}
+		_, arbiterTableErr = analyticsDB.Exec(`
+        CREATE TABLE IF NOT EXISTS ai_arbiter_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            feature TEXT NOT NULL,
+            model TEXT DEFAULT '',
+            changed INTEGER DEFAULT 0,
+            reason TEXT DEFAULT '',
+            change_summary TEXT DEFAULT '',
+            original_answer TEXT DEFAULT '',
+            corrected_answer TEXT DEFAULT '',
+            fact_basis TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_arbiter_feature ON ai_arbiter_events(feature);
+        CREATE INDEX IF NOT EXISTS idx_arbiter_changed ON ai_arbiter_events(changed);
+        CREATE INDEX IF NOT EXISTS idx_arbiter_date ON ai_arbiter_events(created_at);
+        `)
+		if arbiterTableErr != nil {
+			log.Printf("❌ ai_arbiter_events create failed: %v", arbiterTableErr)
+		}
+	})
+	return arbiterTableErr
+}
+
+func clampArbiterField(s string) string {
+	if len(s) <= maxArbiterFieldBytes {
+		return s
+	}
+	cut := maxArbiterFieldBytes
+	for cut > 0 && (s[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return s[:cut]
+}
+
+func logArbiter(feature, model string, changed bool, reason, summary, original, corrected, facts string) {
+	if analyticsDB == nil {
+		return
+	}
+	ci := 0
+	if changed {
+		ci = 1
+	}
+	go func() {
+		if _, err := analyticsDB.Exec(
+			`INSERT INTO ai_arbiter_events
+			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			feature, model, ci, reason, clampArbiterField(summary),
+			clampArbiterField(original), clampArbiterField(corrected), clampArbiterField(facts),
+		); err != nil {
+			log.Printf("⚠️ ai_arbiter_events insert failed: %v", err)
+		}
+	}()
+}
+
+// ArbiterRequest is one answer to cross-check. fact_basis = the computed chart
+// + lenses the answer was written from (de-identified).
+type ArbiterRequest struct {
+	Feature   string `json:"feature"`
+	FactBasis string `json:"fact_basis"`
+	Answer    string `json:"answer"`
+}
+
+type ArbiterResponse struct {
+	Success   bool     `json:"success"`
+	Changed   bool     `json:"changed"`
+	Corrected string   `json:"corrected"`
+	Changes   []string `json:"changes"`
+	Reason    string   `json:"reason,omitempty"`
+}
+
+func arbiterPrompt(factBasis, answer string) string {
+	return `You are a rigorous fact-checker for a Vedic (Jyotish) astrology answer. You are given the COMPUTED chart facts (ground truth — planetary signs, houses, dignities) and an answer written for a user.
+
+Your job: find astrological CLAIMS in the answer that the facts do NOT support — most importantly a named yoga or combination whose defining condition is not actually met by the chart (e.g. a Mahapurusha yoga claimed for a planet that is not in a kendra; a "parivartana" between planets that are merely conjunct; a yoga asserted where the planets are not in the stated relationship). Also flag any planetary position stated that contradicts the facts.
+
+Do NOT flag legitimate interpretation, tone, or a different-but-valid school of thought. Only flag claims that are factually wrong against the given chart.
+
+Then produce a corrected answer that makes the MINIMAL edits needed to remove or fix the unsupported claims, preserving the original wording, structure, and length everywhere else. The edit must be as unobtrusive as possible.
+
+Return ONLY a JSON object, no prose:
+{"changed": <true|false>, "changes": ["short description of each fix"], "corrected": "<the full answer, edited or unchanged>"}
+
+=== COMPUTED CHART FACTS (ground truth) ===
+` + factBasis + `
+
+=== ANSWER TO CHECK ===
+` + answer + `
+
+Return the JSON now.`
+}
+
+// callAnthropic sends one message to the Anthropic API and returns the text.
+func callAnthropic(prompt string) (string, error) {
+	key := os.Getenv("ANTHROPIC_API_KEY")
+	if key == "" {
+		return "", fmt.Errorf("no ANTHROPIC_API_KEY")
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"model":      arbiterModel(),
+		"max_tokens": 3000,
+		"messages":   []map[string]string{{"role": "user", "content": prompt}},
+	})
+	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", key)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	client := &http.Client{Timeout: 90 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("anthropic %d: %s", resp.StatusCode, string(raw[:min(len(raw), 300)]))
+	}
+	var out struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", err
+	}
+	if len(out.Content) == 0 {
+		return "", fmt.Errorf("empty content")
+	}
+	return out.Content[0].Text, nil
+}
+
+// parseArbiterJSON extracts the {changed,changes,corrected} object from the
+// model's reply, tolerating markdown fences / leading prose.
+func parseArbiterJSON(s string) (changed bool, changes []string, corrected string, ok bool) {
+	i, j := strings.Index(s, "{"), strings.LastIndex(s, "}")
+	if i < 0 || j <= i {
+		return false, nil, "", false
+	}
+	var obj struct {
+		Changed   bool     `json:"changed"`
+		Changes   []string `json:"changes"`
+		Corrected string   `json:"corrected"`
+	}
+	if err := json.Unmarshal([]byte(s[i:j+1]), &obj); err != nil {
+		return false, nil, "", false
+	}
+	return obj.Changed, obj.Changes, obj.Corrected, true
+}
+
+// arbiterReview cross-checks one answer. Fail-open: any error or a missing key
+// returns the answer UNCHANGED (logged), so a user reply is never broken.
+func arbiterReview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if _, ok := r.Context().Value("claims").(*JWTClaims); !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+		return
+	}
+	var req ArbiterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid request body"})
+		return
+	}
+	if req.Feature == "" {
+		req.Feature = "other"
+	}
+	_ = ensureArbiterTable()
+	model := arbiterModel()
+
+	noop := func(reason string) {
+		logArbiter(req.Feature, model, false, reason, "", req.Answer, req.Answer, req.FactBasis)
+		json.NewEncoder(w).Encode(ArbiterResponse{Success: true, Changed: false, Corrected: req.Answer, Reason: reason})
+	}
+
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		noop("arbiter_disabled_no_key")
+		return
+	}
+	if strings.TrimSpace(req.Answer) == "" {
+		noop("empty_answer")
+		return
+	}
+
+	reply, err := callAnthropic(arbiterPrompt(req.FactBasis, req.Answer))
+	if err != nil {
+		log.Printf("⚠️ arbiter call failed: %v", err)
+		noop("arbiter_error")
+		return
+	}
+	changed, changes, corrected, ok := parseArbiterJSON(reply)
+	if !ok || strings.TrimSpace(corrected) == "" {
+		noop("arbiter_unparsable")
+		return
+	}
+	// Guard against a runaway rewrite: if the "corrected" text is wildly
+	// different in length, distrust it and keep the original.
+	if changed && looksLikeRunaway(req.Answer, corrected) {
+		noop("arbiter_runaway_rejected")
+		return
+	}
+	summary := strings.Join(changes, " | ")
+	logArbiter(req.Feature, model, changed, "ok", summary, req.Answer, corrected, req.FactBasis)
+	json.NewEncoder(w).Encode(ArbiterResponse{
+		Success: true, Changed: changed, Corrected: corrected, Changes: changes,
+	})
+}
+
+// looksLikeRunaway is true when the corrected text length departs too far from
+// the original (the arbiter is meant to make MINIMAL edits, not rewrite).
+func looksLikeRunaway(orig, corrected string) bool {
+	lo, lc := len(orig), len(corrected)
+	if lo == 0 {
+		return false
+	}
+	ratio := float64(lc) / float64(lo)
+	return ratio < 0.5 || ratio > 1.6
+}
+
+// adminGetArbiter exports arbiter events for audit. Admin-gated.
+// ?days=N (default 30, 0=all), ?changed_only=1, ?feature=F, ?limit=N (max 1000).
+func adminGetArbiter(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !isAdminEmail(r.URL.Query().Get("admin_email")) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Unauthorized"})
+		return
+	}
+	if ADMIN_SECRET_KEY != "" && r.URL.Query().Get("admin_secret") != ADMIN_SECRET_KEY {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Invalid admin secret"})
+		return
+	}
+	if analyticsDB == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Analytics database not initialized"})
+		return
+	}
+	_ = ensureArbiterTable()
+	days, limit := 30, 200
+	if d := r.URL.Query().Get("days"); d != "" {
+		fmt.Sscanf(d, "%d", &days)
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	where, args := []string{}, []interface{}{}
+	if days > 0 {
+		where = append(where, "created_at >= datetime('now', ?)")
+		args = append(args, fmt.Sprintf("-%d days", days))
+	}
+	if r.URL.Query().Get("changed_only") == "1" {
+		where = append(where, "changed = 1")
+	}
+	if f := r.URL.Query().Get("feature"); f != "" {
+		where = append(where, "feature = ?")
+		args = append(args, f)
+	}
+	q := `SELECT id, feature, model, changed, reason, change_summary,
+	             original_answer, corrected_answer, fact_basis, created_at
+	      FROM ai_arbiter_events`
+	if len(where) > 0 {
+		q += " WHERE " + strings.Join(where, " AND ")
+	}
+	q += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := analyticsDB.Query(q, args...)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+	defer rows.Close()
+	events := []map[string]interface{}{}
+	for rows.Next() {
+		var id, changed int
+		var feature, model, reason, summary, orig, corr, facts, created string
+		if err := rows.Scan(&id, &feature, &model, &changed, &reason, &summary, &orig, &corr, &facts, &created); err != nil {
+			continue
+		}
+		events = append(events, map[string]interface{}{
+			"id": id, "feature": feature, "model": model, "changed": changed == 1,
+			"reason": reason, "change_summary": summary, "original_answer": orig,
+			"corrected_answer": corr, "fact_basis": facts, "created_at": created,
+		})
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "days": days, "count": len(events), "events": events})
+}
+
+var _ = sql.ErrNoRows
