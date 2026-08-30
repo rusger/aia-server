@@ -9281,6 +9281,8 @@ func main() {
     router.HandleFunc("/api/chatgpt-stream", jwtAuthMiddleware(chatGPTStreamProxy)).Methods("POST")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
+    // De-identified guard corpus for hallucination triage (guard_corpus.go).
+    router.HandleFunc("/api/ai/guard/corpus", jwtAuthMiddleware(guardCorpusReport)).Methods("POST")
     router.HandleFunc("/api/user/info", jwtAuthMiddleware(getUserInfo)).Methods("GET")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(recordPurchase)).Methods("POST")
     router.HandleFunc("/api/user/purchases", jwtAuthMiddleware(getPurchaseHistory)).Methods("GET")
@@ -9326,6 +9328,8 @@ func main() {
     router.HandleFunc("/api/admin/barnum-stats", adminGuardMiddleware(adminGetBarnumStats)).Methods("GET")
     router.HandleFunc("/api/admin/ai-guard-stats", adminGuardMiddleware(adminGetGuardStats)).Methods("GET")
     router.HandleFunc("/api/admin/guard-forms", adminGuardMiddleware(adminGetGuardForms)).Methods("GET")
+    router.HandleFunc("/api/admin/guard-corpus", adminGuardMiddleware(adminGetGuardCorpus)).Methods("GET")
+    router.HandleFunc("/api/admin/guard-corpus-summary", adminGuardMiddleware(adminGetGuardCorpusSummary)).Methods("GET")
     router.HandleFunc("/api/admin/user-calls", adminGuardMiddleware(adminGetUserCalls)).Methods("GET")
     router.HandleFunc("/api/admin/user-appearance", adminGuardMiddleware(adminGetUserAppearance)).Methods("GET")
     router.HandleFunc("/api/admin/user-languages", adminGuardMiddleware(adminGetUserLanguages)).Methods("GET")
