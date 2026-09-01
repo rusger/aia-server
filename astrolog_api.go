@@ -3787,12 +3787,12 @@ func verifyGooglePlayPurchase(productID, purchaseToken string, isSubscription bo
 
     if resp.StatusCode != 200 {
         // 400/404/410 mean Google does not recognize the token — a forged or
-        // revoked purchase, NOT an outage. Must fail closed: recordPurchase
-        // treats a returned error as "verification unavailable" and records
-        // the purchase anyway, which is exactly how Lucky Patcher-style fake
-        // tokens got accepted (see purchase_history cleanup 2026-07-21).
-        // 401/403 = our own credentials problem, 5xx = Google outage — those
-        // stay fail-open via error return.
+        // revoked purchase, NOT an outage — and return (false, nil) outright
+        // (Lucky Patcher-style fake tokens once slipped through here, see
+        // purchase_history cleanup 2026-07-21). 401/403 = our own credentials
+        // problem, 5xx = Google outage — those return an error, which
+        // recordPurchase ALSO fails closed on (503, retryable: the client's
+        // sync queue re-sends later). Nothing is granted unverified.
         if resp.StatusCode == 400 || resp.StatusCode == 404 || resp.StatusCode == 410 {
             log.Printf("❌ Google Play rejected purchase token (%d) — treating as invalid", resp.StatusCode)
             return false, nil, nil
@@ -3944,7 +3944,13 @@ func appleCorroboratedExpiry(txnID string) (bool, *time.Time) {
     err := db.QueryRow(`SELECT expiry_date FROM purchase_history
                         WHERE store='apple' AND (transaction_id = ? OR original_transaction_id = ?)
                         ORDER BY id LIMIT 1`, txnID, txnID).Scan(&expiry)
+    if err == sql.ErrNoRows {
+        return false, nil
+    }
     if err != nil {
+        // Fails closed (caller refuses retryably), but a DB fault deferring a
+        // legitimate purchase must be visible, not silent.
+        log.Printf("⚠️ appleCorroboratedExpiry: lookup failed for txn %s: %v", txnID, err)
         return false, nil
     }
     if expiry.Valid {
