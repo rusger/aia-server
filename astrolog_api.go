@@ -3867,6 +3867,7 @@ type appleNotificationPayload struct {
 type appleTransactionInfo struct {
     TransactionID         string `json:"transactionId"`
     OriginalTransactionID string `json:"originalTransactionId"`
+    BundleID              string `json:"bundleId"` // which app this transaction belongs to
     ProductID             string `json:"productId"`
     PurchaseDate          int64  `json:"purchaseDate"`         // epoch milliseconds
     OriginalPurchaseDate  int64  `json:"originalPurchaseDate"` // epoch milliseconds (subscription start)
@@ -3875,6 +3876,82 @@ type appleTransactionInfo struct {
     AppAccountToken       string `json:"appAccountToken"` // set by client if it tags purchases
     InAppOwnershipType    string `json:"inAppOwnershipType"`
     Storefront            string `json:"storefront"`
+}
+
+// appleBundleIDWant is the bundle id all Apple-signed material must belong to.
+// Apple's signature only proves "Apple signed this for SOME app" — without the
+// bundle check a valid signed transaction/notification from ANOTHER app (whose
+// owner can mint them at will, with any product id they like) would pass.
+func appleBundleIDWant() string {
+    return getEnv("APPLE_BUNDLE_ID", "com.astrolytix.app")
+}
+
+// isCompactJWS reports whether s looks like a JWS compact serialization
+// (header.payload.signature). StoreKit 2 clients send the transaction JWS as
+// the purchase token; legacy StoreKit 1 clients send a base64 PKCS7 receipt,
+// which contains no dots.
+func isCompactJWS(s string) bool {
+    return strings.Count(s, ".") == 2 && !strings.ContainsAny(s, " \t\r\n")
+}
+
+// checkAppleTransactionClaims cross-checks a decoded (already
+// signature-verified) transaction against what the client claims to have
+// bought. Pure function so the rules are unit-testable.
+func checkAppleTransactionClaims(txn *appleTransactionInfo, claimedProductID, wantBundle string) error {
+    if txn.BundleID != wantBundle {
+        return fmt.Errorf("transaction bundleId %q is not %q", txn.BundleID, wantBundle)
+    }
+    if txn.ProductID == "" || txn.ProductID != claimedProductID {
+        return fmt.Errorf("productId mismatch: token has %q, client claims %q", txn.ProductID, claimedProductID)
+    }
+    if txn.TransactionID == "" {
+        return fmt.Errorf("transaction has no transactionId")
+    }
+    return nil
+}
+
+// verifyApplePurchaseToken verifies a StoreKit 2 transaction JWS sent by the
+// client (signature chain to Apple's Root CA, then bundle/product claims) and
+// returns the decoded transaction. Sandbox transactions verify with the same
+// chain and are deliberately accepted — TestFlight and App Review purchases
+// must grant entitlement.
+func verifyApplePurchaseToken(token, claimedProductID string) (*appleTransactionInfo, error) {
+    payload, err := verifyAppleJWS(token)
+    if err != nil {
+        return nil, err
+    }
+    var txn appleTransactionInfo
+    if err := json.Unmarshal(payload, &txn); err != nil {
+        return nil, fmt.Errorf("transaction payload parse failed: %w", err)
+    }
+    if err := checkAppleTransactionClaims(&txn, claimedProductID, appleBundleIDWant()); err != nil {
+        return nil, err
+    }
+    return &txn, nil
+}
+
+// appleCorroboratedExpiry checks whether an Apple transaction id is already
+// known to us from a VERIFIED source (the S2S webhook or backfill insert rows
+// with signature-checked data — including unattributed 'apple:%' placeholders).
+// Legacy StoreKit 1 clients send an opaque receipt we cannot check offline, so
+// their purchases are granted only when Apple's own notification has already
+// told us the transaction is real. Returns (known, expiry from that record).
+func appleCorroboratedExpiry(txnID string) (bool, *time.Time) {
+    if txnID == "" {
+        return false, nil
+    }
+    var expiry sql.NullTime
+    err := db.QueryRow(`SELECT expiry_date FROM purchase_history
+                        WHERE store='apple' AND (transaction_id = ? OR original_transaction_id = ?)
+                        ORDER BY id LIMIT 1`, txnID, txnID).Scan(&expiry)
+    if err != nil {
+        return false, nil
+    }
+    if expiry.Valid {
+        e := expiry.Time
+        return true, &e
+    }
+    return true, nil
 }
 
 // appleEmailForToken returns the account email whose stored StoreKit
@@ -4114,11 +4191,27 @@ func appleServerNotification(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte(`{"success":true}`))
 }
 
+// appleNotificationBundleOK gates S2S processing on the notification's
+// bundleId. Apple's signature proves the payload is Apple-signed for SOME
+// app — any developer can mint valid signed notifications for their own app
+// (with product ids named like ours) and replay them here, attributing the
+// entitlement via an appAccountToken they control. A non-matching bundleId is
+// therefore rejected outright. An EMPTY bundleId is allowed: TEST
+// notifications and some minimal payload shapes omit it, and an attacker
+// cannot blank the field on a real transaction notification.
+func appleNotificationBundleOK(bundleID string) bool {
+    return bundleID == "" || bundleID == appleBundleIDWant()
+}
+
 // processAppleNotification applies a verified notification's effects exactly
 // once (idempotent on notificationUUID). Returns false if it was already
 // processed. Shared by the live webhook and the one-time backfill so both paths
 // behave identically.
 func processAppleNotification(note *appleNotificationPayload, txn *appleTransactionInfo) bool {
+    if !appleNotificationBundleOK(note.Data.BundleID) {
+        log.Printf("❌ [apple S2S] foreign bundleId %q (type=%s txn=%s) — ignored", note.Data.BundleID, note.NotificationType, txn.TransactionID)
+        return true // handled: no effects, no audit row, caller responds 200 and Apple stops retrying
+    }
     if !recordAppleNotificationIfNew(note, txn) {
         return false
     }
@@ -4377,6 +4470,24 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
         }
     }
 
+    // Only real store purchases come through this endpoint. yookassa/admin
+    // entitlements are granted by their own server-side flows — accepting the
+    // store name from the client here would let anyone mint a subscription
+    // with a plain authenticated POST.
+    if req.Store != "apple" && req.Store != "google" {
+        log.Printf("❌ recordPurchase: rejected store %q from device %s", req.Store, deviceID)
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "unsupported store",
+        })
+        return
+    }
+
+    // The transaction id used for dedup/history. For a verified Apple JWS the
+    // token's own transaction id wins over whatever the client claimed.
+    authoritativeTxnID := req.TransactionID
+
     // Verify Google Play purchase if enabled and it's a Google purchase
     if req.Store == "google" && req.PurchaseToken != "" {
         // Determine if it's a subscription or one-time purchase
@@ -4384,9 +4495,18 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
 
         isValid, verifiedExpiry, err := verifyGooglePlayPurchase(req.ProductID, req.PurchaseToken, isSubscription)
         if err != nil {
-            log.Printf("⚠️ Google Play verification error (continuing anyway): %v", err)
-            // Don't fail the purchase if verification has issues - log and continue
-            // This allows purchases to work even if Google API is temporarily unavailable
+            // Fail CLOSED (rules/server.md: a fail-open verification here has
+            // already been exploited once). 5xx/credential/network problems
+            // are retryable: the client keeps the purchase in its sync queue
+            // and re-sends on next launch, and the Play RTDN pipeline can
+            // grant independently. No entitlement on an unverified claim.
+            log.Printf("❌ Google Play verification unavailable, refusing unverified purchase: %v", err)
+            w.WriteHeader(http.StatusServiceUnavailable)
+            json.NewEncoder(w).Encode(map[string]interface{}{
+                "success": false,
+                "error":   "Purchase verification temporarily unavailable, will retry",
+            })
+            return
         } else if !isValid {
             log.Printf("❌ Google Play purchase verification failed for product %s", req.ProductID)
             w.WriteHeader(http.StatusBadRequest)
@@ -4403,6 +4523,66 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     } else if req.Store == "google" && req.PurchaseToken == "" && GOOGLE_PLAY_VERIFY_PURCHASES {
         log.Printf("⚠️ Google purchase without token, verification enabled - this may indicate an issue")
     }
+
+    // Verify Apple purchase. StoreKit 2 clients (the shipping app) send the
+    // transaction JWS as purchase_token — verifiable offline against Apple's
+    // Root CA, exactly like S2S notifications. Until now this path trusted
+    // the client completely: any authenticated user could claim an Apple
+    // purchase (with a 100-year expiry) and be granted entitlement.
+    if req.Store == "apple" {
+        if isCompactJWS(req.PurchaseToken) {
+            txn, vErr := verifyApplePurchaseToken(req.PurchaseToken, req.ProductID)
+            if vErr != nil {
+                log.Printf("❌ Apple purchase token verification failed (device %s, product %s): %v", deviceID, req.ProductID, vErr)
+                w.WriteHeader(http.StatusBadRequest)
+                json.NewEncoder(w).Encode(map[string]interface{}{
+                    "success": false,
+                    "error":   "Purchase verification failed",
+                })
+                return
+            }
+            authoritativeTxnID = txn.TransactionID
+            // Entitlement window comes from the verified transaction, never
+            // from the client. Lifetime (non-subscription) transactions carry
+            // no expiresDate → NULL = never expires, which is correct.
+            expiryDate = nil
+            if txn.ExpiresDate > 0 {
+                e := time.UnixMilli(txn.ExpiresDate)
+                expiryDate = &e
+            }
+            log.Printf("✅ Apple JWS verified: txn=%s product=%s expiry=%v", txn.TransactionID, txn.ProductID, expiryDate)
+        } else {
+            // Legacy StoreKit 1 receipt (iOS < 15) — an opaque PKCS7 blob we
+            // can't check offline. Grant only when Apple's own S2S pipeline
+            // has already recorded this transaction; otherwise refuse
+            // retryably. The app_account_token is stored below regardless of
+            // outcome so the S2S notification can attribute the purchase and
+            // grant entitlement server-side on its own.
+            known, s2sExpiry := appleCorroboratedExpiry(req.TransactionID)
+            if !known {
+                if req.AppAccountToken != "" && email != "" {
+                    if _, tErr := db.Exec(`UPDATE users SET app_account_token = ? WHERE email = ?`,
+                        req.AppAccountToken, email); tErr != nil {
+                        log.Printf("⚠️ Failed to store app_account_token pre-verification: %v", tErr)
+                    }
+                }
+                log.Printf("❌ Apple legacy receipt without S2S corroboration (device %s, txn %q) — deferring to S2S", deviceID, req.TransactionID)
+                w.WriteHeader(http.StatusServiceUnavailable)
+                json.NewEncoder(w).Encode(map[string]interface{}{
+                    "success": false,
+                    "error":   "Purchase verification pending, will retry",
+                })
+                return
+            }
+            expiryDate = s2sExpiry
+            log.Printf("✅ Apple legacy receipt corroborated by S2S: txn=%s expiry=%v", req.TransactionID, expiryDate)
+        }
+    }
+
+    // Entitlement fields are the server's call, not the request's: length is
+    // derived from the verified product id, and the type this endpoint can
+    // grant is exactly 'paid'.
+    grantedLength := productToLength(req.ProductID)
 
     // Use transaction to ensure atomicity
     tx, err := db.Begin()
@@ -4432,7 +4612,7 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
               (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store, purchase_token, is_trial)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-    insertRes, err := tx.Exec(query, email, deviceID, req.ProductID, req.TransactionID, purchaseDate, expiryDate, req.SubscriptionType, req.SubscriptionLength, req.Store, req.PurchaseToken, isTrialInt)
+    insertRes, err := tx.Exec(query, email, deviceID, req.ProductID, authoritativeTxnID, purchaseDate, expiryDate, "paid", grantedLength, req.Store, req.PurchaseToken, isTrialInt)
     if err != nil {
         log.Printf("Error recording purchase: %v", err)
         w.WriteHeader(http.StatusInternalServerError)
@@ -4443,22 +4623,22 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Also update user's subscription status in the users table
-    if req.SubscriptionType != "" {
-        updateQuery := `UPDATE users SET
-                        subscription_type = ?,
-                        subscription_length = ?,
-                        subscription_expiry = ?,
-                        last_payment_method = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                        WHERE email = ?`
-        _, err = tx.Exec(updateQuery, req.SubscriptionType, req.SubscriptionLength, expiryDate, req.Store, email)
-        if err != nil {
-            log.Printf("Error updating user subscription: %v", err)
-            // Continue anyway - purchase record is more important
-        } else {
-            log.Printf("✅ User subscription updated: email=%s, type=%s, length=%s, method=%s", email, req.SubscriptionType, req.SubscriptionLength, req.Store)
-        }
+    // Also update user's subscription status in the users table. Type and
+    // length are server-derived (see grantedLength above) — the request's
+    // copies of these fields are ignored.
+    updateQuery := `UPDATE users SET
+                    subscription_type = 'paid',
+                    subscription_length = ?,
+                    subscription_expiry = ?,
+                    last_payment_method = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                    WHERE email = ?`
+    _, err = tx.Exec(updateQuery, grantedLength, expiryDate, req.Store, email)
+    if err != nil {
+        log.Printf("Error updating user subscription: %v", err)
+        // Continue anyway - purchase record is more important
+    } else {
+        log.Printf("✅ User subscription updated: email=%s, type=paid, length=%s, method=%s", email, grantedLength, req.Store)
     }
 
     // Commit transaction
@@ -4511,11 +4691,11 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // as an unattributed placeholder (email "apple:<originalTransactionId>")
     // because the client hadn't synced yet, drop the placeholder now that we
     // have the real account. For an initial buy transaction_id == originalTransactionId.
-    if req.Store == "apple" && req.TransactionID != "" {
+    if req.Store == "apple" && authoritativeTxnID != "" {
         if _, dErr := db.Exec(
             `DELETE FROM purchase_history WHERE store='apple' AND email LIKE 'apple:%'
                 AND (transaction_id = ? OR original_transaction_id = ?)`,
-            req.TransactionID, req.TransactionID,
+            authoritativeTxnID, authoritativeTxnID,
         ); dErr != nil {
             log.Printf("⚠️ placeholder reconcile failed: %v", dErr)
         }
