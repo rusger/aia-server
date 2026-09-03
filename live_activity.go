@@ -53,6 +53,10 @@ func migrateLiveActivities() {
 	}
 }
 
+// liveActivityPushType is the apns-push-type header value for ActivityKit
+// control pushes (start/update/end).
+const liveActivityPushType = "liveactivity"
+
 // liveActivityTopic is the APNs topic for Live Activity control pushes:
 // the app's bundle id with the ActivityKit suffix.
 func liveActivityTopic(bundleID string) string {
@@ -89,7 +93,7 @@ func sendLiveActivityEnd(token string, dismissAt time.Time) error {
 		return err
 	}
 	// A late end push is still useful (it removes the banner), so no expiry.
-	return sendAPNsWithFallback(c, jwt, liveActivityTopic(c.bundleID), "liveactivity", token, body, 0)
+	return sendAPNsWithFallback(c, jwt, liveActivityTopic(c.bundleID), liveActivityPushType, token, body, 0)
 }
 
 // upsertLiveActivityEnd records the deadline for one activity token. A

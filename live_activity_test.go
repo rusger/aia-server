@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -49,6 +50,50 @@ func TestLiveActivityEndBodyAndTopic(t *testing.T) {
 	}
 	if _, has := aps["content-state"]; has {
 		t.Errorf("content-state must not be sent on end")
+	}
+}
+
+// The end push must go out with the ActivityKit headers (topic suffix +
+// push-type "liveactivity"), otherwise APNs rejects it with TopicDisallowed
+// and the banner stays frozen.
+func TestLiveActivityEndPushHeaders(t *testing.T) {
+	var gotTopic, gotPushType, gotPriority, gotExpiration, gotPath string
+	var gotBody []byte
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTopic = r.Header.Get("apns-topic")
+		gotPushType = r.Header.Get("apns-push-type")
+		gotPriority = r.Header.Get("apns-priority")
+		gotExpiration = r.Header.Get("apns-expiration")
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	saved := apnsHTTPClient
+	apnsHTTPClient = srv.Client()
+	defer func() { apnsHTTPClient = saved }()
+
+	c := &apnsConfig{bundleID: "com.astrolytix.app", production: true}
+	body, _ := liveActivityEndBody(time.Unix(1, 0), time.Unix(2, 0))
+	status, _, err := sendAPNsRaw(c, "jwt", srv.Listener.Addr().String(),
+		liveActivityTopic(c.bundleID), liveActivityPushType, "deadbeef", body, 0)
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("send: status %d err %v", status, err)
+	}
+	if gotTopic != "com.astrolytix.app.push-type.liveactivity" {
+		t.Errorf("apns-topic = %q", gotTopic)
+	}
+	if gotPushType != "liveactivity" {
+		t.Errorf("apns-push-type = %q", gotPushType)
+	}
+	if gotPriority != "10" || gotExpiration != "" {
+		t.Errorf("priority %q expiration %q", gotPriority, gotExpiration)
+	}
+	if gotPath != "/3/device/deadbeef" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if string(gotBody) != string(body) {
+		t.Errorf("body = %s", gotBody)
 	}
 }
 
