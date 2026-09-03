@@ -200,18 +200,26 @@ func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error
 	// tell which a token is, so try the configured primary and, on a
 	// BadDeviceToken (wrong-environment) rejection, automatically retry the
 	// other host. This serves a mixed fleet of dev + production devices.
-	primary := "api.push.apple.com"
-	secondary := "api.sandbox.push.apple.com"
-	if !c.production {
-		primary, secondary = secondary, primary
-	}
-
 	var expiration int64
 	if ttl > 0 {
 		expiration = time.Now().Add(ttl).Unix()
 	}
 
-	status, reason, err := sendAPNsToHost(c, jwt, primary, deviceToken, jsonBody, expiration)
+	return sendAPNsWithFallback(c, jwt, c.bundleID, "alert", deviceToken, jsonBody, expiration)
+}
+
+// sendAPNsWithFallback delivers one prepared payload with the given topic and
+// apns-push-type, trying the configured primary APNs host first and, on a
+// BadDeviceToken (wrong-environment) rejection, the other host. Shared by the
+// alert pushes (sendAPNs) and the Live Activity control pushes
+// (sendLiveActivityEnd) so the mixed dev/production fleet logic lives once.
+func sendAPNsWithFallback(c *apnsConfig, jwt, topic, pushType, deviceToken string, jsonBody []byte, expiration int64) error {
+	primary := "api.push.apple.com"
+	secondary := "api.sandbox.push.apple.com"
+	if !c.production {
+		primary, secondary = secondary, primary
+	}
+	status, reason, err := sendAPNsRaw(c, jwt, primary, topic, pushType, deviceToken, jsonBody, expiration)
 	if err != nil {
 		return err
 	}
@@ -219,7 +227,7 @@ func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error
 		return nil
 	}
 	if status == http.StatusBadRequest && strings.Contains(reason, "BadDeviceToken") {
-		if status, reason, err = sendAPNsToHost(c, jwt, secondary, deviceToken, jsonBody, expiration); err != nil {
+		if status, reason, err = sendAPNsRaw(c, jwt, secondary, topic, pushType, deviceToken, jsonBody, expiration); err != nil {
 			return err
 		}
 		if status == http.StatusOK {
@@ -229,19 +237,20 @@ func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error
 	return fmt.Errorf("APNs %d: %s", status, reason)
 }
 
-// sendAPNsToHost POSTs the prepared payload to one APNs host and returns the
-// HTTP status code and response body (the rejection reason, if any).
-// expiration > 0 is a unix timestamp after which APNs discards the push
-// instead of delivering it late; 0 omits the header (APNs default storage).
-func sendAPNsToHost(c *apnsConfig, jwt, host, deviceToken string, jsonBody []byte, expiration int64) (int, string, error) {
+// sendAPNsRaw POSTs the prepared payload to one APNs host with an explicit
+// apns-topic / apns-push-type pair (alert pushes use the bundle id + "alert";
+// Live Activity control pushes use "<bundle>.push-type.liveactivity" +
+// "liveactivity"). expiration > 0 is a unix timestamp after which APNs
+// discards the push instead of delivering it late; 0 omits the header.
+func sendAPNsRaw(c *apnsConfig, jwt, host, topic, pushType, deviceToken string, jsonBody []byte, expiration int64) (int, string, error) {
 	url := fmt.Sprintf("https://%s/3/device/%s", host, deviceToken)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(jsonBody))
 	if err != nil {
 		return 0, "", err
 	}
 	req.Header.Set("authorization", "bearer "+jwt)
-	req.Header.Set("apns-topic", c.bundleID)
-	req.Header.Set("apns-push-type", "alert")
+	req.Header.Set("apns-topic", topic)
+	req.Header.Set("apns-push-type", pushType)
 	req.Header.Set("apns-priority", "10")
 	if expiration > 0 {
 		req.Header.Set("apns-expiration", strconv.FormatInt(expiration, 10))
