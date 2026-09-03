@@ -9436,6 +9436,9 @@ func main() {
     // See events.go. iOS-only; targets all devices with a registered token.
     migratePushEvents()
     go pushEventLoop()
+    // iOS Live Activity end pushes for the marathon countdown (see live_activity.go).
+    migrateLiveActivities()
+    go liveActivityEndLoop()
 
     router := mux.NewRouter()
 
@@ -9479,6 +9482,10 @@ func main() {
     router.HandleFunc("/api/user/data", jwtAuthMiddleware(deleteUserData)).Methods("DELETE")
     // Store this device's APNs push token (see push.go)
     router.HandleFunc("/api/user/push-token", jwtAuthMiddleware(registerPushToken)).Methods("POST")
+    // Marathon Live Activity: register the activity's push token + deadline so
+    // the server ends the Lock-Screen countdown at midnight (see live_activity.go)
+    router.HandleFunc("/api/user/live-activity", jwtAuthMiddleware(registerLiveActivity)).Methods("POST")
+    router.HandleFunc("/api/user/live-activity", jwtAuthMiddleware(cancelLiveActivity)).Methods("DELETE")
     // Store this device's four appearance preferences (see appearance.go)
     router.HandleFunc("/api/user/appearance", jwtAuthMiddleware(setAppearanceParams)).Methods("POST")
     // Store this device's in-app language preference (see languages.go)
