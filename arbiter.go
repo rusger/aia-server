@@ -11,7 +11,9 @@ package main
 //
 // Model: runs `claude -p` (headless) via the server's authenticated Claude Max
 // login (~/.local/bin/claude) — no API key needed (owner order 2026-08-30).
-// Kill-switch ARBITER_DISABLED=1 => logged no-op. Any exec error / unparsable /
+// Kill-switches: ARBITER_DISABLED=1 (global) and ARBITER_DISABLED_FEATURES
+// ("ayurveda,other" — per feature) => logged no-op. Every row also records
+// latency_ms and prompt_bytes (triage 2026-09-04). Any exec error / unparsable /
 // runaway-length rewrite also returns the answer UNCHANGED (logged), so a user
 // reply is never broken.
 //
@@ -92,9 +94,40 @@ func ensureArbiterTable() error {
         `)
 		if arbiterTableErr != nil {
 			log.Printf("❌ ai_arbiter_events create failed: %v", arbiterTableErr)
+			return
+		}
+		// Additive migration (triage 2026-09-04): how long the second-model
+		// pass took and how big the prompt was — the audit could not answer
+		// "is the arbiter worth its latency/cost per feature" without them.
+		// "duplicate column" on an already-migrated DB is expected and ignored.
+		for _, c := range []string{
+			"latency_ms INTEGER DEFAULT 0",
+			"prompt_bytes INTEGER DEFAULT 0",
+		} {
+			if _, err := analyticsDB.Exec("ALTER TABLE ai_arbiter_events ADD COLUMN " + c); err != nil &&
+				!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+				log.Printf("⚠️ ai_arbiter_events migration (%s): %v", c, err)
+			}
 		}
 	})
 	return arbiterTableErr
+}
+
+// arbiterFeatureDisabled reports whether feature is listed in the
+// ARBITER_DISABLED_FEATURES kill-switch (comma-separated, case-insensitive,
+// spaces tolerated) — a per-feature no-op without redeploy, for features where
+// the pass is not worth its wait (non-streamed screens block on it).
+func arbiterFeatureDisabled(feature, disabledList string) bool {
+	f := strings.ToLower(strings.TrimSpace(feature))
+	if f == "" {
+		return false
+	}
+	for _, d := range strings.Split(disabledList, ",") {
+		if strings.ToLower(strings.TrimSpace(d)) == f {
+			return true
+		}
+	}
+	return false
 }
 
 func trimForLog(s string) string {
@@ -116,7 +149,7 @@ func clampArbiterField(s string) string {
 	return s[:cut]
 }
 
-func logArbiter(feature, model string, changed bool, reason, summary, original, corrected, facts string) {
+func logArbiter(feature, model string, changed bool, reason, summary, original, corrected, facts string, latency time.Duration, promptBytes int) {
 	if analyticsDB == nil {
 		return
 	}
@@ -127,10 +160,11 @@ func logArbiter(feature, model string, changed bool, reason, summary, original, 
 	go func() {
 		if _, err := analyticsDB.Exec(
 			`INSERT INTO ai_arbiter_events
-			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis, latency_ms, prompt_bytes)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			feature, model, ci, reason, clampArbiterField(summary),
 			clampArbiterField(original), clampArbiterField(corrected), clampArbiterField(facts),
+			latency.Milliseconds(), promptBytes,
 		); err != nil {
 			log.Printf("⚠️ ai_arbiter_events insert failed: %v", err)
 		}
@@ -240,14 +274,22 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 	// Every outcome is logged (owner order 2026-08-30: success / no-change /
 	// refusal / error / limit — all of it, for the running audit). `detail`
 	// carries the specific reason (e.g. the claude -p error text).
+	prompt := arbiterPrompt(req.FactBasis, req.Answer)
+	started := time.Now()
 	noop := func(reason, detail string) {
-		logArbiter(req.Feature, model, false, reason, detail, req.Answer, req.Answer, req.FactBasis)
+		logArbiter(req.Feature, model, false, reason, detail, req.Answer, req.Answer, req.FactBasis,
+			time.Since(started), len(prompt))
 		json.NewEncoder(w).Encode(ArbiterResponse{Success: true, Changed: false, Corrected: req.Answer, Reason: reason})
 	}
 
 	// Kill-switch without redeploy: ARBITER_DISABLED=1 => logged no-op.
 	if os.Getenv("ARBITER_DISABLED") == "1" {
 		noop("arbiter_disabled", "")
+		return
+	}
+	// Per-feature kill-switch: ARBITER_DISABLED_FEATURES="ayurveda,other".
+	if arbiterFeatureDisabled(req.Feature, os.Getenv("ARBITER_DISABLED_FEATURES")) {
+		noop("arbiter_disabled_feature", "")
 		return
 	}
 	if strings.TrimSpace(req.Answer) == "" {
@@ -259,7 +301,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 	// hit a temporary limit — or any other failure — we skip the correction and
 	// ship the original answer UNCHANGED, but we LOG the failure (limit vs other
 	// error) so the audit sees exactly what was skipped and why.
-	reply, err := callClaudeCLI(arbiterPrompt(req.FactBasis, req.Answer))
+	reply, err := callClaudeCLI(prompt)
 	if err != nil {
 		es := err.Error()
 		low := strings.ToLower(es)
@@ -285,7 +327,8 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	summary := strings.Join(changes, " | ")
-	logArbiter(req.Feature, model, changed, "ok", summary, req.Answer, corrected, req.FactBasis)
+	logArbiter(req.Feature, model, changed, "ok", summary, req.Answer, corrected, req.FactBasis,
+		time.Since(started), len(prompt))
 	json.NewEncoder(w).Encode(ArbiterResponse{
 		Success: true, Changed: changed, Corrected: corrected, Changes: changes,
 	})
@@ -344,7 +387,8 @@ func adminGetArbiter(w http.ResponseWriter, r *http.Request) {
 		args = append(args, f)
 	}
 	q := `SELECT id, feature, model, changed, reason, change_summary,
-	             original_answer, corrected_answer, fact_basis, created_at
+	             original_answer, corrected_answer, fact_basis, created_at,
+	             latency_ms, prompt_bytes
 	      FROM ai_arbiter_events`
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -360,14 +404,17 @@ func adminGetArbiter(w http.ResponseWriter, r *http.Request) {
 	events := []map[string]interface{}{}
 	for rows.Next() {
 		var id, changed int
+		var latencyMs, promptBytes int64
 		var feature, model, reason, summary, orig, corr, facts, created string
-		if err := rows.Scan(&id, &feature, &model, &changed, &reason, &summary, &orig, &corr, &facts, &created); err != nil {
+		if err := rows.Scan(&id, &feature, &model, &changed, &reason, &summary, &orig, &corr, &facts, &created,
+			&latencyMs, &promptBytes); err != nil {
 			continue
 		}
 		events = append(events, map[string]interface{}{
 			"id": id, "feature": feature, "model": model, "changed": changed == 1,
 			"reason": reason, "change_summary": summary, "original_answer": orig,
 			"corrected_answer": corr, "fact_basis": facts, "created_at": created,
+			"latency_ms": latencyMs, "prompt_bytes": promptBytes,
 		})
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "days": days, "count": len(events), "events": events})
