@@ -2977,6 +2977,48 @@ func normalizeAICallType(requested string) (callType string, overhead bool) {
     return "chatgpt", false
 }
 
+// subscriptionWindowUpdate decides what users.subscription_length/expiry
+// become when a verified purchase with window `in` (nil = no expiry) arrives
+// for a user whose row currently holds curLength/curExpiry.
+//
+// WHY: iOS re-delivers EVERY transaction of a subscription on each launch —
+// the expired previous period as well as the current one — and the client
+// syncs each of them through recordPurchase. Writing every incoming window
+// verbatim made the LAST arrival win, so whenever the old period landed after
+// the current one an active subscriber's expiry jumped back into the past and
+// getUserInfo answered "free" until the next restore re-rolled the order
+// (journal 2026-09-02..04: three active subscribers flipping paid→free, one
+// of them shown the paywall). The window therefore only ever moves FORWARD:
+// a lifetime purchase always wins, a lifetime row is never demoted, an empty
+// (unknown) window is backfilled, an unreadable stored value is replaced by
+// the verified one, and otherwise the later of the two dates stays. The bool
+// says whether the caller should write length/expiry at all (false = keep
+// the row's window, only refresh type/method).
+func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLength string, in *time.Time) (length string, expiry *time.Time, advance bool) {
+    if inLength == "lifetime" {
+        return inLength, nil, true
+    }
+    curEmpty := !curExpiry.Valid || curExpiry.String == ""
+    if curLength == "lifetime" && curEmpty {
+        return curLength, nil, false
+    }
+    if curEmpty {
+        return inLength, in, true
+    }
+    if in == nil {
+        // A dated window is never replaced by "unknown".
+        return curLength, nil, false
+    }
+    curT, err := parseDBTime(curExpiry.String)
+    if err != nil {
+        return inLength, in, true
+    }
+    if in.After(curT) {
+        return inLength, in, true
+    }
+    return curLength, &curT, false
+}
+
 // entitlementNotExpired reports whether a paid subscription_expiry is still in
 // the future. A NULL/empty expiry means no-expiry (lifetime) → still valid.
 // Mirrors the multi-format parsing in getUserInfo (Go stores times with tz).
@@ -4041,9 +4083,26 @@ func upsertAppleTransaction(txn *appleTransactionInfo, deviceHint string) {
     emitPurchaseCompletedEvent(deviceHint, txn.ProductID, "apple", "server_apple_s2s")
 
     if attributed {
-        if _, uErr := db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
-            subscription_expiry=?, last_payment_method='apple', updated_at=CURRENT_TIMESTAMP WHERE email=?`,
-            length, expiry, email); uErr != nil {
+        // Forward-only window, same rule as recordPurchase: S2S can replay an
+        // older transaction of the chain too.
+        var curLength string
+        var curExpiry sql.NullString
+        if qErr := db.QueryRow(`SELECT COALESCE(subscription_length, ''), subscription_expiry FROM users WHERE email = ?`, email).
+            Scan(&curLength, &curExpiry); qErr != nil && qErr != sql.ErrNoRows {
+            log.Printf("⚠️ [apple S2S] current window lookup failed for %s: %v", email, qErr)
+        }
+        newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, length, expiry)
+        var uErr error
+        if advance {
+            _, uErr = db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
+                subscription_expiry=?, last_payment_method='apple', updated_at=CURRENT_TIMESTAMP WHERE email=?`,
+                newLength, newExpiry, email)
+        } else {
+            log.Printf("⏭ [apple S2S] expiry kept (current=%q newer than incoming=%v) email=%s", curExpiry.String, expiry, email)
+            _, uErr = db.Exec(`UPDATE users SET subscription_type='paid', last_payment_method='apple',
+                updated_at=CURRENT_TIMESTAMP WHERE email=?`, email)
+        }
+        if uErr != nil {
             log.Printf("⚠️ [apple S2S] user subscription update failed: %v", uErr)
         }
     }
@@ -4631,20 +4690,37 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
 
     // Also update user's subscription status in the users table. Type and
     // length are server-derived (see grantedLength above) — the request's
-    // copies of these fields are ignored.
-    updateQuery := `UPDATE users SET
+    // copies of these fields are ignored. The window only moves forward
+    // (see subscriptionWindowUpdate): a re-delivered expired period must not
+    // demote an active subscriber.
+    var curLength string
+    var curExpiry sql.NullString
+    if qErr := tx.QueryRow(`SELECT COALESCE(subscription_length, ''), subscription_expiry FROM users WHERE email = ?`, email).
+        Scan(&curLength, &curExpiry); qErr != nil && qErr != sql.ErrNoRows {
+        log.Printf("⚠️ recordPurchase: current window lookup failed for %s: %v", email, qErr)
+    }
+    newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, grantedLength, expiryDate)
+    if advance {
+        _, err = tx.Exec(`UPDATE users SET
                     subscription_type = 'paid',
                     subscription_length = ?,
                     subscription_expiry = ?,
                     last_payment_method = ?,
                     updated_at = CURRENT_TIMESTAMP
-                    WHERE email = ?`
-    _, err = tx.Exec(updateQuery, grantedLength, expiryDate, req.Store, email)
+                    WHERE email = ?`, newLength, newExpiry, req.Store, email)
+    } else {
+        log.Printf("⏭ recordPurchase: expiry kept (current=%q newer than incoming=%v) email=%s", curExpiry.String, expiryDate, email)
+        _, err = tx.Exec(`UPDATE users SET
+                    subscription_type = 'paid',
+                    last_payment_method = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                    WHERE email = ?`, req.Store, email)
+    }
     if err != nil {
         log.Printf("Error updating user subscription: %v", err)
         // Continue anyway - purchase record is more important
     } else {
-        log.Printf("✅ User subscription updated: email=%s, type=paid, length=%s, method=%s", email, grantedLength, req.Store)
+        log.Printf("✅ User subscription updated: email=%s, type=paid, length=%s, method=%s, window_advanced=%v", email, newLength, req.Store, advance)
     }
 
     // Commit transaction
