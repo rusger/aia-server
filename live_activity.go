@@ -202,12 +202,16 @@ func liveActivityEndLoop() {
 	tick := time.NewTicker(liveActivityPollInterval)
 	prune := time.NewTicker(6 * time.Hour)
 	pruneLiveActivityEnds(time.Now())
+	pruneLiveActivityStarts(time.Now())
 	for {
 		select {
 		case <-tick.C:
-			processDueLiveActivityEnds(time.Now(), sendLiveActivityEnd)
+			now := time.Now()
+			processDueLiveActivityStarts(now, sendLiveActivityStart)
+			processDueLiveActivityEnds(now, sendLiveActivityEnd)
 		case <-prune.C:
 			pruneLiveActivityEnds(time.Now())
+			pruneLiveActivityStarts(time.Now())
 		}
 	}
 }
