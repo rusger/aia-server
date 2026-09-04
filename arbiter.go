@@ -103,6 +103,9 @@ func ensureArbiterTable() error {
 		for _, c := range []string{
 			"latency_ms INTEGER DEFAULT 0",
 			"prompt_bytes INTEGER DEFAULT 0",
+			// Omission probe (triage 2026-09-04, plan W6): what the answer
+			// SHOULD have said and did not — report-only, never applied.
+			"omissions TEXT DEFAULT ''",
 		} {
 			if _, err := analyticsDB.Exec("ALTER TABLE ai_arbiter_events ADD COLUMN " + c); err != nil &&
 				!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
@@ -149,7 +152,7 @@ func clampArbiterField(s string) string {
 	return s[:cut]
 }
 
-func logArbiter(feature, model string, changed bool, reason, summary, original, corrected, facts string, latency time.Duration, promptBytes int) {
+func logArbiter(feature, model string, changed bool, reason, summary, original, corrected, facts string, latency time.Duration, promptBytes int, omissions string) {
 	if analyticsDB == nil {
 		return
 	}
@@ -160,11 +163,11 @@ func logArbiter(feature, model string, changed bool, reason, summary, original, 
 	go func() {
 		if _, err := analyticsDB.Exec(
 			`INSERT INTO ai_arbiter_events
-			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis, latency_ms, prompt_bytes)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis, latency_ms, prompt_bytes, omissions)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			feature, model, ci, reason, clampArbiterField(summary),
 			clampArbiterField(original), clampArbiterField(corrected), clampArbiterField(facts),
-			latency.Milliseconds(), promptBytes,
+			latency.Milliseconds(), promptBytes, clampArbiterField(omissions),
 		); err != nil {
 			log.Printf("⚠️ ai_arbiter_events insert failed: %v", err)
 		}
@@ -196,8 +199,10 @@ Do NOT flag legitimate interpretation, tone, or a different-but-valid school of 
 
 Then produce a corrected answer that makes the MINIMAL edits needed to remove or fix the unsupported claims, preserving the original wording, structure, and length everywhere else. The edit must be as unobtrusive as possible.
 
+Separately (report only — do NOT add anything to the corrected answer): list in "omitted" up to 5 IMPORTANT facts from the chart that an answer on this topic should have mentioned but did not — e.g. an exact or strong yoga the topic depends on, a retrograde/debilitated/exalted planet ruling the topic, the running dasha, a marked house emphasis. Only facts present in the ground truth; empty list if nothing important is missing.
+
 Return ONLY a JSON object, no prose:
-{"changed": <true|false>, "changes": ["short description of each fix"], "corrected": "<the full answer, edited or unchanged>"}
+{"changed": <true|false>, "changes": ["short description of each fix"], "omitted": ["short fact the answer should have mentioned"], "corrected": "<the full answer, edited or unchanged>"}
 
 === COMPUTED CHART FACTS (ground truth) ===
 ` + factBasis + `
@@ -235,19 +240,27 @@ func callClaudeCLI(prompt string) (string, error) {
 // parseArbiterJSON extracts the {changed,changes,corrected} object from the
 // model's reply, tolerating markdown fences / leading prose.
 func parseArbiterJSON(s string) (changed bool, changes []string, corrected string, ok bool) {
+	changed, changes, _, corrected, ok = parseArbiterJSONFull(s)
+	return
+}
+
+// parseArbiterJSONFull also returns the report-only "omitted" list (absent or
+// null => empty).
+func parseArbiterJSONFull(s string) (changed bool, changes, omitted []string, corrected string, ok bool) {
 	i, j := strings.Index(s, "{"), strings.LastIndex(s, "}")
 	if i < 0 || j <= i {
-		return false, nil, "", false
+		return false, nil, nil, "", false
 	}
 	var obj struct {
 		Changed   bool     `json:"changed"`
 		Changes   []string `json:"changes"`
+		Omitted   []string `json:"omitted"`
 		Corrected string   `json:"corrected"`
 	}
 	if err := json.Unmarshal([]byte(s[i:j+1]), &obj); err != nil {
-		return false, nil, "", false
+		return false, nil, nil, "", false
 	}
-	return obj.Changed, obj.Changes, obj.Corrected, true
+	return obj.Changed, obj.Changes, obj.Omitted, obj.Corrected, true
 }
 
 // arbiterReview cross-checks one answer. Fail-open: any error or a missing key
@@ -278,7 +291,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	noop := func(reason, detail string) {
 		logArbiter(req.Feature, model, false, reason, detail, req.Answer, req.Answer, req.FactBasis,
-			time.Since(started), len(prompt))
+			time.Since(started), len(prompt), "")
 		json.NewEncoder(w).Encode(ArbiterResponse{Success: true, Changed: false, Corrected: req.Answer, Reason: reason})
 	}
 
@@ -315,7 +328,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 		noop(reason, es)
 		return
 	}
-	changed, changes, corrected, ok := parseArbiterJSON(reply)
+	changed, changes, omitted, corrected, ok := parseArbiterJSONFull(reply)
 	if !ok || strings.TrimSpace(corrected) == "" {
 		noop("arbiter_unparsable", trimForLog(reply))
 		return
@@ -328,7 +341,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := strings.Join(changes, " | ")
 	logArbiter(req.Feature, model, changed, "ok", summary, req.Answer, corrected, req.FactBasis,
-		time.Since(started), len(prompt))
+		time.Since(started), len(prompt), strings.Join(omitted, " | "))
 	json.NewEncoder(w).Encode(ArbiterResponse{
 		Success: true, Changed: changed, Corrected: corrected, Changes: changes,
 	})
@@ -388,7 +401,7 @@ func adminGetArbiter(w http.ResponseWriter, r *http.Request) {
 	}
 	q := `SELECT id, feature, model, changed, reason, change_summary,
 	             original_answer, corrected_answer, fact_basis, created_at,
-	             latency_ms, prompt_bytes
+	             latency_ms, prompt_bytes, omissions
 	      FROM ai_arbiter_events`
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
@@ -405,16 +418,16 @@ func adminGetArbiter(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, changed int
 		var latencyMs, promptBytes int64
-		var feature, model, reason, summary, orig, corr, facts, created string
+		var feature, model, reason, summary, orig, corr, facts, created, omissions string
 		if err := rows.Scan(&id, &feature, &model, &changed, &reason, &summary, &orig, &corr, &facts, &created,
-			&latencyMs, &promptBytes); err != nil {
+			&latencyMs, &promptBytes, &omissions); err != nil {
 			continue
 		}
 		events = append(events, map[string]interface{}{
 			"id": id, "feature": feature, "model": model, "changed": changed == 1,
 			"reason": reason, "change_summary": summary, "original_answer": orig,
 			"corrected_answer": corr, "fact_basis": facts, "created_at": created,
-			"latency_ms": latencyMs, "prompt_bytes": promptBytes,
+			"latency_ms": latencyMs, "prompt_bytes": promptBytes, "omissions": omissions,
 		})
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "days": days, "count": len(events), "events": events})

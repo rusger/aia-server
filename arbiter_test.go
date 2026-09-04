@@ -41,3 +41,23 @@ func TestLooksLikeRunaway(t *testing.T) {
 		t.Fatal("halved or doubled length must be runaway")
 	}
 }
+
+func TestParseArbiterJSONFullOmitted(t *testing.T) {
+	reply := `{"changed": false, "changes": [], "omitted": ["Gaja Kesari yoga (Moon-Jupiter kendra) not mentioned", "Saturn retrograde in the 10th"], "corrected": "text"}`
+	changed, changes, omitted, corrected, ok := parseArbiterJSONFull(reply)
+	if !ok || changed || len(changes) != 0 || corrected != "text" {
+		t.Fatalf("unexpected parse: %v %v %q %v", changed, changes, corrected, ok)
+	}
+	if len(omitted) != 2 || omitted[1] != "Saturn retrograde in the 10th" {
+		t.Fatalf("omitted not parsed: %v", omitted)
+	}
+	// Absent / null "omitted" is an empty list, never an error.
+	_, _, omitted, _, ok = parseArbiterJSONFull(`{"changed": true, "changes": ["x"], "corrected": "y"}`)
+	if !ok || len(omitted) != 0 {
+		t.Fatalf("absent omitted must be empty, ok: %v %v", omitted, ok)
+	}
+	_, _, omitted, _, ok = parseArbiterJSONFull(`{"changed": true, "changes": ["x"], "omitted": null, "corrected": "y"}`)
+	if !ok || len(omitted) != 0 {
+		t.Fatalf("null omitted must be empty, ok: %v %v", omitted, ok)
+	}
+}
