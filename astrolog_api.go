@@ -9526,6 +9526,7 @@ func main() {
     go pushEventLoop()
     // iOS Live Activity end pushes for the marathon countdown (see live_activity.go).
     migrateLiveActivities()
+    migrateLiveActivityStarts()
     go liveActivityEndLoop()
 
     router := mux.NewRouter()
@@ -9574,6 +9575,7 @@ func main() {
     // the server ends the Lock-Screen countdown at midnight (see live_activity.go)
     router.HandleFunc("/api/user/live-activity", jwtAuthMiddleware(registerLiveActivity)).Methods("POST")
     router.HandleFunc("/api/user/live-activity", jwtAuthMiddleware(cancelLiveActivity)).Methods("DELETE")
+    router.HandleFunc("/api/user/live-activity/schedule", jwtAuthMiddleware(scheduleLiveActivity)).Methods("POST")
     // Store this device's four appearance preferences (see appearance.go)
     router.HandleFunc("/api/user/appearance", jwtAuthMiddleware(setAppearanceParams)).Methods("POST")
     // Store this device's in-app language preference (see languages.go)
