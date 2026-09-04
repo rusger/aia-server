@@ -4087,11 +4087,16 @@ func upsertAppleTransaction(txn *appleTransactionInfo, deviceHint string) {
         // older transaction of the chain too.
         var curLength string
         var curExpiry sql.NullString
+        windowKnown := true
         if qErr := db.QueryRow(`SELECT COALESCE(subscription_length, ''), subscription_expiry FROM users WHERE email = ?`, email).
             Scan(&curLength, &curExpiry); qErr != nil && qErr != sql.ErrNoRows {
             log.Printf("⚠️ [apple S2S] current window lookup failed for %s: %v", email, qErr)
+            windowKnown = false
         }
         newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, length, expiry)
+        if !windowKnown {
+            newLength, newExpiry, advance = curLength, nil, false
+        }
         var uErr error
         if advance {
             _, uErr = db.Exec(`UPDATE users SET subscription_type='paid', subscription_length=?,
@@ -4695,11 +4700,18 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // demote an active subscriber.
     var curLength string
     var curExpiry sql.NullString
+    windowKnown := true
     if qErr := tx.QueryRow(`SELECT COALESCE(subscription_length, ''), subscription_expiry FROM users WHERE email = ?`, email).
         Scan(&curLength, &curExpiry); qErr != nil && qErr != sql.ErrNoRows {
+        // Unknown current window: never write the incoming one blind (it may
+        // be the replayed expired period) — refresh type/method only.
         log.Printf("⚠️ recordPurchase: current window lookup failed for %s: %v", email, qErr)
+        windowKnown = false
     }
     newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, grantedLength, expiryDate)
+    if !windowKnown {
+        newLength, newExpiry, advance = curLength, nil, false
+    }
     if advance {
         _, err = tx.Exec(`UPDATE users SET
                     subscription_type = 'paid',
