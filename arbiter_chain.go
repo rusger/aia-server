@@ -148,10 +148,15 @@ func logLLMUsage(e llmUsageEntry) {
 // --- tiers ---
 
 // callClaudeTier wraps callClaudeCLI with the journal class (limit vs other).
+// An empty reply is a tier failure too (review r1): the chain must fall
+// through to codex instead of ending on a silent-empty answer.
 func callClaudeTier(ctx context.Context, prompt, model string) (string, int64, int64, error) {
 	reply, err := callClaudeCLI(prompt)
 	if err != nil {
 		return "", 0, 0, &llmTierErr{llmClassOf(err), err}
+	}
+	if strings.TrimSpace(reply) == "" {
+		return "", 0, 0, &llmTierErr{"error", errors.New("claude -p: empty reply")}
 	}
 	return reply, 0, 0, nil
 }

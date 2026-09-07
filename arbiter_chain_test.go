@@ -139,6 +139,22 @@ func TestArbiterChainAllFail(t *testing.T) {
 	}
 }
 
+// A silent-empty claude reply is a tier failure and falls through to codex.
+func TestArbiterChainEmptyClaudeFallsThrough(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_BIN", fakeBin(t, dir, "claude", `printf '   \n'`+"\n"))
+	t.Setenv("CODEX_BIN", fakeBin(t, dir, "codex", `while [ $# -gt 0 ]; do [ "$1" = "-o" ] && O=$2; shift; done; printf "from codex" > "$O"`+"\n"))
+	t.Setenv("LLM_USAGE_LOG", filepath.Join(dir, "usage.jsonl"))
+	t.Setenv("LLM_FALLBACK", "codex")
+	reply, label, err := callModelChain(context.Background(), "p", "m")
+	if err != nil || reply != "from codex" || label != "codex:gpt-5.6-sol" {
+		t.Fatalf("reply=%q label=%q err=%v", reply, label, err)
+	}
+	if rows := readJournal(t, filepath.Join(dir, "usage.jsonl")); len(rows) != 2 || rows[0].OK || rows[0].ErrClass != "error" {
+		t.Fatalf("journal: %+v", rows)
+	}
+}
+
 func TestLLMClassOf(t *testing.T) {
 	if got := llmClassOf(&llmTierErr{"timeout", nil}); got != "timeout" {
 		t.Fatalf("tier class: %s", got)
