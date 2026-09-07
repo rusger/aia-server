@@ -310,23 +310,25 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// claude -p via the owner's Claude Max. If the subscription has run out or
-	// hit a temporary limit — or any other failure — we skip the correction and
-	// ship the original answer UNCHANGED, but we LOG the failure (limit vs other
-	// error) so the audit sees exactly what was skipped and why.
-	reply, err := callClaudeCLI(prompt)
+	// claude -p via the owner's Claude Max, then the fallback tiers of
+	// arbiter_chain.go (codex on the ChatGPT subscription, then the OpenAI API).
+	// If every tier fails we skip the correction and ship the original answer
+	// UNCHANGED, but we LOG the failure (limit vs other error) so the audit
+	// sees exactly what was skipped and why. A fallback answer is recorded
+	// with a provider-qualified model label ("codex:gpt-5.6-sol").
+	reply, providerModel, err := callModelChain(r.Context(), prompt, model)
 	if err != nil {
 		es := err.Error()
-		low := strings.ToLower(es)
 		reason := "arbiter_error"
-		if strings.Contains(low, "limit") || strings.Contains(low, "quota") ||
-			strings.Contains(low, "usage") || strings.Contains(low, "rate") ||
-			strings.Contains(low, "subscription") || strings.Contains(low, "credit") {
+		if llmClassOf(err) == "limit" {
 			reason = "arbiter_limit" // subscription exhausted / throttled
 		}
 		log.Printf("⚠️ arbiter %s: %v", reason, err)
 		noop(reason, es)
 		return
+	}
+	if !strings.HasPrefix(providerModel, "claude:") {
+		model = providerModel
 	}
 	changed, changes, omitted, corrected, ok := parseArbiterJSONFull(reply)
 	if !ok || strings.TrimSpace(corrected) == "" {
