@@ -45,7 +45,7 @@ echo ""
 
 # Build the main API server
 echo "🔨 Building API server..."
-go build -o astrolog_api astrolog_api.go crisis.go chatgpt_stream.go engagement_insights.go guard_corpus.go arbiter.go push.go events.go live_activity.go live_activity_start.go fcm.go appearance.go screentime.go languages.go renewals.go google.go referral.go identity.go expiry_sync.go finance.go seo.go seo_i18n.go
+go build -o astrolog_api astrolog_api.go crisis.go chatgpt_stream.go engagement_insights.go guard_corpus.go arbiter.go arbiter_chain.go push.go events.go live_activity.go live_activity_start.go fcm.go appearance.go screentime.go languages.go renewals.go google.go referral.go identity.go expiry_sync.go finance.go seo.go seo_i18n.go
 chmod +x astrolog_api
 echo "✓ API server built: ./astrolog_api"
 echo ""
