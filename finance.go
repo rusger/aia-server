@@ -960,7 +960,7 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 			"apple_backfilled_purchases":  appleBackfilled,
 			"unverified_google_purchases": unverifiedGoogle,
 			"trial_starts_from_offer":     trialFromOffer,
-			"trial_starts_inferred":       trialInferred,
+			"trial_inferred_from_timing":  trialInferred,
 		},
 		"notes": []string{
 			"Revenue = USD list price × store events (stores don't send us the charged price); local-currency storefronts and store taxes make real proceeds differ slightly.",
