@@ -19,10 +19,19 @@ package main
 //     rows without a matching RTDN event are only counted in data_quality.
 //
 // Store prices are not present in any notification we store, so revenue is
-// list price (USD) × events. Override with FINANCE_PRICES='{"product_id":9.99}'.
+// list price (USD) × events. Override with FINANCE_PRICES='{"product_id":9.99}';
+// dated changes via FINANCE_PRICE_SCHEDULE='{"2026-09-08":{"yearly":29.99}}'
+// (plan or product id keys; the price applies to events on/after that date).
+//
+// A free-trial start (Apple SUBSCRIBED with offerDiscountType FREE_TRIAL, or
+// Google SUBSCRIPTION_PURCHASED that renews/expires within 10 days) is a $0
+// charge: counted in trial_starts, not in new_purchases/gross. Rows recorded
+// before the offer columns existed are classified from event timing.
+//
 // Commission defaults to 15% for both stores (App Store Small Business
 // Program / Play Media Experience tier); override with APPLE_COMMISSION_PCT /
-// GOOGLE_COMMISSION_PCT.
+// GOOGLE_COMMISSION_PCT, or date it with APPLE_COMMISSION_SCHEDULE="30;2026-09-01=15"
+// (base rate, then from-date=rate steps) — the rate is picked per event date.
 //
 // Token spend is priced with the same per-model table as /api/admin/usage-report
 // and multiplied by FINANCE_COST_CALIBRATION (default 1.0) — set it after
@@ -30,9 +39,13 @@ package main
 // ---------------------------------------------------------------------------
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,9 +55,11 @@ import (
 // Config
 
 var (
-	FINANCE_PRICES_JSON   = getEnv("FINANCE_PRICES", "")
-	APPLE_COMMISSION_PCT  = getEnv("APPLE_COMMISSION_PCT", "15")
-	GOOGLE_COMMISSION_PCT = getEnv("GOOGLE_COMMISSION_PCT", "15")
+	FINANCE_PRICES_JSON       = getEnv("FINANCE_PRICES", "")
+	FINANCE_PRICE_SCHEDULE    = getEnv("FINANCE_PRICE_SCHEDULE", "")
+	APPLE_COMMISSION_PCT      = getEnv("APPLE_COMMISSION_PCT", "15")
+	APPLE_COMMISSION_SCHEDULE = getEnv("APPLE_COMMISSION_SCHEDULE", "")
+	GOOGLE_COMMISSION_PCT     = getEnv("GOOGLE_COMMISSION_PCT", "15")
 	// 1.014 = OpenAI July-2026 dashboard ($25.42) / internal estimate ($25.07)
 	FINANCE_COST_CALIBRATION = getEnv("FINANCE_COST_CALIBRATION", "1.014")
 )
@@ -87,6 +102,167 @@ func financePriceUSD(pid string, overrides map[string]float64) float64 {
 		return p
 	}
 	return financeDefaultPlanPrices["monthly"]
+}
+
+// ---------------------------------------------------------------------------
+// Dated schedules: commission rate and list prices that change on a date.
+
+type financeRateStep struct {
+	from time.Time
+	pct  float64
+}
+
+// financeRateSchedule is a base rate plus dated steps (ascending).
+type financeRateSchedule struct {
+	base  float64
+	steps []financeRateStep
+}
+
+// parseRateSchedule parses "30;2026-09-01=15;2027-01-01=30". An empty string
+// yields the flat fallback rate. Malformed input returns an error so a typo in
+// .env is visible in the response instead of silently mis-pricing months.
+func parseRateSchedule(s string, fallback float64) (financeRateSchedule, error) {
+	sched := financeRateSchedule{base: fallback}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return sched, nil
+	}
+	for i, part := range strings.Split(s, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if i == 0 && !strings.Contains(part, "=") {
+			v, err := strconv.ParseFloat(part, 64)
+			if err != nil || v < 0 || v > 100 {
+				return sched, fmt.Errorf("bad base rate %q", part)
+			}
+			sched.base = v
+			continue
+		}
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			return sched, fmt.Errorf("bad step %q (want YYYY-MM-DD=pct)", part)
+		}
+		from, err := time.Parse("2006-01-02", strings.TrimSpace(kv[0]))
+		if err != nil {
+			return sched, fmt.Errorf("bad step date %q", kv[0])
+		}
+		v, err := strconv.ParseFloat(strings.TrimSpace(kv[1]), 64)
+		if err != nil || v < 0 || v > 100 {
+			return sched, fmt.Errorf("bad step rate %q", kv[1])
+		}
+		sched.steps = append(sched.steps, financeRateStep{from: from.UTC(), pct: v})
+	}
+	sort.Slice(sched.steps, func(i, j int) bool { return sched.steps[i].from.Before(sched.steps[j].from) })
+	return sched, nil
+}
+
+// at returns the rate (percent) in force at t.
+func (rs financeRateSchedule) at(t time.Time) float64 {
+	pct := rs.base
+	for _, st := range rs.steps {
+		if t.Before(st.from) {
+			break
+		}
+		pct = st.pct
+	}
+	return pct
+}
+
+type financePriceStep struct {
+	from   time.Time
+	prices map[string]float64 // plan ("yearly") or product id
+}
+
+type financePriceSchedule struct {
+	overrides map[string]float64 // FINANCE_PRICES, undated
+	steps     []financePriceStep // ascending
+}
+
+// parsePriceSchedule parses FINANCE_PRICE_SCHEDULE JSON:
+// {"2026-09-08":{"yearly":29.99,"astrolytix_pro_lifetime_v2":79.99}}.
+func parsePriceSchedule(raw string, overrides map[string]float64) (financePriceSchedule, error) {
+	ps := financePriceSchedule{overrides: overrides}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ps, nil
+	}
+	var m map[string]map[string]float64
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return ps, fmt.Errorf("FINANCE_PRICE_SCHEDULE: %w", err)
+	}
+	for k, prices := range m {
+		from, err := time.Parse("2006-01-02", strings.TrimSpace(k))
+		if err != nil {
+			return ps, fmt.Errorf("FINANCE_PRICE_SCHEDULE: bad date %q", k)
+		}
+		for name, v := range prices {
+			if v < 0 {
+				return ps, fmt.Errorf("FINANCE_PRICE_SCHEDULE: negative price for %q", name)
+			}
+		}
+		ps.steps = append(ps.steps, financePriceStep{from: from.UTC(), prices: prices})
+	}
+	sort.Slice(ps.steps, func(i, j int) bool { return ps.steps[i].from.Before(ps.steps[j].from) })
+	return ps, nil
+}
+
+// priceAt is financePriceUSD with dated steps: the latest step on/before t
+// that names the product id or its plan wins; otherwise undated overrides,
+// then the default plan price.
+func (ps financePriceSchedule) priceAt(pid string, t time.Time) float64 {
+	plan := financePlan(pid)
+	for i := len(ps.steps) - 1; i >= 0; i-- {
+		st := ps.steps[i]
+		if t.Before(st.from) {
+			continue
+		}
+		if p, ok := st.prices[pid]; ok {
+			return p
+		}
+		if p, ok := st.prices[plan]; ok {
+			return p
+		}
+	}
+	return financePriceUSD(pid, ps.overrides)
+}
+
+// ---------------------------------------------------------------------------
+// Free-trial classification of a subscription start.
+
+// financeTrialWindow: a start whose first renewal or expiry lands within this
+// many days was an intro period, not a paid month (observed: DID_RENEW at
+// 6.7 d, EXPIRED at 7.0 d for the 7-day trial).
+const financeTrialWindow = 10 * 24 * time.Hour
+
+type financeSubEvent struct {
+	kind string // notification type / name
+	ts   time.Time
+	// Apple offer fields; offerKnown=false for rows predating the columns.
+	offerKnown bool
+	freeTrial  bool
+}
+
+// financeIsTrialStart decides whether start (a SUBSCRIBED / SUBSCRIPTION_PURCHASED
+// event) was a $0 free-trial start. later = the other events of the same
+// subscription; endKinds = the event kinds that end an intro period (first
+// renewal or expiry). Returns (trial, inferred): inferred=true when the
+// decision came from timing rather than the offer field.
+func financeIsTrialStart(start financeSubEvent, later []financeSubEvent, endKinds map[string]bool, now time.Time) (bool, bool) {
+	if start.offerKnown {
+		return start.freeTrial, false
+	}
+	for _, ev := range later {
+		if !endKinds[ev.kind] || !ev.ts.After(start.ts) {
+			continue
+		}
+		return ev.ts.Sub(start.ts) <= financeTrialWindow, true
+	}
+	// No renewal/expiry yet: still inside a possible trial → $0 for now (the
+	// first DID_RENEW will book the revenue); older than the window with no
+	// event at all → paid up front.
+	return now.Sub(start.ts) <= financeTrialWindow, true
 }
 
 // ---------------------------------------------------------------------------
@@ -137,11 +313,20 @@ var financeOverheadTypes = map[string]bool{
 
 type financeStoreMonth struct {
 	NewPurchases int     `json:"new_purchases"`
+	TrialStarts  int     `json:"trial_starts"` // $0 free-trial starts (not revenue)
 	Renewals     int     `json:"renewals"`
 	Refunds      int     `json:"refunds"`
 	Gross        float64 `json:"gross_usd"`
 	Fees         float64 `json:"platform_fee_usd"`
 	Net          float64 `json:"net_usd"`
+
+	feeAcc float64 // commission accumulated per event (rate may change mid-month)
+}
+
+// add books a revenue event at the commission rate in force on its date.
+func (sm *financeStoreMonth) add(price, ratePct float64) {
+	sm.Gross += price
+	sm.feeAcc += price * ratePct / 100
 }
 
 type financeMonth struct {
@@ -320,9 +505,16 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 
 	ensureGoogleNotificationsTable()
 
-	prices := financePriceOverrides()
-	appleFee := financePctEnv(APPLE_COMMISSION_PCT, 15) / 100
-	googleFee := financePctEnv(GOOGLE_COMMISSION_PCT, 15) / 100
+	var configErrors []string
+	priceSched, err := parsePriceSchedule(FINANCE_PRICE_SCHEDULE, financePriceOverrides())
+	if err != nil {
+		configErrors = append(configErrors, err.Error())
+	}
+	appleRates, err := parseRateSchedule(APPLE_COMMISSION_SCHEDULE, financePctEnv(APPLE_COMMISSION_PCT, 15))
+	if err != nil {
+		configErrors = append(configErrors, "APPLE_COMMISSION_SCHEDULE: "+err.Error())
+	}
+	googleFeePct := financePctEnv(GOOGLE_COMMISSION_PCT, 15)
 	calibration := 1.0
 	if v, err := strconv.ParseFloat(FINANCE_COST_CALIBRATION, 64); err == nil && v > 0 && v < 10 {
 		calibration = v
@@ -345,39 +537,84 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ---------------- Revenue: Apple notifications --------------------------
+	// Loaded fully first: a subscription start is priced $0 when it was a free
+	// trial, which for pre-migration rows is only knowable from the events that
+	// follow it (first DID_RENEW / EXPIRED within the trial window).
+	type appleRow struct {
+		ntype, subtype, pid, txn, otxn string
+		ts                             time.Time
+		ev                             financeSubEvent
+	}
+	var appleRows []appleRow
+	appleByOtxn := map[string][]financeSubEvent{}
 	appleSeenTxn := map[string]bool{} // every transaction id Apple has notified about
+	trialInferred, trialFromOffer := 0, 0
 	arows, err := db.Query(`SELECT notification_type, COALESCE(subtype,''), COALESCE(product_id,''),
-	                               COALESCE(transaction_id,''), created_at
+	                               COALESCE(transaction_id,''), COALESCE(original_transaction_id,''),
+	                               created_at, offer_type, offer_discount_type
 	                        FROM apple_notifications ORDER BY created_at ASC, id ASC`)
 	if err == nil {
-		defer arows.Close()
 		for arows.Next() {
-			var ntype, subtype, pid, txn, created string
-			if arows.Scan(&ntype, &subtype, &pid, &txn, &created) != nil {
+			var ntype, subtype, pid, txn, otxn, created string
+			var offerType sql.NullInt64
+			var offerDiscount sql.NullString
+			if err := arows.Scan(&ntype, &subtype, &pid, &txn, &otxn, &created, &offerType, &offerDiscount); err != nil {
+				log.Printf("⚠️ finance: apple_notifications scan: %v", err)
 				continue
 			}
 			if txn != "" {
 				appleSeenTxn[txn] = true
 			}
-			ts := parseRenewalTS(created)
-			m := getMonth(ts)
-			if m == nil {
+			ev := financeSubEvent{kind: ntype, ts: parseRenewalTS(created)}
+			if offerType.Valid { // written by the current server → offer fields are authoritative
+				ev.offerKnown = true
+				ev.freeTrial = offerDiscount.Valid && offerDiscount.String == "FREE_TRIAL"
+			}
+			appleRows = append(appleRows, appleRow{ntype: ntype, subtype: subtype, pid: pid, txn: txn, otxn: otxn, ts: ev.ts, ev: ev})
+			if otxn != "" {
+				appleByOtxn[otxn] = append(appleByOtxn[otxn], ev)
+			}
+		}
+		if err := arows.Err(); err != nil {
+			log.Printf("⚠️ finance: apple_notifications iteration: %v", err)
+		}
+		arows.Close()
+	} else {
+		log.Printf("⚠️ finance: apple_notifications query: %v", err)
+	}
+	appleTrialEnds := map[string]bool{"DID_RENEW": true, "EXPIRED": true}
+	for _, r := range appleRows {
+		m := getMonth(r.ts)
+		if m == nil {
+			continue
+		}
+		price := priceSched.priceAt(r.pid, r.ts)
+		rate := appleRates.at(r.ts)
+		switch r.ntype {
+		case "SUBSCRIBED", "OFFER_REDEEMED":
+			trial, inferred := financeIsTrialStart(r.ev, appleByOtxn[r.otxn], appleTrialEnds, now)
+			if trial {
+				m.apple.TrialStarts++
+				if inferred {
+					trialInferred++
+				} else {
+					trialFromOffer++
+				}
 				continue
 			}
-			price := financePriceUSD(pid, prices)
-			_ = subtype
-			switch ntype {
-			case "SUBSCRIBED", "OFFER_REDEEMED", "ONE_TIME_CHARGE":
-				m.apple.NewPurchases++
-				m.apple.Gross += price
-				m.newByPlan[financePlan(pid)]++
-			case "DID_RENEW":
-				m.apple.Renewals++
-				m.apple.Gross += price
-			case "REFUND", "REVOKE":
-				m.apple.Refunds++
-				m.apple.Gross -= price
-			}
+			m.apple.NewPurchases++
+			m.apple.add(price, rate)
+			m.newByPlan[financePlan(r.pid)]++
+		case "ONE_TIME_CHARGE":
+			m.apple.NewPurchases++
+			m.apple.add(price, rate)
+			m.newByPlan[financePlan(r.pid)]++
+		case "DID_RENEW":
+			m.apple.Renewals++
+			m.apple.add(price, rate)
+		case "REFUND", "REVOKE":
+			m.apple.Refunds++
+			m.apple.add(-price, rate)
 		}
 	}
 
@@ -409,44 +646,71 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 			}
 			appleBackfilled++
 			m.apple.NewPurchases++
-			m.apple.Gross += financePriceUSD(pid, prices)
+			m.apple.add(priceSched.priceAt(pid, ts), appleRates.at(ts))
 			m.newByPlan[financePlan(pid)]++
 		}
 	}
 
 	// ---------------- Revenue: Google RTDN ----------------------------------
+	// RTDN carries no offer info; a purchase that renews or expires within the
+	// trial window was a free-trial start (same timing rule as legacy Apple rows).
+	type googleRow struct {
+		name, pid, token string
+		ts               time.Time
+		ev               financeSubEvent
+	}
+	var googleRows []googleRow
+	googleByToken := map[string][]financeSubEvent{}
 	googleVerifiedTokens := map[string]bool{}
 	grows, err := db.Query(`SELECT COALESCE(notification_name,''), COALESCE(subscription_id,''),
 	                               COALESCE(purchase_token,''), created_at
 	                        FROM google_notifications ORDER BY created_at ASC, id ASC`)
 	if err == nil {
-		defer grows.Close()
 		for grows.Next() {
 			var name, pid, token, created string
-			if grows.Scan(&name, &pid, &token, &created) != nil {
+			if err := grows.Scan(&name, &pid, &token, &created); err != nil {
+				log.Printf("⚠️ finance: google_notifications scan: %v", err)
 				continue
 			}
 			if token != "" {
 				googleVerifiedTokens[token] = true
 			}
-			ts := parseRenewalTS(created)
-			m := getMonth(ts)
-			if m == nil {
+			ev := financeSubEvent{kind: name, ts: parseRenewalTS(created)}
+			googleRows = append(googleRows, googleRow{name: name, pid: pid, token: token, ts: ev.ts, ev: ev})
+			if token != "" {
+				googleByToken[token] = append(googleByToken[token], ev)
+			}
+		}
+		if err := grows.Err(); err != nil {
+			log.Printf("⚠️ finance: google_notifications iteration: %v", err)
+		}
+		grows.Close()
+	} else {
+		log.Printf("⚠️ finance: google_notifications query: %v", err)
+	}
+	googleTrialEnds := map[string]bool{"SUBSCRIPTION_RENEWED": true, "SUBSCRIPTION_EXPIRED": true}
+	for _, r := range googleRows {
+		m := getMonth(r.ts)
+		if m == nil {
+			continue
+		}
+		price := priceSched.priceAt(r.pid, r.ts)
+		switch r.name {
+		case "SUBSCRIPTION_PURCHASED":
+			if trial, _ := financeIsTrialStart(r.ev, googleByToken[r.token], googleTrialEnds, now); trial {
+				m.google.TrialStarts++
+				trialInferred++
 				continue
 			}
-			price := financePriceUSD(pid, prices)
-			switch name {
-			case "SUBSCRIPTION_PURCHASED":
-				m.google.NewPurchases++
-				m.google.Gross += price
-				m.newByPlan[financePlan(pid)]++
-			case "SUBSCRIPTION_RENEWED", "SUBSCRIPTION_RECOVERED", "SUBSCRIPTION_RESTARTED":
-				m.google.Renewals++
-				m.google.Gross += price
-			case "SUBSCRIPTION_REVOKED":
-				m.google.Refunds++
-				m.google.Gross -= price
-			}
+			m.google.NewPurchases++
+			m.google.add(price, googleFeePct)
+			m.newByPlan[financePlan(r.pid)]++
+		case "SUBSCRIPTION_RENEWED", "SUBSCRIPTION_RECOVERED", "SUBSCRIPTION_RESTARTED":
+			m.google.Renewals++
+			m.google.add(price, googleFeePct)
+		case "SUBSCRIPTION_REVOKED":
+			m.google.Refunds++
+			m.google.add(-price, googleFeePct)
 		}
 	}
 
@@ -547,9 +811,13 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 	                 AND subscription_length='yearly' AND subscription_expiry > datetime('now')`).Scan(&activeYearly)
 	_ = db.QueryRow(`SELECT COUNT(*) FROM users WHERE subscription_type='paid'
 	                 AND subscription_length='lifetime'`).Scan(&activeLifetime)
-	blendedFee := (appleFee + googleFee) / 2
-	mrrGross := float64(activeMonthly)*financeDefaultPlanPrices["monthly"] +
-		float64(activeYearly)*financeDefaultPlanPrices["yearly"]/12
+	appleFeeNow := appleRates.at(now) / 100
+	googleFeeNow := googleFeePct / 100
+	blendedFee := (appleFeeNow + googleFeeNow) / 2
+	// Current list prices (latest schedule step); plan keys resolve via financePlan.
+	monthlyNow := priceSched.priceAt("monthly", now)
+	yearlyNow := priceSched.priceAt("yearly", now)
+	mrrGross := float64(activeMonthly)*monthlyNow + float64(activeYearly)*yearlyNow/12
 	mrrNet := mrrGross * (1 - blendedFee)
 
 	// ---------------- Assemble response -------------------------------------
@@ -570,14 +838,14 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 	out := make([]monthOut, 0, len(keys))
 	cumulative := 0.0
 	var totGross, totFees, totNet, totCost float64
-	var totNew, totRenew, totRefund int
+	var totNew, totRenew, totRefund, totTrials int
 
 	for _, k := range keys {
 		m := months[k]
-		m.apple.Fees = round2(m.apple.Gross * appleFee)
+		m.apple.Fees = round2(m.apple.feeAcc)
 		m.apple.Net = round2(m.apple.Gross - m.apple.Fees)
 		m.apple.Gross = round2(m.apple.Gross)
-		m.google.Fees = round2(m.google.Gross * googleFee)
+		m.google.Fees = round2(m.google.feeAcc)
 		m.google.Net = round2(m.google.Gross - m.google.Fees)
 		m.google.Gross = round2(m.google.Gross)
 
@@ -653,6 +921,7 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 		totNew += m.apple.NewPurchases + m.google.NewPurchases
 		totRenew += m.apple.Renewals + m.google.Renewals
 		totRefund += m.apple.Refunds + m.google.Refunds
+		totTrials += m.apple.TrialStarts + m.google.TrialStarts
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -667,6 +936,7 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 			"new_purchases":    totNew,
 			"renewals":         totRenew,
 			"refunds":          totRefund,
+			"trial_starts":     totTrials,
 		},
 		"current": map[string]interface{}{
 			"active_paid_monthly": activeMonthly,
@@ -676,19 +946,27 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 			"mrr_net_usd":         round2(mrrNet),
 		},
 		"config": map[string]interface{}{
-			"plan_prices_usd":       financeDefaultPlanPrices,
-			"price_overrides":       prices,
-			"apple_commission_pct":  appleFee * 100,
-			"google_commission_pct": googleFee * 100,
-			"cost_calibration":      calibration,
+			"plan_prices_usd":           financeDefaultPlanPrices,
+			"current_prices_usd":        map[string]float64{"monthly": monthlyNow, "yearly": yearlyNow, "lifetime": priceSched.priceAt("lifetime", now)},
+			"price_overrides":           priceSched.overrides,
+			"price_schedule":            FINANCE_PRICE_SCHEDULE,
+			"apple_commission_pct":      appleFeeNow * 100, // rate in force today
+			"apple_commission_schedule": APPLE_COMMISSION_SCHEDULE,
+			"google_commission_pct":     googleFeePct,
+			"cost_calibration":          calibration,
+			"errors":                    configErrors,
 		},
 		"data_quality": map[string]interface{}{
 			"apple_backfilled_purchases":  appleBackfilled,
 			"unverified_google_purchases": unverifiedGoogle,
+			"trial_starts_from_offer":     trialFromOffer,
+			"trial_inferred_from_timing":  trialInferred,
 		},
 		"notes": []string{
 			"Revenue = USD list price × store events (stores don't send us the charged price); local-currency storefronts and store taxes make real proceeds differ slightly.",
-			"Net revenue = gross − platform commission (default 15% both stores; APPLE_COMMISSION_PCT / GOOGLE_COMMISSION_PCT to override).",
+			"Net revenue = gross − platform commission, taken at the rate in force on each event's date (APPLE_COMMISSION_SCHEDULE, e.g. \"30;2026-09-01=15\" for the Small Business Program switch; flat APPLE_COMMISSION_PCT / GOOGLE_COMMISSION_PCT otherwise).",
+			"Prices follow FINANCE_PRICE_SCHEDULE by event date (e.g. yearly 49.99 → 29.99 from the day it changed in the stores); MRR uses today's prices.",
+			"trial_starts = $0 free-trial starts (Apple offerDiscountType FREE_TRIAL; for rows recorded before offer fields existed, and for Google, a start whose first renewal/expiry lands within 10 days). They are not revenue; the first DID_RENEW / SUBSCRIPTION_RENEWED after a trial is.",
 			"Google revenue counts only RTDN-confirmed events; unverified_google_purchases = purchase_history rows Google never confirmed (fail-open era, likely pirated) — excluded.",
 			"Apple months before server notifications were connected are backfilled from purchase_history (new purchases only — renewals from that era are invisible).",
 			"Token cost = recorded tokens × per-model price table × cost_calibration (FINANCE_COST_CALIBRATION). Calibrated 2026-07-30: internal estimate $25.07 vs OpenAI dashboard $25.42 for July 2026 to date (−1.4%).",

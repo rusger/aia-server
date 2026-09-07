@@ -1102,6 +1102,16 @@ func initDB() error {
     `); nErr != nil {
         log.Printf("⚠️ apple_notifications table migration: %v", nErr)
     }
+    // Offer fields (2026-09): NULL on rows recorded before this migration —
+    // finance.go infers free trials for those from event timing instead.
+    for _, stmt := range []string{
+        `ALTER TABLE apple_notifications ADD COLUMN offer_type INTEGER`,
+        `ALTER TABLE apple_notifications ADD COLUMN offer_discount_type TEXT`,
+    } {
+        if _, oErr := db.Exec(stmt); oErr != nil && !strings.Contains(oErr.Error(), "duplicate column") {
+            log.Printf("⚠️ apple_notifications offer columns migration: %v", oErr)
+        }
+    }
 
     // T2.B partner invite hashes — short codes that map to a snapshot of
     // the inviter's birth data so the recipient app can compute a
@@ -3918,6 +3928,12 @@ type appleTransactionInfo struct {
     AppAccountToken       string `json:"appAccountToken"` // set by client if it tags purchases
     InAppOwnershipType    string `json:"inAppOwnershipType"`
     Storefront            string `json:"storefront"`
+    // Offer applied to this transaction: offerType 1 = introductory offer,
+    // 2 = promotional, 3 = offer code (0/absent = none); offerDiscountType is
+    // FREE_TRIAL / PAY_AS_YOU_GO / PAY_UP_FRONT. A FREE_TRIAL start is a $0
+    // charge — the finance report must not count it as revenue.
+    OfferType         int    `json:"offerType"`
+    OfferDiscountType string `json:"offerDiscountType"`
 }
 
 // appleBundleIDWant is the bundle id all Apple-signed material must belong to.
@@ -4192,11 +4208,20 @@ func applyAppleRevoke(txn *appleTransactionInfo, reason string) {
 // recordAppleNotificationIfNew logs the notification for audit and returns false
 // if this notificationUUID was already processed (Apple retries on non-2xx).
 func recordAppleNotificationIfNew(note *appleNotificationPayload, txn *appleTransactionInfo) bool {
+    // offer_discount_type stays NULL when Apple sent no offer, so "no offer"
+    // (new rows, empty string → NULL) and "unknown" (pre-migration rows) both
+    // read as NULL and offer_type disambiguates: 0 = known no-offer.
+    var offerDiscount interface{}
+    if txn.OfferDiscountType != "" {
+        offerDiscount = txn.OfferDiscountType
+    }
     res, err := db.Exec(`INSERT OR IGNORE INTO apple_notifications
-        (notification_uuid, notification_type, subtype, environment, transaction_id, original_transaction_id, product_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (notification_uuid, notification_type, subtype, environment, transaction_id, original_transaction_id, product_id,
+         offer_type, offer_discount_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         note.NotificationUUID, note.NotificationType, note.Subtype, note.Data.Environment,
-        txn.TransactionID, txn.OriginalTransactionID, txn.ProductID)
+        txn.TransactionID, txn.OriginalTransactionID, txn.ProductID,
+        txn.OfferType, offerDiscount)
     if err != nil {
         log.Printf("⚠️ apple_notifications insert: %v", err)
         return true // process anyway rather than silently drop
