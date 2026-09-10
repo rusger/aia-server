@@ -257,6 +257,7 @@ func registerLiveActivity(w http.ResponseWriter, r *http.Request) {
 	// A deadline in the past or more than 2 days ahead is a client bug (the
 	// activity lives at most until the next local midnight).
 	if req.EndMillis <= 0 || endAt.Before(now.Add(-time.Minute)) || endAt.After(now.Add(48*time.Hour)) {
+		log.Printf("⚠️ live-activity register rejected: end_millis=%d (%s) out of range, device=%s", req.EndMillis, endAt.UTC().Format(time.RFC3339), shortToken(claims.DeviceID))
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "end_millis out of range"})
 		return
@@ -267,6 +268,7 @@ func registerLiveActivity(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
 		return
 	}
+	log.Printf("🟣 live-activity registered %s… end=%s device=%s", shortToken(token), endAt.UTC().Format(time.RFC3339), shortToken(claims.DeviceID))
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 

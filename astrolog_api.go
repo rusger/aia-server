@@ -3004,6 +3004,35 @@ func normalizeAICallType(requested string) (callType string, overhead bool) {
 // the verified one, and otherwise the later of the two dates stays. The bool
 // says whether the caller should write length/expiry at all (false = keep
 // the row's window, only refresh type/method).
+// appleTxnIsFreeTrial reports whether a verified Apple transaction is a $0
+// free-trial period (introductory / promotional / offer-code with
+// offerDiscountType FREE_TRIAL). Server-authoritative: the client's is_trial
+// flag is absent on restores and re-syncs after login, which recorded trial
+// starts as paid purchases (welcome email + referral reward fired on day 0).
+func appleTxnIsFreeTrial(txn *appleTransactionInfo) bool {
+    return txn != nil && txn.OfferDiscountType == "FREE_TRIAL"
+}
+
+// subscriptionWindowActive reports whether the user's CURRENT entitlement
+// window (as stored in users) is still running at now: lifetime, or an
+// expiry in the future. Unparseable / empty expiry counts as inactive.
+func subscriptionWindowActive(curLength string, curExpiry sql.NullString, now time.Time) bool {
+    if curLength == "lifetime" {
+        return true
+    }
+    if !curExpiry.Valid || strings.TrimSpace(curExpiry.String) == "" {
+        return false
+    }
+    e := parseRenewalTS(curExpiry.String)
+    if e.IsZero() {
+        // users.subscription_expiry is written as time.Time.String() by the
+        // sqlite driver ("2026-08-24 12:56:43 +0000 UTC"); parseRenewalTS
+        // takes the first 19 chars, so this branch is a last resort.
+        return false
+    }
+    return e.After(now)
+}
+
 func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLength string, in *time.Time) (length string, expiry *time.Time, advance bool) {
     if inLength == "lifetime" {
         return inLength, nil, true
@@ -4085,15 +4114,22 @@ func upsertAppleTransaction(txn *appleTransactionInfo, deviceHint string) {
         email = "apple:" + txn.OriginalTransactionID
     }
 
+    // is_trial lives in the referral migration (referral.go) — make sure the
+    // column exists before the first S2S insert after a fresh deploy.
+    ensureReferralSchema()
+    isTrialInt := 0
+    if appleTxnIsFreeTrial(txn) {
+        isTrialInt = 1
+    }
     if _, err := db.Exec(`INSERT OR IGNORE INTO purchase_history
-        (email, device_id, product_id, transaction_id, original_transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'apple')`,
+        (email, device_id, product_id, transaction_id, original_transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store, is_trial)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'apple', ?)`,
         email, deviceHint, txn.ProductID, txn.TransactionID, txn.OriginalTransactionID,
-        purchaseDate, expiry, "paid", length); err != nil {
+        purchaseDate, expiry, "paid", length, isTrialInt); err != nil {
         log.Printf("⚠️ [apple S2S] purchase_history insert failed: %v", err)
         return
     }
-    log.Printf("🍎 [apple S2S] purchase recorded: product=%s txn=%s attributed=%v", txn.ProductID, txn.TransactionID, attributed)
+    log.Printf("🍎 [apple S2S] purchase recorded: product=%s txn=%s attributed=%v trial=%v", txn.ProductID, txn.TransactionID, attributed, isTrialInt == 1)
 
     // Catch purchases the client never synced in the in-app funnel too.
     emitPurchaseCompletedEvent(deviceHint, txn.ProductID, "apple", "server_apple_s2s")
@@ -4646,6 +4682,12 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
                 expiryDate = &e
             }
             log.Printf("✅ Apple JWS verified: txn=%s product=%s expiry=%v", txn.TransactionID, txn.ProductID, expiryDate)
+            // Trial flag from the transaction itself, not from the client
+            // (only ever upgrades false → true; a client-declared trial stays).
+            if appleTxnIsFreeTrial(txn) && !req.IsTrial {
+                req.IsTrial = true
+                log.Printf("🆓 Apple JWS is a FREE_TRIAL start (offerType=%d): recording as trial, txn=%s", txn.OfferType, txn.TransactionID)
+            }
         } else {
             // Legacy StoreKit 1 receipt (iOS < 15) — an opaque PKCS7 blob we
             // can't check offline. Grant only when Apple's own S2S pipeline
@@ -4745,6 +4787,16 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
                     last_payment_method = ?,
                     updated_at = CURRENT_TIMESTAMP
                     WHERE email = ?`, newLength, newExpiry, req.Store, email)
+    } else if windowKnown && !subscriptionWindowActive(curLength, curExpiry, time.Now()) {
+        // A replayed, already-expired period (iOS "restore" re-delivers old
+        // receipts) on an account whose window has run out: keep the
+        // expiry-sync downgrade — re-marking 'paid' here made the DB paid
+        // count lie and flip-flopped with the expiry sync every launch.
+        log.Printf("⏭ recordPurchase: expired period replayed (current=%q, incoming=%v) — subscription_type untouched, email=%s", curExpiry.String, expiryDate, email)
+        _, err = tx.Exec(`UPDATE users SET
+                    last_payment_method = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                    WHERE email = ?`, req.Store, email)
     } else {
         log.Printf("⏭ recordPurchase: expiry kept (current=%q newer than incoming=%v) email=%s", curExpiry.String, expiryDate, email)
         _, err = tx.Exec(`UPDATE users SET
