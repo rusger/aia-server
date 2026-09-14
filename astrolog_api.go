@@ -9659,6 +9659,13 @@ func main() {
     router.HandleFunc("/api/user/language", jwtAuthMiddleware(setLanguage)).Methods("POST")
     // Accumulate per-screen time spent by this device (see screentime.go)
     router.HandleFunc("/api/user/screen-time", jwtAuthMiddleware(setScreenTime)).Methods("POST")
+    // TikTok "share your horoscope video" — per-user OAuth + Direct Post proxy (see tiktok.go)
+    router.HandleFunc("/api/tiktok/exchange", jwtAuthMiddleware(tiktokExchange)).Methods("POST")
+    router.HandleFunc("/api/tiktok/account", jwtAuthMiddleware(tiktokAccountStatus)).Methods("GET")
+    router.HandleFunc("/api/tiktok/account", jwtAuthMiddleware(tiktokDisconnect)).Methods("DELETE")
+    router.HandleFunc("/api/tiktok/creator-info", jwtAuthMiddleware(tiktokCreatorInfo)).Methods("GET")
+    router.HandleFunc("/api/tiktok/publish/init", jwtAuthMiddleware(tiktokPublishInit)).Methods("POST")
+    router.HandleFunc("/api/tiktok/publish/status", jwtAuthMiddleware(tiktokPublishStatus)).Methods("GET")
     // Fetch server-sent push notifications so the app can merge them into its
     // on-device history (see push.go — C1)
     router.HandleFunc("/api/user/notification-history", jwtAuthMiddleware(getUserNotificationHistory)).Methods("GET")
