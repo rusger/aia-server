@@ -158,3 +158,25 @@ func TestSeoBuilderKeysExist(t *testing.T) {
 		}
 	}
 }
+
+// Store buttons (CTA section and sticky bar) go through the site's /go/
+// redirects so nginx logs each click with its referring page; the direct
+// store URLs must not appear as button targets any more.
+func TestSeoStoreButtonsUseGoRedirects(t *testing.T) {
+	html := renderSeoLayout("en", "2026/transits.html", seoPage{
+		rel: "2026/transits.html", title: "T", desc: "D", body: "<p>x</p>",
+	}, []int{2026, 2027}, "2026-09-14")
+	for _, want := range []string{
+		`class="btn" rel="noopener" href="https://astrolytix.com/go/ios/"`,
+		`class="btn alt" rel="noopener" href="https://astrolytix.com/go/android/"`,
+		`class="btn ios" rel="noopener" href="https://astrolytix.com/go/ios/"`,
+		`class="btn android" rel="noopener" href="https://astrolytix.com/go/android/"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("page lacks %s", want)
+		}
+	}
+	if strings.Contains(html, `href="`+seoAppStoreURL+`"`) || strings.Contains(html, `href="`+seoPlayURL+`"`) {
+		t.Fatalf("a button still links the store directly")
+	}
+}
