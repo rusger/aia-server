@@ -48,7 +48,7 @@ const (
 	// URLs above stay for anything that must name the store itself.
 	seoGoIOS     = seoSiteURL + "/go/ios/"
 	seoGoAndroid = seoSiteURL + "/go/android/"
-	seoInstagram   = "https://www.instagram.com/astrolytix/"
+	seoInstagram = "https://www.instagram.com/astrolytix/"
 	// seoYouTube: owner's channel (2026-08-22); an empty value would omit
 	// the link and the sameAs entry.
 	seoYouTube = "https://youtube.com/@astrolytix.official"
