@@ -42,6 +42,12 @@ const (
 	seoSiteURL     = "https://astrolytix.com"
 	seoAppStoreURL = "https://apps.apple.com/app/astrolytix/id6759404465"
 	seoPlayURL     = "https://play.google.com/store/apps/details?id=com.astrolytix.app"
+	// Store buttons go through the site's redirect pages so every click is
+	// logged by nginx with the referring page (three weeks of SEO traffic
+	// showed zero measurable store clicks, owner 2026-09-14). The real store
+	// URLs above stay for anything that must name the store itself.
+	seoGoIOS     = seoSiteURL + "/go/ios/"
+	seoGoAndroid = seoSiteURL + "/go/android/"
 	seoInstagram   = "https://www.instagram.com/astrolytix/"
 	// seoYouTube: owner's channel (2026-08-22); an empty value would omit
 	// the link and the sameAs entry.
@@ -676,8 +682,8 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 		b.WriteString("</p>\n")
 	}
 	b.WriteString("<section class=\"cta\"><h2>" + esc(seoT("cta_h", lang, nil)) + "</h2><p>" + esc(seoT("cta_p", lang, nil)) + "</p><div class=\"btns\">")
-	b.WriteString("<a class=\"btn\" rel=\"noopener\" href=\"" + seoAppStoreURL + "\">" + esc(seoT("cta_ios", lang, nil)) + "</a>")
-	b.WriteString("<a class=\"btn alt\" rel=\"noopener\" href=\"" + seoPlayURL + "\">" + esc(seoT("cta_android", lang, nil)) + "</a></div></section>\n")
+	b.WriteString("<a class=\"btn\" rel=\"noopener\" href=\"" + seoGoIOS + "\">" + esc(seoT("cta_ios", lang, nil)) + "</a>")
+	b.WriteString("<a class=\"btn alt\" rel=\"noopener\" href=\"" + seoGoAndroid + "\">" + esc(seoT("cta_android", lang, nil)) + "</a></div></section>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("updated", lang, nil)) + ": " + generated + "</p>\n")
 	b.WriteString("</main>\n<footer>\n<div class=\"langs\">" + esc(seoT("languages", lang, nil)) + ": ")
 	for _, l := range seoLangs {
@@ -693,7 +699,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 		b.WriteString("<a rel=\"me noopener\" href=\"" + seoYouTube + "\">YouTube</a>")
 	}
 	b.WriteString("</div>\n<div>© Astrolytix</div>\n</footer>\n")
-	b.WriteString("<div id=\"stickybar\"><span>" + esc(seoT("cta_h", lang, nil)) + "</span><a class=\"btn ios\" rel=\"noopener\" href=\"" + seoAppStoreURL + "\">" + esc(seoT("cta_ios", lang, nil)) + "</a><a class=\"btn android\" rel=\"noopener\" href=\"" + seoPlayURL + "\">" + esc(seoT("cta_android", lang, nil)) + "</a></div>\n")
+	b.WriteString("<div id=\"stickybar\"><span>" + esc(seoT("cta_h", lang, nil)) + "</span><a class=\"btn ios\" rel=\"noopener\" href=\"" + seoGoIOS + "\">" + esc(seoT("cta_ios", lang, nil)) + "</a><a class=\"btn android\" rel=\"noopener\" href=\"" + seoGoAndroid + "\">" + esc(seoT("cta_android", lang, nil)) + "</a></div>\n")
 	b.WriteString("<script>" + seoStickyJS + "</script>\n</body>\n</html>\n")
 	return b.String()
 }
