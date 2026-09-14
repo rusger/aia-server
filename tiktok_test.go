@@ -15,8 +15,14 @@ func TestTikTokChunkPlan(t *testing.T) {
 	if c, n := tiktokChunkPlan(64 << 20); c != 64<<20 || n != 1 {
 		t.Fatalf("64 MB is still one chunk: %d %d", c, n)
 	}
-	if c, n := tiktokChunkPlan(100 << 20); c != 32<<20 || n != 4 {
-		t.Fatalf("100 MB → 4 chunks of 32 MB: %d %d", c, n)
+	if c, n := tiktokChunkPlan(100 << 20); c != 32<<20 || n != 3 {
+		t.Fatalf("100 MB → floor(100/32)=3 chunks, last absorbs the 4 MB remainder: %d %d", c, n)
+	}
+	if c, n := tiktokChunkPlan(96 << 20); c != 32<<20 || n != 3 {
+		t.Fatalf("96 MB → exactly 3 chunks: %d %d", c, n)
+	}
+	if c, n := tiktokChunkPlan((64 << 20) + 1); c != 32<<20 || n != 2 {
+		t.Fatalf("just over 64 MB → 2 chunks (last ~32 MB+1): %d %d", c, n)
 	}
 }
 

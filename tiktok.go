@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -43,6 +44,15 @@ const (
 )
 
 var tiktokReady atomic.Bool
+
+// errTikTokNotConfigured lets handlers answer 503 (not a 401) when the
+// server has no client key/secret.
+var errTikTokNotConfigured = errors.New("TikTok client key/secret not configured")
+
+// tiktokRefreshMu serialises token refreshes per account: TikTok rotates the
+// refresh_token, so two concurrent refreshes would let the loser persist a
+// dead token (review r1).
+var tiktokRefreshMu sync.Map // email -> *sync.Mutex
 
 // tiktokHTTP is swappable in tests.
 var tiktokHTTP = &http.Client{Timeout: 30 * time.Second}
@@ -84,7 +94,7 @@ func ensureTikTokSchema() {
 func tiktokKeys() (string, string, error) {
 	k, s := strings.TrimSpace(getEnv("TIKTOK_CLIENT_KEY", "")), strings.TrimSpace(getEnv("TIKTOK_CLIENT_SECRET", ""))
 	if k == "" || s == "" {
-		return "", "", errors.New("TikTok client key/secret not configured")
+		return "", "", errTikTokNotConfigured
 	}
 	return k, s, nil
 }
@@ -113,7 +123,11 @@ func tiktokClaims(w http.ResponseWriter, r *http.Request) (string, bool) {
 // --- pure helpers (tested) -------------------------------------------------
 
 // tiktokChunkPlan — TikTok FILE_UPLOAD rules: a single chunk may carry the
-// whole file up to 64 MB; larger files go in 32 MB chunks (5..64 MB each).
+// whole file up to 64 MB; larger files go in 32 MB chunks with
+// total_chunk_count = floor(size / chunk_size) and the LAST chunk absorbing
+// the remainder (so every chunk is ≥ 5 MB and the last one < 64 MB).
+// The phone uploads chunk i as bytes [i*chunk, min(size, (i+1)*chunk)) and
+// the final chunk as [ (total-1)*chunk, size ).
 func tiktokChunkPlan(size int64) (chunkSize int64, total int64) {
 	if size <= 0 {
 		return 0, 0
@@ -122,7 +136,10 @@ func tiktokChunkPlan(size int64) (chunkSize int64, total int64) {
 		return size, 1
 	}
 	chunkSize = tiktokChunk
-	total = (size + chunkSize - 1) / chunkSize
+	total = size / chunkSize // floor; remainder rides in the last chunk
+	if total < 1 {
+		total = 1
+	}
 	return chunkSize, total
 }
 
@@ -248,6 +265,10 @@ func tiktokBearer(method, endpoint, token string, payload interface{}) ([]byte, 
 // tiktokFreshAccount loads the user's account and refreshes the access token
 // when it is about to expire. Fail closed: no account or refresh failure is an error.
 func tiktokFreshAccount(email string) (*tiktokAccount, error) {
+	muAny, _ := tiktokRefreshMu.LoadOrStore(email, &sync.Mutex{})
+	mu := muAny.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
 	a, err := tiktokLoadAccount(email)
 	if err != nil {
 		return nil, fmt.Errorf("not connected")
@@ -279,6 +300,16 @@ func tiktokFreshAccount(email string) (*tiktokAccount, error) {
 }
 
 // --- handlers --------------------------------------------------------------
+
+// tiktokAccountError — 503 when the server lacks keys, 401 when the user has
+// no (valid) connection.
+func tiktokAccountError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errTikTokNotConfigured) {
+		tiktokFail(w, http.StatusServiceUnavailable, err.Error(), "not_configured")
+		return
+	}
+	tiktokFail(w, http.StatusUnauthorized, err.Error(), "not_connected")
+}
 
 // POST /api/tiktok/exchange {code, code_verifier, redirect_uri}
 func tiktokExchange(w http.ResponseWriter, r *http.Request) {
@@ -380,7 +411,7 @@ func tiktokCreatorInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := tiktokFreshAccount(email)
 	if err != nil {
-		tiktokFail(w, http.StatusUnauthorized, err.Error(), "not_connected")
+		tiktokAccountError(w, err)
 		return
 	}
 	raw, code, msg, err := tiktokBearer("POST", tiktokCreatorInfoURL, a.AccessToken, map[string]interface{}{})
@@ -425,7 +456,7 @@ func tiktokPublishInit(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := tiktokFreshAccount(email)
 	if err != nil {
-		tiktokFail(w, http.StatusUnauthorized, err.Error(), "not_connected")
+		tiktokAccountError(w, err)
 		return
 	}
 	chunk, total := tiktokChunkPlan(req.VideoSize)
@@ -477,7 +508,7 @@ func tiktokPublishStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := tiktokFreshAccount(email)
 	if err != nil {
-		tiktokFail(w, http.StatusUnauthorized, err.Error(), "not_connected")
+		tiktokAccountError(w, err)
 		return
 	}
 	raw, code, msg, err := tiktokBearer("POST", tiktokStatusURL, a.AccessToken, map[string]string{"publish_id": id})
