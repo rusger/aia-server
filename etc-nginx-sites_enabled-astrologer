@@ -30,9 +30,11 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 	# Extended timeout for AI models (o1 can take 60-120s)                                                                                                            
-        proxy_read_timeout 180s;                                                                                                                                          
-        proxy_connect_timeout 60s;                                                                                                                                        
+        proxy_read_timeout 180s;
+        proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
+        # Request size/timing per API call (format: etc-nginx-conf.d-request-timing.conf)
+        access_log /var/log/nginx/access.log timing;
     }
 
     # Cache static assets (images, css, js, fonts) for 1 year
