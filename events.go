@@ -219,11 +219,33 @@ type ingressEvt struct {
 	date    time.Time
 }
 
-// findIngresses scans [from, to] for slow-planet sidereal sign changes,
-// bisecting each to ~1-day precision.
-func findIngresses(from, to time.Time) []ingressEvt {
-	planets := []string{"Jupiter", "Saturn", "Rahu", "Ketu"}
-	step := 10 * 24 * time.Hour
+// slowIngressPlanets change sign once a year or rarer; fastIngressPlanets
+// every ~3-6 weeks (the Moon is deliberately absent — a sign every 2.5 days
+// would be spam).
+var (
+	slowIngressPlanets = []string{"Jupiter", "Saturn", "Rahu", "Ketu"}
+	fastIngressPlanets = []string{"Sun", "Mercury", "Venus", "Mars"}
+)
+
+// isFastIngressPlanet picks the push body: a fast planet's ingress is a
+// weeks-long accent, not the "slow, long-lasting shift" of a slow one.
+func isFastIngressPlanet(planet string) bool {
+	for _, p := range fastIngressPlanets {
+		if p == planet {
+			return true
+		}
+	}
+	return false
+}
+
+// findIngresses scans [from, to] for sidereal sign changes of planets,
+// bisecting each to ~1-day precision. siderealLongitudes samples noon UTC
+// of a calendar date, so the result is the first date whose noon sign is
+// new — the same day whenever the scan is rerun, which keeps the ekey
+// stable. step must be short enough that a planet cannot change sign twice
+// inside it: 10 days is safe for the slow planets, the fast ones need 1 day
+// (retrograde Mercury can leave a sign and come back within a week).
+func findIngresses(planets []string, step time.Duration, from, to time.Time) []ingressEvt {
 
 	prev, err := siderealLongitudes(from)
 	if err != nil {
@@ -459,7 +481,14 @@ func refreshPushEvents() {
 	}
 
 	// Slow ingresses — next ~400 days (rare events; one scan covers a year+).
-	for _, ig := range findIngresses(now, now.AddDate(0, 0, 400)) {
+	// Fast ingresses — next ~60 days at a 1-day step: delivery only looks a
+	// couple of days ahead, and the short horizon keeps the daily refresh at
+	// ~60 astrolog runs. Both share kind/ekey/payload shape, so every
+	// installed app version routes them and the "ingress" mute covers both.
+	ingresses := findIngresses(slowIngressPlanets, 10*24*time.Hour, now, now.AddDate(0, 0, 400))
+	ingresses = append(ingresses,
+		findIngresses(fastIngressPlanets, 24*time.Hour, now, now.AddDate(0, 0, 60))...)
+	for _, ig := range ingresses {
 		day := ig.date.Format("2006-01-02")
 		ekey := fmt.Sprintf("slow_ingress:%s:%s", ig.planet, day)
 		payload := fmt.Sprintf("astro:slow_ingress:slow_ingress:%s:%s", ig.planet, day)
@@ -811,8 +840,12 @@ func eventText(kind, paramsJSON, lang string) (string, string) {
 		}
 		pn := planetName(planet, lang)
 		sn := signName(signIdx, lang)
+		bodyTmpl := ingressBodyTmpl
+		if isFastIngressPlanet(planet) {
+			bodyTmpl = fastIngressBodyTmpl
+		}
 		return fmt.Sprintf(tr(ingressTitleTmpl, lang), pn, sn),
-			fmt.Sprintf(tr(ingressBodyTmpl, lang), pn, sn)
+			fmt.Sprintf(tr(bodyTmpl, lang), pn, sn)
 	case "station":
 		planet, _ := p["planet"].(string)
 		retro, _ := p["retro"].(bool)
@@ -974,6 +1007,27 @@ var ingressBodyTmpl = map[string]string{
 	"te": "%s %s రాశిలోకి ప్రవేశిస్తుంది — నెమ్మదైన, దీర్ఘకాలిక మార్పు.",
 	"ta": "%s %s ராசியில் நுழைகிறது — மெதுவான, நீண்டகால மாற்றம்.",
 	"kn": "%s %s ರಾಶಿಯನ್ನು ಪ್ರವೇಶಿಸುತ್ತದೆ — ನಿಧಾನ, ದೀರ್ಘಕಾಲೀನ ಬದಲಾವಣೆ.",
+}
+
+// fastIngressBodyTmpl is the body for Sun/Mercury/Venus/Mars ingresses —
+// same placeholders as ingressBodyTmpl (planet, sign).
+var fastIngressBodyTmpl = map[string]string{
+	"en": "%s moves into %s — the accents shift for the coming weeks.",
+	"ru": "%s входит в знак %s — акценты смещаются на ближайшие недели.",
+	"es": "%s entra en %s — los acentos cambian para las próximas semanas.",
+	"fr": "%s entre en %s — les accents changent pour les semaines à venir.",
+	"de": "%s wechselt in %s — die Akzente verschieben sich für die nächsten Wochen.",
+	"it": "%s entra in %s — gli accenti cambiano per le prossime settimane.",
+	"pt": "%s entra em %s — os acentos mudam para as próximas semanas.",
+	"zh": "%s 进入 %s——未来几周的重心随之转移。",
+	"ja": "%s が %s へ——これから数週間、テーマの重心が移ります。",
+	"ko": "%s가 %s로 이동 — 앞으로 몇 주간 흐름의 중심이 바뀝니다.",
+	"hi": "%s %s में प्रवेश करता है — आने वाले हफ़्तों के लिए ज़ोर बदलता है।",
+	"ar": "%s ينتقل إلى %s — يتغيّر التركيز خلال الأسابيع القادمة.",
+	"mr": "%s %s राशीत प्रवेश करतो — येत्या आठवड्यांसाठी भर बदलतो.",
+	"te": "%s %s రాశిలోకి ప్రవేశిస్తుంది — రాబోయే వారాలకు ప్రాధాన్యతలు మారుతాయి.",
+	"ta": "%s %s ராசியில் நுழைகிறது — வரும் வாரங்களுக்கு முக்கியத்துவம் மாறுகிறது.",
+	"kn": "%s %s ರಾಶಿಯನ್ನು ಪ್ರವೇಶಿಸುತ್ತದೆ — ಮುಂಬರುವ ವಾರಗಳಿಗೆ ಒತ್ತು ಬದಲಾಗುತ್ತದೆ.",
 }
 
 var stationRetroTitleTmpl = map[string]string{
