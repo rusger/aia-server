@@ -10,7 +10,6 @@ SSH_KEY="$HOME/.ssh/id_ed25519_backup"
 BACKUP_DIR="$HOME/Backups/aia"
 LOG="$BACKUP_DIR/backup.log"
 DATE=$(date +%F)
-RETENTION_DAYS=30
 
 # Databases to back up: "remote_path:local_prefix"
 DBS=(
@@ -18,6 +17,19 @@ DBS=(
   "/home/ruslan/aia/server/analytics.db:analytics"
   "/home/ruslan/astrologer/astrologer/astro_bot.db:astro_bot"
 )
+
+# Per-DB backup retention (owner decision, 21.09.2026):
+# analytics.db grows ~271 MB/day and the Mac's disk was at 98% full, so its
+# local backups are trimmed to 7 days. users/astro_bot backups are small and
+# stay at the original 30 days. Unknown/future prefixes default to 30 days.
+RETENTION_DEFAULT_DAYS=30
+retention_days_for() {
+  case "$1" in
+    analytics) echo 7 ;;
+    users|astro_bot) echo 30 ;;
+    *) echo "$RETENTION_DEFAULT_DAYS" ;;
+  esac
+}
 
 SSH_OPTS="-i $SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o BatchMode=yes"
 
@@ -27,9 +39,11 @@ log() {
 
 mkdir -p "$BACKUP_DIR"
 
+PREFIXES=()
 for entry in "${DBS[@]}"; do
   REMOTE_PATH="${entry%%:*}"
   PREFIX="${entry##*:}"
+  PREFIXES+=("$PREFIX")
   LOCAL_FILE="$BACKUP_DIR/${PREFIX}-${DATE}.db"
   TMP_REMOTE="/tmp/${PREFIX}-backup.db"
 
@@ -61,7 +75,22 @@ for entry in "${DBS[@]}"; do
   fi
 done
 
-# Step 5: Prune backups older than 30 days
-find "$BACKUP_DIR" -name "*.db" -type f -mtime +${RETENTION_DAYS} -delete
-PRUNED=$(find "$BACKUP_DIR" -name "*.db" -type f -mtime +${RETENTION_DAYS} | wc -l | tr -d ' ')
-log "Pruning done — removed old backups (${PRUNED} remaining past ${RETENTION_DAYS}d)"
+# Step 5: Prune backups per prefix, using each prefix's own retention window.
+# Also removes leftover -shm/-wal sidecar files left behind by SQLite (e.g.
+# a WAL checkpoint that never finished) for the same pruned age range.
+# A prune failure on one prefix must not abort pruning of the others, and a
+# `find` that matches nothing must not fail the script (set -e/pipefail).
+for PREFIX in "${PREFIXES[@]}"; do
+  DAYS=$(retention_days_for "$PREFIX")
+  COUNT=$(find "$BACKUP_DIR" -maxdepth 1 -type f \
+    \( -name "${PREFIX}-*.db" -o -name "${PREFIX}-*.db-shm" -o -name "${PREFIX}-*.db-wal" \) \
+    -mtime "+${DAYS}" 2>>"$LOG" | wc -l | tr -d ' ') || COUNT=0
+
+  if [ "${COUNT:-0}" -gt 0 ]; then
+    find "$BACKUP_DIR" -maxdepth 1 -type f \
+      \( -name "${PREFIX}-*.db" -o -name "${PREFIX}-*.db-shm" -o -name "${PREFIX}-*.db-wal" \) \
+      -mtime "+${DAYS}" -delete 2>>"$LOG" || log "$PREFIX WARN — prune delete failed, see log"
+  fi
+
+  log "$PREFIX pruning done — removed ${COUNT} backup file(s) older than ${DAYS}d"
+done
