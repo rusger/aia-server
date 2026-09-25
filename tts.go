@@ -161,7 +161,9 @@ func ttsHandler(w http.ResponseWriter, r *http.Request) {
 	key := ttsCacheKey(ttsModel, voice, req.Lang, text)
 	dir := ttsCacheDir()
 	path := filepath.Join(dir, key+".mp3")
-	if data, err := os.ReadFile(path); err == nil && len(data) > 1000 {
+	// A real mp3 from OpenAI is tens of KB; anything under 200 bytes is a
+	// truncated write and is re-synthesized rather than served.
+	if data, err := os.ReadFile(path); err == nil && len(data) > 200 {
 		w.Header().Set("Content-Type", "audio/mpeg")
 		w.Header().Set("X-TTS-Cache", "hit")
 		w.Header().Set("X-TTS-Voice", voice)
@@ -198,10 +200,22 @@ func ttsHandler(w http.ResponseWriter, r *http.Request) {
 		ttsError(w, http.StatusBadGateway, "voice synthesis failed")
 		return
 	}
-	if err := os.MkdirAll(dir, 0o755); err == nil {
-		tmp := path + ".tmp"
-		if werr := os.WriteFile(tmp, data, 0o644); werr == nil {
-			os.Rename(tmp, path)
+	// Unique temp file + rename: two simultaneous misses for the same text
+	// must never interleave into one corrupt cached mp3 (review r1).
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("⚠️ tts cache mkdir %s: %v", dir, err)
+	} else if f, err := os.CreateTemp(dir, key+"-*.part"); err != nil {
+		log.Printf("⚠️ tts cache temp %s: %v", dir, err)
+	} else {
+		tmp := f.Name()
+		_, werr := f.Write(data)
+		cerr := f.Close()
+		if werr != nil || cerr != nil {
+			log.Printf("⚠️ tts cache write %s: %v %v", tmp, werr, cerr)
+			os.Remove(tmp)
+		} else if rerr := os.Rename(tmp, path); rerr != nil {
+			log.Printf("⚠️ tts cache rename %s: %v", path, rerr)
+			os.Remove(tmp)
 		}
 	}
 	chars := len([]rune(text))

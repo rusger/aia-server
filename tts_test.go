@@ -35,6 +35,14 @@ func TestTTSVoiceAndKey(t *testing.T) {
 	}
 }
 
+func TestTTSFinanceRate(t *testing.T) {
+	// 520 chars ≈ $0.010 (measured); must NOT fall into the gpt-4o-mini text rate
+	got := financeTokenCostUSD("gpt-4o-mini-tts", 520, 0, 0, true)
+	if got < 0.009 || got > 0.011 {
+		t.Fatalf("tts cost for 520 chars = %.5f, want ≈ 0.010", got)
+	}
+}
+
 func TestTTSHandler(t *testing.T) {
 	dir := t.TempDir()
 	os.Setenv("TTS_CACHE_DIR", dir)
