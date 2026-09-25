@@ -143,7 +143,7 @@ func TestVoiceTicket(t *testing.T) {
 	// echo-loop defences (owner's first call 25.09.2026): strict VAD + user transcription for the chat log
 	in := audio["input"].(map[string]interface{})
 	td := in["turn_detection"].(map[string]interface{})
-	if td["type"] != "server_vad" || td["threshold"] != 0.6 || td["silence_duration_ms"] != 700 || td["interrupt_response"] != true {
+	if td["type"] != "server_vad" || td["threshold"] != 0.6 || td["prefix_padding_ms"] != 300 || td["silence_duration_ms"] != 700 || td["create_response"] != true || td["interrupt_response"] != true {
 		t.Fatalf("turn_detection: %v", td)
 	}
 	if in["transcription"].(map[string]interface{})["model"] != voiceTranscribeModel {
