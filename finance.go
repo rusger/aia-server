@@ -282,6 +282,12 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 	cacF := float64(cachedToks) / 1e6
 	outF := float64(completionToks) / 1e6
 	switch {
+	case strings.Contains(model, "-tts"):
+		// Speech (tts.go) is logged with the text's CHARACTERS as prompt tokens;
+		// audio output is billed per audio token, which the API does not
+		// report. Calibrated 24.09.2026 on the server: 9 sentences ≈ 520 chars
+		// → 35–47 s ≈ $0.010 at the list price ($0.015/min) → ≈ $19 per 1M chars.
+		return float64(promptToks) / 1e6 * 19.0
 	case strings.Contains(model, "gpt-4.1-nano"):
 		return regF*0.10 + cacF*0.025 + outF*0.40
 	case strings.Contains(model, "gpt-4.1-mini"):
