@@ -140,6 +140,18 @@ func TestVoiceTicket(t *testing.T) {
 	if audio["output"].(map[string]interface{})["voice"] != "cedar" || gotSession["type"] != "realtime" {
 		t.Fatalf("session: %v", gotSession)
 	}
+	// echo-loop defences (owner's first call 25.09.2026): strict VAD + user transcription for the chat log
+	in := audio["input"].(map[string]interface{})
+	td := in["turn_detection"].(map[string]interface{})
+	if td["type"] != "server_vad" || td["threshold"] != 0.6 || td["silence_duration_ms"] != 700 || td["interrupt_response"] != true {
+		t.Fatalf("turn_detection: %v", td)
+	}
+	if in["transcription"].(map[string]interface{})["model"] != voiceTranscribeModel {
+		t.Fatalf("transcription: %v", in["transcription"])
+	}
+	if !strings.Contains(voiceHardRules, "never invent the user's questions") {
+		t.Fatal("hard rules must forbid inventing the user's side")
+	}
 	// an unknown voice falls back to the default; the secret never appears in logs (checked by eye: only email/chat/voice/len are logged)
 	w = call(`{"instructions":"x","voice":"nova"}`, owner)
 	json.Unmarshal(w.Body.Bytes(), &out)
