@@ -191,3 +191,34 @@ func TestVoiceUsageDebitAndDedup(t *testing.T) {
 		t.Fatalf("missing response_id: %d", w.Code)
 	}
 }
+
+func TestVoiceUsageFailsClosedOnDBError(t *testing.T) {
+	openVoiceTestDB(t)
+	os.Unsetenv("VOICE_ALLOWED_EMAILS")
+	voiceGrant("payer@example.com", 1.00)
+	// break the usage table: the insert errors, nothing may be booked
+	if _, err := db.Exec(`DROP TABLE voice_usage`); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	voiceUsageHandler(w, voiceReq("POST", "/api/voice/usage", `{"response_id":"resp_x","usage":`+probeUsage+`}`, &JWTClaims{Email: "payer@example.com", DeviceID: "d1"}))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("db error must be 503 retryable, got %d %s", w.Code, w.Body.String())
+	}
+	if rem := voiceRemainingMicro("payer@example.com"); rem != 1_000_000 {
+		t.Fatalf("balance must be untouched after a failed booking: %d", rem)
+	}
+	// table back → the retry books exactly once
+	voiceSchemaReady.Store(false)
+	ensureVoiceSchema()
+	for i := 0; i < 2; i++ {
+		w = httptest.NewRecorder()
+		voiceUsageHandler(w, voiceReq("POST", "/api/voice/usage", `{"response_id":"resp_x","usage":`+probeUsage+`}`, &JWTClaims{Email: "payer@example.com", DeviceID: "d1"}))
+		if w.Code != http.StatusOK {
+			t.Fatalf("retry %d: %d", i, w.Code)
+		}
+	}
+	if rem := voiceRemainingMicro("payer@example.com"); rem < 974_000 || rem > 976_000 {
+		t.Fatalf("one debit of 2×$0.0126 expected, remaining %d", rem)
+	}
+}

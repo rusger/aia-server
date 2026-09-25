@@ -17,6 +17,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -165,6 +166,9 @@ func voiceRemainingMicro(email string) int64 {
 	var granted, spent int64
 	err := db.QueryRow(`SELECT granted_usd_micro, spent_usd_micro FROM voice_balance WHERE email = ?`, email).Scan(&granted, &spent)
 	if err != nil {
+		if err != sql.ErrNoRows {
+			log.Printf("⚠️ voice balance read for %s: %v (treated as 0 — fail closed)", email, err)
+		}
 		return 0
 	}
 	return granted - spent
@@ -351,30 +355,51 @@ func voiceUsageHandler(w http.ResponseWriter, r *http.Request) {
 	cost := voiceCostUSD(model, req.Usage)
 	textIn, audioIn, cachedText, cachedAudio, textOut, audioOut := req.Usage.split()
 	micro := int64(cost*1e6 + 0.5)
-	res, err := db.Exec(`INSERT OR IGNORE INTO voice_usage (email, device_id, response_id, model, cost_usd_micro, audio_in, audio_out, text_in, text_out, cached)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, email, claims.DeviceID, strings.TrimSpace(req.ResponseID), model, micro,
+	duplicate, err := voiceRecordUsage(email, claims.DeviceID, strings.TrimSpace(req.ResponseID), model, micro,
 		audioIn+cachedAudio, audioOut, textIn+cachedText, textOut, cachedText+cachedAudio)
-	duplicate := false
 	if err != nil {
-		log.Printf("⚠️ voice usage insert: %v", err)
-	} else if n, _ := res.RowsAffected(); n == 0 {
-		duplicate = true
+		// fail closed and retryable: nothing was booked, the app may resend
+		// the same response_id and the dedup still holds (review r1)
+		log.Printf("⚠️ voice usage %s/%s: %v", email, req.ResponseID, err)
+		voiceError(w, http.StatusServiceUnavailable, "usage not recorded, retry")
+		return
 	}
 	if !duplicate {
 		// two api_calls rows so finance.go can price audio and text separately
 		logAPICallWithTokens(claims.DeviceID, "voice", model, audioIn+cachedAudio, audioOut, audioIn+cachedAudio+audioOut, cachedAudio)
 		logAPICallWithTokens(claims.DeviceID, "voice", model+"-text", textIn+cachedText, textOut, textIn+cachedText+textOut, cachedText)
-		debit := int64(float64(micro)*voiceMarkup + 0.5)
-		if _, err := db.Exec(`INSERT INTO voice_balance (email, spent_usd_micro, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-			ON CONFLICT(email) DO UPDATE SET spent_usd_micro = spent_usd_micro + excluded.spent_usd_micro, updated_at = CURRENT_TIMESTAMP`, email, debit); err != nil {
-			log.Printf("⚠️ voice balance debit: %v", err)
-		}
 	}
 	enabled, view := voiceBalanceFor(email)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true, "duplicate": duplicate, "cost_usd": cost, "enabled": enabled, "balance": view,
 	})
+}
+
+// voiceRecordUsage books one reply — the usage row and the balance debit in
+// ONE transaction, so a reply is either fully booked or not at all (a usage
+// row without its debit would silently under-charge forever, review r1).
+// duplicate = this response_id was booked before (nothing changes).
+func voiceRecordUsage(email, deviceID, responseID, model string, costMicro int64, audioIn, audioOut, textIn, textOut, cached int) (duplicate bool, err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`INSERT OR IGNORE INTO voice_usage (email, device_id, response_id, model, cost_usd_micro, audio_in, audio_out, text_in, text_out, cached)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, email, deviceID, responseID, model, costMicro, audioIn, audioOut, textIn, textOut, cached)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return true, nil
+	}
+	debit := int64(float64(costMicro)*voiceMarkup + 0.5)
+	if _, err := tx.Exec(`INSERT INTO voice_balance (email, spent_usd_micro, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(email) DO UPDATE SET spent_usd_micro = spent_usd_micro + excluded.spent_usd_micro, updated_at = CURRENT_TIMESTAMP`, email, debit); err != nil {
+		return false, err
+	}
+	return false, tx.Commit()
 }
 
 // voiceGrant adds money to a non-allowlisted account (admin CLI / future purchases).
