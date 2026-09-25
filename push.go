@@ -394,9 +394,14 @@ func getUserNotificationHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	// One push is logged once per device of the account, each in that
+	// device's language. The app dedups by payload and keeps the first row,
+	// so the caller's own device must come first (owner 25.09.2026: an old
+	// English device's row was newest → English card on a Russian phone).
+	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 
-	rows, err := db.Query(`SELECT title, body, payload, sent_at FROM notification_history
-		WHERE email = ? ORDER BY sent_at DESC LIMIT 100`, email)
+	rows, err := db.Query(`SELECT title, body, payload, sent_at, COALESCE(device_id,'') FROM notification_history
+		WHERE email = ? ORDER BY CASE WHEN device_id = ? THEN 0 ELSE 1 END, sent_at DESC LIMIT 100`, email, deviceID)
 	if err != nil {
 		log.Printf("⚠️ notification_history query failed: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "Database error"})
@@ -405,15 +410,16 @@ func getUserNotificationHistory(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type histItem struct {
-		Title   string `json:"title"`
-		Body    string `json:"body"`
-		Payload string `json:"payload"`
-		SentAt  string `json:"sent_at"`
+		Title    string `json:"title"`
+		Body     string `json:"body"`
+		Payload  string `json:"payload"`
+		SentAt   string `json:"sent_at"`
+		DeviceID string `json:"device_id"`
 	}
 	items := []histItem{}
 	for rows.Next() {
 		var it histItem
-		if err := rows.Scan(&it.Title, &it.Body, &it.Payload, &it.SentAt); err != nil {
+		if err := rows.Scan(&it.Title, &it.Body, &it.Payload, &it.SentAt, &it.DeviceID); err != nil {
 			continue
 		}
 		items = append(items, it)
