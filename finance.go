@@ -282,6 +282,14 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 	cacF := float64(cachedToks) / 1e6
 	outF := float64(completionToks) / 1e6
 	switch {
+	case strings.Contains(model, "realtime"):
+		// The «phone» (voice.go) logs one row of AUDIO tokens under the model
+		// and one row of TEXT tokens under model+"-text" — list prices 25.09.2026.
+		r := voiceRatesFor(model)
+		if strings.HasSuffix(model, "-text") {
+			return regF*r.textIn + cacF*r.textCached + outF*r.textOut
+		}
+		return regF*r.audioIn + cacF*r.audioCached + outF*r.audioOut
 	case strings.Contains(model, "-tts"):
 		// Speech (tts.go) is logged with the text's CHARACTERS as prompt tokens;
 		// audio output is billed per audio token, which the API does not
