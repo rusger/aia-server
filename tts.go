@@ -31,7 +31,7 @@ import (
 
 const (
 	ttsModel    = "gpt-4o-mini-tts"
-	ttsMaxChars = 2000
+	ttsMaxChars = 4000 // presenters read up to ~3000 chars; OpenAI accepts 4096
 	ttsEndpoint = "https://api.openai.com/v1/audio/speech"
 )
 
