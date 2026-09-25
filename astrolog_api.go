@@ -3016,6 +3016,68 @@ func appleTxnIsFreeTrial(txn *appleTransactionInfo) bool {
 // subscriptionWindowActive reports whether the user's CURRENT entitlement
 // window (as stored in users) is still running at now: lifetime, or an
 // expiry in the future. Unparseable / empty expiry counts as inactive.
+// priorPurchaseKinds says which accounts already hold a purchase_history row
+// for a given store transaction (see recordPurchaseEffects).
+type priorPurchaseKinds struct {
+    realEmail   bool // a different deliverable account (re-login / restore onto a new account)
+    placeholder bool // the Apple S2S placeholder "apple:<otxn>" (S2S got there first)
+    deviceEmail bool // the anonymous "<device>@device.astrolytix.app" account
+}
+
+// purchaseEffects is what recordPurchase may do beyond storing the row.
+type purchaseEffects struct {
+    funnelEvent   bool // purchase_completed analytics event
+    firstPurchase bool // welcome email + referral reward (both self-guarded)
+}
+
+// priorPurchaseRows classifies the rows purchase_history already holds for
+// this transaction. An empty transaction id (legacy clients) matches nothing.
+func priorPurchaseRows(tx *sql.Tx, store, txnID string) priorPurchaseKinds {
+    var k priorPurchaseKinds
+    if txnID == "" {
+        return k
+    }
+    rows, err := tx.Query(`SELECT email FROM purchase_history WHERE store = ? AND transaction_id = ?`, store, txnID)
+    if err != nil {
+        log.Printf("⚠️ recordPurchase: prior rows lookup failed for txn %s: %v", txnID, err)
+        return k
+    }
+    defer rows.Close()
+    for rows.Next() {
+        var email string
+        if rows.Scan(&email) != nil {
+            continue
+        }
+        switch {
+        case strings.HasPrefix(email, "apple:"):
+            k.placeholder = true
+        case strings.HasSuffix(email, "@device.astrolytix.app"):
+            k.deviceEmail = true
+        default:
+            k.realEmail = true
+        }
+    }
+    return k
+}
+
+// recordPurchaseEffects decides the side effects of a recordPurchase call
+// from whether it inserted a row and who already had the transaction:
+//   - nothing inserted (same account re-confirming) → nothing;
+//   - transaction known under another real email → a restore/re-attribution,
+//     not a sale: no funnel event, no welcome, no referral;
+//   - known only as the S2S placeholder → S2S already counted the sale, but
+//     could not email or reward (no account yet): welcome + referral only;
+//   - known only under the anonymous device account → the sale was counted
+//     then; the welcome could not reach a device address: welcome + referral;
+//   - unknown → a genuinely new purchase: everything.
+func recordPurchaseEffects(inserted bool, prior priorPurchaseKinds) purchaseEffects {
+    if !inserted || prior.realEmail {
+        return purchaseEffects{}
+    }
+    known := prior.placeholder || prior.deviceEmail
+    return purchaseEffects{funnelEvent: !known, firstPurchase: true}
+}
+
 func subscriptionWindowActive(curLength string, curExpiry sql.NullString, now time.Time) bool {
     if curLength == "lifetime" {
         return true
@@ -3033,7 +3095,7 @@ func subscriptionWindowActive(curLength string, curExpiry sql.NullString, now ti
     return e.After(now)
 }
 
-func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLength string, in *time.Time) (length string, expiry *time.Time, advance bool) {
+func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLength string, in *time.Time, now time.Time) (length string, expiry *time.Time, advance bool) {
     if inLength == "lifetime" {
         return inLength, nil, true
     }
@@ -3041,7 +3103,16 @@ func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLeng
     if curLength == "lifetime" && curEmpty {
         return curLength, nil, false
     }
+    // An incoming period that has already run out never backfills a window:
+    // iOS "restore" re-delivers every old receipt, and on a fresh account
+    // (re-login under a new email, or after a GDPR wipe) an empty window
+    // used to accept it — marking the account paid with an expiry in the
+    // past and firing the first-purchase side effects (2026-09-25).
+    inExpired := in != nil && !in.After(now)
     if curEmpty {
+        if inExpired {
+            return curLength, nil, false
+        }
         return inLength, in, true
     }
     if in == nil {
@@ -3050,6 +3121,9 @@ func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLeng
     }
     curT, err := parseDBTime(curExpiry.String)
     if err != nil {
+        if inExpired {
+            return curLength, nil, false
+        }
         return inLength, in, true
     }
     if in.After(curT) {
@@ -4145,7 +4219,7 @@ func upsertAppleTransaction(txn *appleTransactionInfo, deviceHint string) {
             log.Printf("⚠️ [apple S2S] current window lookup failed for %s: %v", email, qErr)
             windowKnown = false
         }
-        newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, length, expiry)
+        newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, length, expiry, time.Now())
         if !windowKnown {
             newLength, newExpiry, advance = curLength, nil, false
         }
@@ -4745,6 +4819,14 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     if req.IsTrial {
         isTrialInt = 1
     }
+    // The same receipt can already be in purchase_history under another
+    // account: the S2S placeholder ("apple:<otxn>"), the anonymous device
+    // account it was bought under, or a different real email (restore after
+    // re-login / GDPR wipe). The unique index is per (email, txn, store), so
+    // the insert below still counts as a new row — the first-purchase side
+    // effects must look at the transaction, not the row (2026-09-25).
+    prior := priorPurchaseRows(tx, req.Store, authoritativeTxnID)
+
     query := `INSERT OR IGNORE INTO purchase_history
               (email, device_id, product_id, transaction_id, purchase_date, expiry_date, subscription_type, subscription_length, store, purchase_token, is_trial)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -4775,7 +4857,7 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
         log.Printf("⚠️ recordPurchase: current window lookup failed for %s: %v", email, qErr)
         windowKnown = false
     }
-    newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, grantedLength, expiryDate)
+    newLength, newExpiry, advance := subscriptionWindowUpdate(curLength, curExpiry, grantedLength, expiryDate, time.Now())
     if !windowKnown {
         newLength, newExpiry, advance = curLength, nil, false
     }
@@ -4833,8 +4915,12 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
     // INSERT OR IGNORE collapses re-confirmations/restores of the same receipt to 0
     // rows affected, so this fires exactly once per real purchase and never on a
     // restore — keeping the funnel's "completed" count in lockstep with purchase_history.
-    if newRows, raErr := insertRes.RowsAffected(); raErr == nil && newRows == 1 {
+    newRows, raErr := insertRes.RowsAffected()
+    effects := recordPurchaseEffects(raErr == nil && newRows == 1, prior)
+    if effects.funnelEvent {
         emitPurchaseCompletedEvent(deviceID, req.ProductID, req.Store, "server_record_purchase")
+    }
+    if effects.firstPurchase {
         // C2: welcome email on the user's first PAID purchase. Suppressed for
         // free trials (req.IsTrial) — a trial user is emailed later, when the
         // trial converts to a real charge (Apple S2S DID_RENEW). Guarded to
