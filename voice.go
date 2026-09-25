@@ -297,6 +297,11 @@ var voiceVerifyStorePurchase = func(store, productID, transactionID, token strin
 	case "apple":
 		txn, err := verifyApplePurchaseToken(token, productID)
 		if err != nil {
+			// a server misconfiguration (no Apple root CA) must not burn real
+			// purchases: retryable, not a refusal
+			if strings.Contains(err.Error(), "not configured") {
+				return "", fmt.Errorf("%w: %v", errVoiceVerifyUnavailable, err)
+			}
 			return "", err
 		}
 		return txn.TransactionID, nil
@@ -308,11 +313,13 @@ var voiceVerifyStorePurchase = func(store, productID, transactionID, token strin
 		if !ok {
 			return "", errors.New("google play rejected the purchase")
 		}
-		if transactionID == "" {
-			sum := sha1.Sum([]byte(token))
-			transactionID = "gp_" + hex.EncodeToString(sum[:8])
-		}
-		return transactionID, nil
+		// The dedup key comes from the VERIFIED token, never from the
+		// client: a consumable token stays "purchased" at Google, so a
+		// client-chosen id would let one real purchase be credited again and
+		// again (review r1). The caller's transaction_id is informational.
+		_ = transactionID
+		sum := sha1.Sum([]byte(token))
+		return "gp_" + hex.EncodeToString(sum[:12]), nil
 	}
 	return "", errors.New("unsupported store")
 }

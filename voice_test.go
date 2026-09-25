@@ -237,6 +237,26 @@ func TestVoiceUsageFailsClosedOnDBError(t *testing.T) {
 	}
 }
 
+func TestVoiceGoogleDedupKeyIgnoresClientID(t *testing.T) {
+	old := GOOGLE_PLAY_VERIFY_PURCHASES
+	GOOGLE_PLAY_VERIFY_PURCHASES = false // verifier short-circuits to valid
+	defer func() { GOOGLE_PLAY_VERIFY_PURCHASES = old }()
+	oldVerify := voiceVerifyStorePurchase
+	defer func() { voiceVerifyStorePurchase = oldVerify }()
+	k1, err := oldVerify("google", "voice_minutes_15", "client-A", "tokenZ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	k2, _ := oldVerify("google", "voice_minutes_15", "client-B", "tokenZ")
+	k3, _ := oldVerify("google", "voice_minutes_15", "", "tokenZ")
+	if k1 != k2 || k2 != k3 || !strings.HasPrefix(k1, "gp_") {
+		t.Fatalf("google dedup key must depend on the token only: %s %s %s", k1, k2, k3)
+	}
+	if k4, _ := oldVerify("google", "voice_minutes_15", "client-A", "tokenY"); k4 == k1 {
+		t.Fatal("different tokens must not collide")
+	}
+}
+
 func TestVoicePurchasePacks(t *testing.T) {
 	openVoiceTestDB(t)
 	os.Unsetenv("VOICE_ALLOWED_EMAILS")
@@ -311,6 +331,16 @@ func TestVoicePurchasePacks(t *testing.T) {
 	db.QueryRow(`SELECT COUNT(*) FROM voice_purchases`).Scan(&n)
 	if n != 2 {
 		t.Fatalf("voice_purchases rows = %d", n)
+	}
+	// Google: one valid token replayed under other transaction_ids credits nothing more (review r1)
+	before := voiceRemainingMicro("buyer@example.com")
+	for _, tid := range []string{"X1", "X2", ""} {
+		if code, out := call(`{"store":"google","product_id":"voice_minutes_120","transaction_id":"` + tid + `","purchase_token":"g1"}`); code != http.StatusOK || out["duplicate"] != true {
+			t.Fatalf("token replay with transaction_id %q must be a duplicate: %d %v", tid, code, out)
+		}
+	}
+	if voiceRemainingMicro("buyer@example.com") != before {
+		t.Fatal("a replayed Google token credited minutes again")
 	}
 	var price float64
 	db.QueryRow(`SELECT price_usd FROM voice_purchases WHERE product_id = 'voice_minutes_120'`).Scan(&price)
