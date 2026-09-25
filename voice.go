@@ -17,8 +17,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -39,7 +42,21 @@ const (
 	// measured 25.09.2026: 111 s of speech → $0.0442 (list prices, mini)
 	voiceListCostPerMinUSD = 0.024
 	voiceSecretsEndpoint   = "https://api.openai.com/v1/realtime/client_secrets"
+	// the tariff (owner 25.09.2026): one «minute» on the balance = $0.05 of
+	// internal value (cost × 2); the balance is debited by real tokens and
+	// shown to the user in minutes at this rate
+	voiceMinuteUSD = 0.05
 )
+
+// voicePacks: the consumable products (App Store / Google Play, same ids) →
+// minutes credited. Store prices: $0.99 / $2.99 / $5.99.
+var voicePacks = map[string]int{"voice_minutes_15": 15, "voice_minutes_50": 50, "voice_minutes_120": 120}
+var voicePackOrder = []string{"voice_minutes_15", "voice_minutes_50", "voice_minutes_120"}
+var voicePackPriceUSD = map[string]float64{"voice_minutes_15": 0.99, "voice_minutes_50": 2.99, "voice_minutes_120": 5.99}
+
+// voicePublic: VOICE_PUBLIC=1 shows the phone to every account (else only the
+// allowlist and people who already hold minutes see it).
+func voicePublic() bool { return os.Getenv("VOICE_PUBLIC") == "1" }
 
 // voiceHardRules are prepended to whatever instructions the app sends (the
 // same grounding prompt its text chat uses). A live call has no post-hoc
@@ -155,6 +172,19 @@ func ensureVoiceSchema() {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_voice_usage_email ON voice_usage(email, created_at)`,
+		`CREATE TABLE IF NOT EXISTS voice_purchases (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			email TEXT NOT NULL,
+			device_id TEXT,
+			store TEXT NOT NULL,
+			product_id TEXT NOT NULL,
+			transaction_id TEXT NOT NULL UNIQUE,
+			minutes INTEGER NOT NULL,
+			usd_micro INTEGER NOT NULL,
+			price_usd REAL NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_voice_purchases_email ON voice_purchases(email, created_at)`,
 	}
 	for _, s := range stmts {
 		if _, err := db.Exec(s); err != nil {
@@ -194,8 +224,21 @@ func voiceBalanceFor(email string) (enabled bool, view voiceBalanceView) {
 	if usd < 0 {
 		usd = 0
 	}
-	view = voiceBalanceView{RemainingUSD: usd, RemainingMinutes: usd / (voiceListCostPerMinUSD * voiceMarkup), Exhausted: rem <= 0}
+	view = voiceBalanceView{RemainingUSD: usd, RemainingMinutes: usd / voiceMinuteUSD, Exhausted: rem <= 0}
 	return rem > 0, view
+}
+
+// voiceAvailable: whether the account sees the phone at all — the allowlist,
+// everyone when VOICE_PUBLIC=1, and anyone who ever bought minutes.
+func voiceAvailable(email string) bool {
+	if voiceAllowed(email) || voicePublic() {
+		return true
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM voice_purchases WHERE email = ?`, email).Scan(&n); err != nil {
+		log.Printf("⚠️ voice purchases read for %s: %v", email, err)
+	}
+	return n > 0 || voiceRemainingMicro(email) > 0
 }
 
 func voiceError(w http.ResponseWriter, code int, msg string) {
@@ -222,9 +265,138 @@ func voiceStatusHandler(w http.ResponseWriter, r *http.Request) {
 	ensureVoiceSchema()
 	enabled, view := voiceBalanceFor(email)
 	w.Header().Set("Content-Type", "application/json")
+	packs := make([]map[string]interface{}, 0, len(voicePackOrder))
+	for _, id := range voicePackOrder {
+		packs = append(packs, map[string]interface{}{"product_id": id, "minutes": voicePacks[id]})
+	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true, "enabled": enabled, "balance": view, "model": voiceModel, "voice": voiceDefaultVoice,
-		"cost_per_minute_usd": voiceListCostPerMinUSD * voiceMarkup,
+		"success": true, "enabled": enabled, "available": voiceAvailable(email), "balance": view,
+		"model": voiceModel, "voice": voiceDefaultVoice, "minute_usd": voiceMinuteUSD, "packs": packs,
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Buying minutes
+
+type voicePurchaseRequest struct {
+	Store         string `json:"store"` // apple | google
+	ProductID     string `json:"product_id"`
+	TransactionID string `json:"transaction_id"`
+	PurchaseToken string `json:"purchase_token"` // Apple: StoreKit 2 transaction JWS; Google: purchase token
+}
+
+// errVoiceVerifyUnavailable: the store could not be asked — fail closed but retryable.
+var errVoiceVerifyUnavailable = errors.New("verification unavailable")
+
+// voiceVerifyStorePurchase checks a consumable with the store and returns the
+// store's own transaction id (Apple) or the caller's (Google, whose product
+// lookup carries no order id). Same verifiers as the subscriptions; tests
+// inject their own.
+var voiceVerifyStorePurchase = func(store, productID, transactionID, token string) (string, error) {
+	switch store {
+	case "apple":
+		txn, err := verifyApplePurchaseToken(token, productID)
+		if err != nil {
+			return "", err
+		}
+		return txn.TransactionID, nil
+	case "google":
+		ok, _, err := verifyGooglePlayPurchase(productID, token, false)
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", errVoiceVerifyUnavailable, err)
+		}
+		if !ok {
+			return "", errors.New("google play rejected the purchase")
+		}
+		if transactionID == "" {
+			sum := sha1.Sum([]byte(token))
+			transactionID = "gp_" + hex.EncodeToString(sum[:8])
+		}
+		return transactionID, nil
+	}
+	return "", errors.New("unsupported store")
+}
+
+// voiceBookPurchase credits a pack once per transaction id (row + grant in one tx).
+func voiceBookPurchase(email, deviceID, store, productID, txnID string, minutes int) (duplicate bool, err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	micro := int64(float64(minutes)*voiceMinuteUSD*1e6 + 0.5)
+	res, err := tx.Exec(`INSERT OR IGNORE INTO voice_purchases (email, device_id, store, product_id, transaction_id, minutes, usd_micro, price_usd)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, email, deviceID, store, productID, txnID, minutes, micro, voicePackPriceUSD[productID])
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return true, nil
+	}
+	if _, err := tx.Exec(`INSERT INTO voice_balance (email, granted_usd_micro, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(email) DO UPDATE SET granted_usd_micro = granted_usd_micro + excluded.granted_usd_micro, updated_at = CURRENT_TIMESTAMP`, email, micro); err != nil {
+		return false, err
+	}
+	return false, tx.Commit()
+}
+
+// POST /api/voice/purchase
+func voicePurchaseHandler(w http.ResponseWriter, r *http.Request) {
+	claims, email, ok := voiceClaims(w, r)
+	if !ok {
+		return
+	}
+	ensureVoiceSchema()
+	var req voicePurchaseRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req); err != nil {
+		voiceError(w, http.StatusBadRequest, "Invalid request format")
+		return
+	}
+	req.Store = strings.ToLower(strings.TrimSpace(req.Store))
+	req.ProductID = strings.TrimSpace(req.ProductID)
+	if req.Store != "apple" && req.Store != "google" {
+		voiceError(w, http.StatusBadRequest, "unsupported store")
+		return
+	}
+	minutes, known := voicePacks[req.ProductID]
+	if !known {
+		voiceError(w, http.StatusBadRequest, "unknown product")
+		return
+	}
+	if strings.TrimSpace(req.PurchaseToken) == "" {
+		voiceError(w, http.StatusBadRequest, "purchase_token is required")
+		return
+	}
+	txnID, err := voiceVerifyStorePurchase(req.Store, req.ProductID, strings.TrimSpace(req.TransactionID), req.PurchaseToken)
+	if err != nil {
+		if errors.Is(err, errVoiceVerifyUnavailable) {
+			log.Printf("⚠️ voice purchase: %s verification unavailable for %s: %v", req.Store, email, err)
+			voiceError(w, http.StatusServiceUnavailable, "Purchase verification temporarily unavailable, will retry")
+			return
+		}
+		log.Printf("❌ voice purchase: %s rejected for %s product %s: %v", req.Store, email, req.ProductID, err)
+		voiceError(w, http.StatusBadRequest, "Purchase verification failed")
+		return
+	}
+	if txnID == "" {
+		voiceError(w, http.StatusBadRequest, "Purchase verification failed")
+		return
+	}
+	duplicate, err := voiceBookPurchase(email, claims.DeviceID, req.Store, req.ProductID, txnID, minutes)
+	if err != nil {
+		log.Printf("⚠️ voice purchase booking %s/%s: %v", email, txnID, err)
+		voiceError(w, http.StatusServiceUnavailable, "purchase not recorded, retry")
+		return
+	}
+	if !duplicate {
+		log.Printf("💳 voice pack: email=%s %s %s → +%d min", email, req.Store, req.ProductID, minutes)
+		logAPICallWithTokens(claims.DeviceID, "voice_pack", req.ProductID, 0, 0, 0, 0)
+	}
+	enabled, view := voiceBalanceFor(email)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true, "duplicate": duplicate, "minutes_added": map[bool]int{true: 0, false: minutes}[duplicate],
+		"enabled": enabled, "balance": view,
 	})
 }
 

@@ -9736,6 +9736,7 @@ func main() {
     router.HandleFunc("/api/voice/status", jwtAuthMiddleware(voiceStatusHandler)).Methods("GET")  // the «phone» (voice.go)
     router.HandleFunc("/api/voice/ticket", jwtAuthMiddleware(voiceTicketHandler)).Methods("POST")
     router.HandleFunc("/api/voice/usage", jwtAuthMiddleware(voiceUsageHandler)).Methods("POST")
+    router.HandleFunc("/api/voice/purchase", jwtAuthMiddleware(voicePurchaseHandler)).Methods("POST") // minute packs (consumables)
     router.HandleFunc("/api/chatgpt-stream", jwtAuthMiddleware(chatGPTStreamProxy)).Methods("POST")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -232,5 +234,100 @@ func TestVoiceUsageFailsClosedOnDBError(t *testing.T) {
 	}
 	if rem := voiceRemainingMicro("payer@example.com"); rem < 974_000 || rem > 976_000 {
 		t.Fatalf("one debit of 2×$0.0126 expected, remaining %d", rem)
+	}
+}
+
+func TestVoicePurchasePacks(t *testing.T) {
+	openVoiceTestDB(t)
+	os.Unsetenv("VOICE_ALLOWED_EMAILS")
+	os.Unsetenv("VOICE_PUBLIC")
+	oldVerify := voiceVerifyStorePurchase
+	defer func() { voiceVerifyStorePurchase = oldVerify }()
+	mode := "ok"
+	voiceVerifyStorePurchase = func(store, productID, transactionID, token string) (string, error) {
+		switch mode {
+		case "down":
+			return "", fmt.Errorf("%w: timeout", errVoiceVerifyUnavailable)
+		case "bad":
+			return "", errors.New("invalid signature")
+		}
+		return "txn_" + token, nil
+	}
+	buyer := &JWTClaims{Email: "Buyer@example.com", DeviceID: "d9"}
+	call := func(body string) (int, map[string]interface{}) {
+		w := httptest.NewRecorder()
+		voicePurchaseHandler(w, voiceReq("POST", "/api/voice/purchase", body, buyer))
+		var out map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return w.Code, out
+	}
+	status := func() map[string]interface{} {
+		w := httptest.NewRecorder()
+		voiceStatusHandler(w, voiceReq("GET", "/api/voice/status", "", buyer))
+		var out map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return out
+	}
+	if st := status(); st["available"] != false || st["enabled"] != false || len(st["packs"].([]interface{})) != 3 || st["minute_usd"] != 0.05 {
+		t.Fatalf("stranger status: %v", st)
+	}
+	if code, _ := call(`{"store":"paypal","product_id":"voice_minutes_15","purchase_token":"t"}`); code != http.StatusBadRequest {
+		t.Fatalf("store: %d", code)
+	}
+	if code, _ := call(`{"store":"apple","product_id":"voice_minutes_999","purchase_token":"t"}`); code != http.StatusBadRequest {
+		t.Fatalf("unknown product: %d", code)
+	}
+	if code, _ := call(`{"store":"apple","product_id":"voice_minutes_15"}`); code != http.StatusBadRequest {
+		t.Fatalf("no token: %d", code)
+	}
+	mode = "down"
+	if code, _ := call(`{"store":"apple","product_id":"voice_minutes_15","purchase_token":"a1"}`); code != http.StatusServiceUnavailable {
+		t.Fatalf("store down must be 503: %d", code)
+	}
+	mode = "bad"
+	if code, _ := call(`{"store":"apple","product_id":"voice_minutes_15","purchase_token":"a1"}`); code != http.StatusBadRequest {
+		t.Fatalf("invalid must be 400: %d", code)
+	}
+	if voiceRemainingMicro("buyer@example.com") != 0 {
+		t.Fatal("nothing may be credited before a verified purchase")
+	}
+	mode = "ok"
+	code, out := call(`{"store":"apple","product_id":"voice_minutes_15","purchase_token":"a1"}`)
+	bal := out["balance"].(map[string]interface{})
+	if code != http.StatusOK || out["duplicate"] != false || out["minutes_added"].(float64) != 15 || bal["remaining_minutes"].(float64) != 15 || out["enabled"] != true {
+		t.Fatalf("first pack: %d %v", code, out)
+	}
+	if rem := voiceRemainingMicro("buyer@example.com"); rem != 750_000 {
+		t.Fatalf("15 min = $0.75, got %d", rem)
+	}
+	code, out = call(`{"store":"apple","product_id":"voice_minutes_15","purchase_token":"a1"}`)
+	if code != http.StatusOK || out["duplicate"] != true || out["minutes_added"].(float64) != 0 || voiceRemainingMicro("buyer@example.com") != 750_000 {
+		t.Fatalf("replayed transaction must not credit twice: %v", out)
+	}
+	if code, out = call(`{"store":"google","product_id":"voice_minutes_120","transaction_id":"GPA.1","purchase_token":"g1"}`); code != http.StatusOK || out["balance"].(map[string]interface{})["remaining_minutes"].(float64) != 135 {
+		t.Fatalf("google pack: %d %v", code, out)
+	}
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM voice_purchases`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("voice_purchases rows = %d", n)
+	}
+	var price float64
+	db.QueryRow(`SELECT price_usd FROM voice_purchases WHERE product_id = 'voice_minutes_120'`).Scan(&price)
+	if price != 5.99 {
+		t.Fatalf("pack price recorded for revenue: %v", price)
+	}
+	// a buyer sees the phone even without the allowlist; the balance drains by real usage
+	if st := status(); st["available"] != true || st["enabled"] != true {
+		t.Fatalf("buyer status: %v", st)
+	}
+	os.Setenv("VOICE_PUBLIC", "1")
+	defer os.Unsetenv("VOICE_PUBLIC")
+	w := httptest.NewRecorder()
+	voiceStatusHandler(w, voiceReq("GET", "/api/voice/status", "", &JWTClaims{Email: "new@example.com"}))
+	var st map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &st)
+	if st["available"] != true || st["enabled"] != false {
+		t.Fatalf("VOICE_PUBLIC: everyone sees the phone, nobody calls for free: %v", st)
 	}
 }
