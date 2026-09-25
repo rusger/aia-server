@@ -23,6 +23,8 @@ func TestRecordPurchaseEffects(t *testing.T) {
 		{"S2S placeholder got there first: welcome only", true, priorPurchaseKinds{placeholder: true}, purchaseEffects{firstPurchase: true}},
 		{"bought under the device account, now logged in: welcome only", true, priorPurchaseKinds{deviceEmail: true}, purchaseEffects{firstPurchase: true}},
 		{"placeholder and device account: welcome only", true, priorPurchaseKinds{placeholder: true, deviceEmail: true}, purchaseEffects{firstPurchase: true}},
+		{"lookup failed: fail closed, nothing", true, priorPurchaseKinds{lookupFailed: true}, purchaseEffects{}},
+		{"lookup failed after a placeholder was seen: still nothing", true, priorPurchaseKinds{placeholder: true, lookupFailed: true}, purchaseEffects{}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

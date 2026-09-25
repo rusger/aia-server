@@ -3019,9 +3019,10 @@ func appleTxnIsFreeTrial(txn *appleTransactionInfo) bool {
 // priorPurchaseKinds says which accounts already hold a purchase_history row
 // for a given store transaction (see recordPurchaseEffects).
 type priorPurchaseKinds struct {
-    realEmail   bool // a different deliverable account (re-login / restore onto a new account)
-    placeholder bool // the Apple S2S placeholder "apple:<otxn>" (S2S got there first)
-    deviceEmail bool // the anonymous "<device>@device.astrolytix.app" account
+    realEmail    bool // a different deliverable account (re-login / restore onto a new account)
+    placeholder  bool // the Apple S2S placeholder "apple:<otxn>" (S2S got there first)
+    deviceEmail  bool // the anonymous "<device>@device.astrolytix.app" account
+    lookupFailed bool // the classification is incomplete — fail closed, no side effects
 }
 
 // purchaseEffects is what recordPurchase may do beyond storing the row.
@@ -3032,6 +3033,9 @@ type purchaseEffects struct {
 
 // priorPurchaseRows classifies the rows purchase_history already holds for
 // this transaction. An empty transaction id (legacy clients) matches nothing.
+// Any DB failure marks the result lookupFailed: a missed real-email row would
+// turn a restore into a "first purchase" (welcome email + paid referral
+// reward), so the caller must fail closed rather than guess.
 func priorPurchaseRows(tx *sql.Tx, store, txnID string) priorPurchaseKinds {
     var k priorPurchaseKinds
     if txnID == "" {
@@ -3039,13 +3043,16 @@ func priorPurchaseRows(tx *sql.Tx, store, txnID string) priorPurchaseKinds {
     }
     rows, err := tx.Query(`SELECT email FROM purchase_history WHERE store = ? AND transaction_id = ?`, store, txnID)
     if err != nil {
-        log.Printf("⚠️ recordPurchase: prior rows lookup failed for txn %s: %v", txnID, err)
+        log.Printf("⚠️ recordPurchase: prior rows lookup failed for txn %s: %v — side effects suppressed", txnID, err)
+        k.lookupFailed = true
         return k
     }
     defer rows.Close()
     for rows.Next() {
         var email string
-        if rows.Scan(&email) != nil {
+        if sErr := rows.Scan(&email); sErr != nil {
+            log.Printf("⚠️ recordPurchase: prior row scan failed for txn %s: %v — side effects suppressed", txnID, sErr)
+            k.lookupFailed = true
             continue
         }
         switch {
@@ -3056,6 +3063,10 @@ func priorPurchaseRows(tx *sql.Tx, store, txnID string) priorPurchaseKinds {
         default:
             k.realEmail = true
         }
+    }
+    if err := rows.Err(); err != nil {
+        log.Printf("⚠️ recordPurchase: prior rows iteration failed for txn %s: %v — side effects suppressed", txnID, err)
+        k.lookupFailed = true
     }
     return k
 }
@@ -3069,9 +3080,11 @@ func priorPurchaseRows(tx *sql.Tx, store, txnID string) priorPurchaseKinds {
 //     could not email or reward (no account yet): welcome + referral only;
 //   - known only under the anonymous device account → the sale was counted
 //     then; the welcome could not reach a device address: welcome + referral;
-//   - unknown → a genuinely new purchase: everything.
+//   - unknown → a genuinely new purchase: everything;
+//   - lookup failed → fail closed: a spurious welcome/referral is worse
+//     than a missed one (the referral reward is money).
 func recordPurchaseEffects(inserted bool, prior priorPurchaseKinds) purchaseEffects {
-    if !inserted || prior.realEmail {
+    if !inserted || prior.realEmail || prior.lookupFailed {
         return purchaseEffects{}
     }
     known := prior.placeholder || prior.deviceEmail
