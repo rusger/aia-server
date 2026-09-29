@@ -434,22 +434,46 @@ func tiktokCreatorInfo(w http.ResponseWriter, r *http.Request) {
 	tiktokJSON(w, http.StatusOK, map[string]interface{}{"success": true, "data": out.Data})
 }
 
+// tiktokPublishRequest is what the app sends to /api/tiktok/publish/init.
+type tiktokPublishRequest struct {
+	Title              string `json:"title"`
+	PrivacyLevel       string `json:"privacy_level"`
+	DisableComment     bool   `json:"disable_comment"`
+	DisableDuet        bool   `json:"disable_duet"`
+	DisableStitch      bool   `json:"disable_stitch"`
+	VideoSize          int64  `json:"video_size"`
+	BrandContentToggle bool   `json:"brand_content_toggle"`
+	BrandOrganicToggle bool   `json:"brand_organic_toggle"`
+	// IsAigc: the user marked the video as AI-generated; TikTok then labels
+	// the post "Creator labeled as AI-generated". Older app builds do not
+	// send the field — it stays false for them.
+	IsAigc bool `json:"is_aigc"`
+}
+
+// tiktokInitPayload builds the body of TikTok's video/init call (Direct Post,
+// FILE_UPLOAD) from the app's request.
+func tiktokInitPayload(req tiktokPublishRequest) map[string]interface{} {
+	chunk, total := tiktokChunkPlan(req.VideoSize)
+	return map[string]interface{}{
+		"post_info": map[string]interface{}{
+			"title": req.Title, "privacy_level": req.PrivacyLevel,
+			"disable_comment": req.DisableComment, "disable_duet": req.DisableDuet, "disable_stitch": req.DisableStitch,
+			"brand_content_toggle": req.BrandContentToggle, "brand_organic_toggle": req.BrandOrganicToggle,
+			"is_aigc": req.IsAigc,
+		},
+		"source_info": map[string]interface{}{
+			"source": "FILE_UPLOAD", "video_size": req.VideoSize, "chunk_size": chunk, "total_chunk_count": total,
+		},
+	}
+}
+
 // POST /api/tiktok/publish/init
 func tiktokPublishInit(w http.ResponseWriter, r *http.Request) {
 	email, ok := tiktokClaims(w, r)
 	if !ok {
 		return
 	}
-	var req struct {
-		Title              string `json:"title"`
-		PrivacyLevel       string `json:"privacy_level"`
-		DisableComment     bool   `json:"disable_comment"`
-		DisableDuet        bool   `json:"disable_duet"`
-		DisableStitch      bool   `json:"disable_stitch"`
-		VideoSize          int64  `json:"video_size"`
-		BrandContentToggle bool   `json:"brand_content_toggle"`
-		BrandOrganicToggle bool   `json:"brand_organic_toggle"`
-	}
+	var req tiktokPublishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.VideoSize <= 0 || req.PrivacyLevel == "" {
 		tiktokFail(w, http.StatusBadRequest, "privacy_level and video_size are required", "bad_request")
 		return
@@ -460,16 +484,7 @@ func tiktokPublishInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chunk, total := tiktokChunkPlan(req.VideoSize)
-	payload := map[string]interface{}{
-		"post_info": map[string]interface{}{
-			"title": req.Title, "privacy_level": req.PrivacyLevel,
-			"disable_comment": req.DisableComment, "disable_duet": req.DisableDuet, "disable_stitch": req.DisableStitch,
-			"brand_content_toggle": req.BrandContentToggle, "brand_organic_toggle": req.BrandOrganicToggle,
-		},
-		"source_info": map[string]interface{}{
-			"source": "FILE_UPLOAD", "video_size": req.VideoSize, "chunk_size": chunk, "total_chunk_count": total,
-		},
-	}
+	payload := tiktokInitPayload(req)
 	raw, code, msg, err := tiktokBearer("POST", tiktokVideoInitURL, a.AccessToken, payload)
 	if err != nil {
 		log.Printf("⚠️ tiktok video/init for %s: %v", email, err)
