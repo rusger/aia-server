@@ -142,17 +142,30 @@ func TestVoiceTicket(t *testing.T) {
 	if audio["output"].(map[string]interface{})["voice"] != "cedar" || gotSession["type"] != "realtime" {
 		t.Fatalf("session: %v", gotSession)
 	}
-	// echo-loop defences (owner's first call 25.09.2026): strict VAD + user transcription for the chat log
+	// semantic turn detection at low eagerness (owner 01.10.2026: the silence timer answered
+	// sighs and half sentences) + user transcription for the chat log
 	in := audio["input"].(map[string]interface{})
 	td := in["turn_detection"].(map[string]interface{})
-	if td["type"] != "server_vad" || td["threshold"] != 0.6 || td["prefix_padding_ms"] != 300 || td["silence_duration_ms"] != 700 || td["create_response"] != true || td["interrupt_response"] != true {
+	if td["type"] != "semantic_vad" || td["eagerness"] != "low" || td["create_response"] != true || td["interrupt_response"] != true {
 		t.Fatalf("turn_detection: %v", td)
+	}
+	if _, timer := td["silence_duration_ms"]; timer {
+		t.Fatalf("no silence timer with semantic VAD: %v", td)
 	}
 	if in["transcription"].(map[string]interface{})["model"] != voiceTranscribeModel {
 		t.Fatalf("transcription: %v", in["transcription"])
 	}
 	if !strings.Contains(voiceHardRules, "never invent the user's questions") {
 		t.Fatal("hard rules must forbid inventing the user's side")
+	}
+	// the rules read the chart instead of refusing (owner 01.10.2026)
+	for _, must := range []string{"INTERPRET", "get_chart_data tool first", "never refuse a reading", "at most three words"} {
+		if !strings.Contains(voiceHardRules, must) {
+			t.Fatalf("hard rules must contain %q", must)
+		}
+	}
+	if strings.Contains(voiceHardRules, "say so plainly") || strings.Contains(voiceHardRules, "strictly on the chart data") {
+		t.Fatal("the refusal wording is gone")
 	}
 	// an unknown voice falls back to the default; the secret never appears in logs (checked by eye: only email/chat/voice/len are logged)
 	w = call(`{"instructions":"x","voice":"nova"}`, owner)
