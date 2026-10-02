@@ -232,6 +232,7 @@ type EmailAuthResponse struct {
     AccessToken  string `json:"access_token,omitempty"`
     RefreshToken string `json:"refresh_token,omitempty"`
     ExpiresIn    int64  `json:"expires_in,omitempty"`
+    Email        string `json:"email,omitempty"` // the signed-in account (link login: the app doesn't know it)
 }
 
 // Admin subscription grant request
@@ -1025,6 +1026,7 @@ func initDB() error {
             log.Printf("ℹ️ devices.push_token migration note: %v", mErr)
         }
     }
+    ensureAuthLinkSchema()
     if _, mErr := db.Exec(`ALTER TABLE devices ADD COLUMN push_token_updated_at DATETIME`); mErr != nil {
         if !strings.Contains(mErr.Error(), "duplicate column") {
             log.Printf("ℹ️ devices.push_token_updated_at migration note: %v", mErr)
@@ -5395,18 +5397,29 @@ func isValidEmail(email string) bool {
 }
 
 // Send email using SMTP (Office 365 / GoDaddy M365)
-func sendAuthCodeEmail(toEmail, code string) error {
+// sendAuthCodeEmail mails the 6-digit code and, when [link] is non-empty,
+// the one-tap sign-in link (auth_link.go). The code stays for the iOS
+// keyboard suggestion / manual entry; the link is for the reader who left
+// the app for the mail client (owner 2026-10-02).
+func sendAuthCodeEmail(toEmail, code, link string) error {
     subject := "Your Astrolytix verification code"
+    linkPart := ""
+    if link != "" {
+        linkPart = fmt.Sprintf(`
+
+Or, on the phone with Astrolytix installed, sign in with one tap:
+%s`, link)
+    }
     body := fmt.Sprintf(`Hello,
 
-Your verification code is: %s
+Your verification code is: %s%s
 
-This code will expire in 10 minutes.
+The code and the link expire in 10 minutes.
 
 If you didn't request this code, please ignore this email.
 
 Best regards,
-Astrolytix Team`, code)
+Astrolytix Team`, code, linkPart)
     return sendPlainEmail(toEmail, subject, body)
 }
 
@@ -5917,9 +5930,15 @@ func requestAuthCode(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Generate 6-digit code
+    // Generate 6-digit code + the one-tap sign-in link token (auth_link.go):
+    // both live in the same auth_codes row, so either consumes the other.
     code := generateAuthCode()
     expiresAt := time.Now().Add(AUTH_CODE_EXP)
+    linkToken, lerr := newAuthLinkToken()
+    if lerr != nil {
+        log.Printf("⚠️ Sign-in link token generation failed, code-only mail: %v", lerr)
+        linkToken = ""
+    }
 
     // Invalidate any existing unused codes for this email
     _, err := db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND used = 0`, email)
@@ -5928,8 +5947,8 @@ func requestAuthCode(w http.ResponseWriter, r *http.Request) {
     }
 
     // Store the code in database
-    _, err = db.Exec(`INSERT INTO auth_codes (email, code, device_id, expires_at) VALUES (?, ?, ?, ?)`,
-        email, code, req.DeviceID, expiresAt)
+    _, err = db.Exec(`INSERT INTO auth_codes (email, code, device_id, expires_at, link_token) VALUES (?, ?, ?, ?, ?)`,
+        email, code, req.DeviceID, expiresAt, sql.NullString{String: linkToken, Valid: linkToken != ""})
     if err != nil {
         log.Printf("❌ Failed to store auth code: %v", err)
         json.NewEncoder(w).Encode(EmailAuthResponse{
@@ -5941,7 +5960,7 @@ func requestAuthCode(w http.ResponseWriter, r *http.Request) {
 
     // Send email
     log.Printf("📧 Sending auth code to %s", email)
-    if err := sendAuthCodeEmail(email, code); err != nil {
+    if err := sendAuthCodeEmail(email, code, authLinkURL(linkToken)); err != nil {
         log.Printf("❌ Failed to send email: %v", err)
         json.NewEncoder(w).Encode(EmailAuthResponse{
             Success: false,
@@ -6045,6 +6064,17 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    completeEmailLogin(w, email, storedCode, deviceID,
+        strings.TrimSpace(req.DeviceName), strings.TrimSpace(req.Platform))
+}
+
+// completeEmailLogin is the shared second half of the e-mail login, reached
+// once the caller has matched the 6-digit code (verifyAuthCode) or the
+// sign-in link token (verifyAuthLink, auth_link.go) against an unused,
+// unexpired auth_codes row: device limit BEFORE consuming the code, mark the
+// row used, create/refresh the user, entitlement (device OR referral),
+// login history, identity, device session, JWT pair.
+func completeEmailLogin(w http.ResponseWriter, email, storedCode, deviceID, deviceName, platform string) {
     // Enforce the concurrent-device limit BEFORE consuming the code, so a
     // rejected login doesn't burn the user's verification code. A device that
     // is already active (re-login on a known device) is always allowed; only a
@@ -6052,7 +6082,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     if !isDeviceActive(email, deviceID) {
         if active := countActiveDevices(email); active >= MAX_ACTIVE_DEVICES {
             log.Printf("🚫 Device limit reached for %s (%d active) — rejecting new device %s", email, active, deviceID)
-            emitDeviceLimitEvent(deviceID, strings.TrimSpace(req.Platform), active)
+            emitDeviceLimitEvent(deviceID, platform, active)
             json.NewEncoder(w).Encode(EmailAuthResponse{
                 Success: false,
                 Error:   "Device limit reached",
@@ -6063,7 +6093,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     }
 
     // Mark code as used
-    _, err = db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND code = ?`, email, storedCode)
+    _, err := db.Exec(`UPDATE auth_codes SET used = 1 WHERE email = ? AND code = ?`, email, storedCode)
     if err != nil {
         log.Printf("❌ Failed to mark code as used: %v", err)
     }
@@ -6139,7 +6169,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
             }
             if devActive {
                 subscriptionType, subscriptionLength = "paid", dLength
-                log.Printf("🔗 [verifyAuthCode] %s entitled via device account %s", email, deviceID)
+                log.Printf("🔗 [completeEmailLogin] %s entitled via device account %s", email, deviceID)
             }
         }
     }
@@ -6149,7 +6179,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     if subscriptionType != "paid" {
         if _, ok := referralEntitlement(email, deviceID); ok {
             subscriptionType = "paid"
-            log.Printf("🎁 [verifyAuthCode] %s entitled via referral reward", email)
+            log.Printf("🎁 [completeEmailLogin] %s entitled via referral reward", email)
         }
     }
 
@@ -6161,7 +6191,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
     adoptIdentityOnLogin(deviceID)
 
     // Register / re-activate this device session (powers My Devices + the limit)
-    registerDevice(email, deviceID, strings.TrimSpace(req.DeviceName), strings.TrimSpace(req.Platform))
+    registerDevice(email, deviceID, deviceName, platform)
 
     // Generate JWT tokens with EMAIL as primary identity
     accessToken, err := generateAccessToken(email, deviceID, subscriptionType, subscriptionLength)
@@ -6192,6 +6222,7 @@ func verifyAuthCode(w http.ResponseWriter, r *http.Request) {
         AccessToken:  accessToken,
         RefreshToken: refreshToken,
         ExpiresIn:    int64(ACCESS_TOKEN_EXP.Seconds()),
+        Email:        email,
     })
 }
 
@@ -9712,6 +9743,7 @@ func main() {
     router.HandleFunc("/api/auth/refresh", refreshAccessToken).Methods("POST")
     router.HandleFunc("/api/auth/request-code", requestAuthCode).Methods("POST")
     router.HandleFunc("/api/auth/verify-code", verifyAuthCode).Methods("POST")
+    router.HandleFunc("/api/auth/verify-link", verifyAuthLink).Methods("POST")
 
     // Analytics endpoints (public - no JWT required for event tracking)
     router.HandleFunc("/api/analytics/event", trackAnalyticsEvent).Methods("POST")
@@ -9831,6 +9863,7 @@ func main() {
     log.Println("  [PUBLIC]    POST /api/auth/refresh - Refresh access token")
     log.Println("  [PUBLIC]    POST /api/auth/request-code - Request email verification code")
     log.Println("  [PUBLIC]    POST /api/auth/verify-code - Verify code and get tokens")
+    log.Println("  [PUBLIC]    POST /api/auth/verify-link - Verify e-mail sign-in link token and get tokens")
     log.Println("  [ANALYTICS] POST /api/analytics/event - Track single analytics event")
     log.Println("  [ANALYTICS] POST /api/analytics/events - Track batch analytics events")
     log.Println("  [BOT]       GET  /api/bot/check-email - Check if email exists (BOT_API_SECRET)")
