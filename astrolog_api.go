@@ -6169,7 +6169,7 @@ func completeEmailLogin(w http.ResponseWriter, email, storedCode, deviceID, devi
             }
             if devActive {
                 subscriptionType, subscriptionLength = "paid", dLength
-                log.Printf("🔗 [verifyAuthCode] %s entitled via device account %s", email, deviceID)
+                log.Printf("🔗 [completeEmailLogin] %s entitled via device account %s", email, deviceID)
             }
         }
     }
@@ -6179,7 +6179,7 @@ func completeEmailLogin(w http.ResponseWriter, email, storedCode, deviceID, devi
     if subscriptionType != "paid" {
         if _, ok := referralEntitlement(email, deviceID); ok {
             subscriptionType = "paid"
-            log.Printf("🎁 [verifyAuthCode] %s entitled via referral reward", email)
+            log.Printf("🎁 [completeEmailLogin] %s entitled via referral reward", email)
         }
     }
 
