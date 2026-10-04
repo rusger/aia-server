@@ -258,7 +258,22 @@ Manage users from command line:
 
 # Update subscription
 ./admin_cli update <device_id> --type paid --length yearly
+
+# Give an account a subscription by e-mail (friends, support) — the same write as
+# POST /api/admin/grant-subscription, without its 2FA (ssh access is the trust)
+./admin_cli grant -email friend@example.com                  # paid, one year
+./admin_cli grant -email friend@example.com -length lifetime
+./admin_cli grant -email friend@example.com -days 30
+./admin_cli grant -email friend@example.com -type free       # take it back
 ```
+
+A grant by e-mail works whether or not the address has ever logged in (the
+row is created and waits). The app learns of it at its next `GET /api/user/info`
+— at most every 5 minutes while open, at once on login or on the purchase
+screen; the server is the only authority, nothing is cached as paid on the
+device beyond that. Entitlement is read from `users.subscription_type /
+subscription_expiry / last_payment_method` alone: trials, device identity
+groups and referral rewards are untouched, a paid row simply wins over them.
 
 ---
 
