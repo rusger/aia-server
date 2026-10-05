@@ -157,48 +157,58 @@ func ttsHandler(w http.ResponseWriter, r *http.Request) {
 		ttsError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("text longer than %d characters", ttsMaxChars))
 		return
 	}
-	voice := ttsVoiceFor(req.Gender, req.Lang)
-	key := ttsCacheKey(ttsModel, voice, req.Lang, text)
+	data, voice, hit, status, msg := ttsEnsure(claims.DeviceID, getClientIP(r), text, req.Gender, req.Lang)
+	if status != http.StatusOK {
+		ttsError(w, status, msg)
+		return
+	}
+	w.Header().Set("Content-Type", "audio/mpeg")
+	if hit {
+		w.Header().Set("X-TTS-Cache", "hit")
+	} else {
+		w.Header().Set("X-TTS-Cache", "miss")
+	}
+	w.Header().Set("X-TTS-Voice", voice)
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
+}
+
+// ttsEnsure: the mp3 of an already validated text, from the cache or freshly
+// synthesized — everything /api/tts does after reading its request, so another
+// caller (presenter_jobs.go) gets the same cache, limits and accounting.
+// status is http.StatusOK when data holds the audio; otherwise msg says why.
+func ttsEnsure(deviceID, clientIP, text, gender, lang string) (data []byte, voice string, hit bool, status int, msg string) {
+	voice = ttsVoiceFor(gender, lang)
+	key := ttsCacheKey(ttsModel, voice, lang, text)
 	dir := ttsCacheDir()
 	path := filepath.Join(dir, key+".mp3")
 	// A real mp3 from OpenAI is tens of KB; anything under 200 bytes is a
 	// truncated write and is re-synthesized rather than served.
-	if data, err := os.ReadFile(path); err == nil && len(data) > 200 {
-		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("X-TTS-Cache", "hit")
-		w.Header().Set("X-TTS-Voice", voice)
-		w.WriteHeader(http.StatusOK)
-		w.Write(data)
-		return
+	if cached, err := os.ReadFile(path); err == nil && len(cached) > 200 {
+		return cached, voice, true, http.StatusOK, ""
 	}
-	deviceID := claims.DeviceID
 	if OPENAI_API_KEY == "" && !ttsFetchInjected {
-		ttsError(w, http.StatusServiceUnavailable, "TTS not configured on server")
-		return
+		return nil, voice, false, http.StatusServiceUnavailable, "TTS not configured on server"
 	}
 	if ipLimiter != nil {
-		if lim := ipLimiter.GetLimiter(getClientIP(r)); lim != nil && !lim.Allow() {
-			ttsError(w, http.StatusTooManyRequests, "Too many requests from your network. Please wait.")
-			return
+		if lim := ipLimiter.GetLimiter(clientIP); lim != nil && !lim.Allow() {
+			return nil, voice, false, http.StatusTooManyRequests, "Too many requests from your network. Please wait."
 		}
 	}
 	if deviceLimiter != nil {
 		if lim := deviceLimiter.GetLimiter(deviceID); lim != nil && !lim.Allow() {
-			ttsError(w, http.StatusTooManyRequests, "Rate limit exceeded. Please try again.")
-			return
+			return nil, voice, false, http.StatusTooManyRequests, "Rate limit exceeded. Please try again."
 		}
 	}
 	if used, cap := ttsUsedToday(deviceID), ttsDailyPerDevice(); used >= cap {
 		log.Printf("🔇 tts daily cap: device=%s used=%d cap=%d", deviceID, used, cap)
-		ttsError(w, http.StatusTooManyRequests, "Daily voice limit reached")
-		return
+		return nil, voice, false, http.StatusTooManyRequests, "Daily voice limit reached"
 	}
 	started := time.Now()
 	data, err := ttsFetch(ttsModel, voice, ttsInstructions, text)
 	if err != nil {
 		log.Printf("❌ tts: device=%s voice=%s chars=%d: %v", deviceID, voice, len([]rune(text)), err)
-		ttsError(w, http.StatusBadGateway, "voice synthesis failed")
-		return
+		return nil, voice, false, http.StatusBadGateway, "voice synthesis failed"
 	}
 	// Unique temp file + rename: two simultaneous misses for the same text
 	// must never interleave into one corrupt cached mp3 (review r1).
@@ -221,11 +231,7 @@ func ttsHandler(w http.ResponseWriter, r *http.Request) {
 	chars := len([]rune(text))
 	logAPICallWithTokens(deviceID, "tts", ttsModel, chars, 0, chars, 0)
 	log.Printf("🔊 tts: device=%s voice=%s chars=%d bytes=%d in %dms", deviceID, voice, chars, len(data), time.Since(started).Milliseconds())
-	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("X-TTS-Cache", "miss")
-	w.Header().Set("X-TTS-Voice", voice)
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	return data, voice, false, http.StatusOK, ""
 }
 
 // ttsFetchInjected lets tests run without an API key.

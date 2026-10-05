@@ -9734,6 +9734,7 @@ func main() {
     // iOS Live Activity end pushes for the marathon countdown (see live_activity.go).
     migrateLiveActivities()
     migrateLiveActivityStarts()
+    migratePresenterJobs()
     go liveActivityEndLoop()
 
     router := mux.NewRouter()
@@ -9767,6 +9768,14 @@ func main() {
     router.HandleFunc("/api/tts", jwtAuthMiddleware(ttsHandler)).Methods("POST") // voice for share highlights / presenters (tts.go)
     router.HandleFunc("/api/presenter/video/lookup", jwtAuthMiddleware(presenterVideoLookupHandler)).Methods("POST") // ready-made presenter videos (presenter_video.go)
     router.HandleFunc("/api/presenter/video", jwtAuthMiddleware(presenterVideoHandler)).Methods("GET")
+    router.HandleFunc("/api/presenter/jobs", jwtAuthMiddleware(presenterJobCreateHandler)).Methods("POST") // videos on request, rendered by the Mac node (presenter_jobs.go)
+    router.HandleFunc("/api/presenter/jobs/{id}", jwtAuthMiddleware(presenterJobStatusHandler)).Methods("GET")
+    router.HandleFunc("/api/presenter/jobs/{id}/cancel", jwtAuthMiddleware(presenterJobCancelHandler)).Methods("POST")
+    router.HandleFunc("/api/presenter/node/claim", presenterNodeAuth(presenterNodeClaimHandler)).Methods("POST")
+    router.HandleFunc("/api/presenter/node/audio", presenterNodeAuth(presenterNodeAudioHandler)).Methods("GET")
+    router.HandleFunc("/api/presenter/node/result", presenterNodeAuth(presenterNodeResultHandler)).Methods("PUT")
+    router.HandleFunc("/api/presenter/node/fail", presenterNodeAuth(presenterNodeFailHandler)).Methods("POST")
+    router.HandleFunc("/api/presenter/node/video", presenterNodeAuth(presenterNodeVideoHandler)).Methods("PUT")
     router.HandleFunc("/api/voice/status", jwtAuthMiddleware(voiceStatusHandler)).Methods("GET")  // the «phone» (voice.go)
     router.HandleFunc("/api/voice/ticket", jwtAuthMiddleware(voiceTicketHandler)).Methods("POST")
     router.HandleFunc("/api/voice/usage", jwtAuthMiddleware(voiceUsageHandler)).Methods("POST")
