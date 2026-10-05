@@ -9765,6 +9765,8 @@ func main() {
     router.HandleFunc("/api/transit-multi-year", jwtAuthMiddleware(calculateTransitMultiYear)).Methods("POST")
     router.HandleFunc("/api/chatgpt", jwtAuthMiddleware(chatGPTProxy)).Methods("POST")
     router.HandleFunc("/api/tts", jwtAuthMiddleware(ttsHandler)).Methods("POST") // voice for share highlights / presenters (tts.go)
+    router.HandleFunc("/api/presenter/video/lookup", jwtAuthMiddleware(presenterVideoLookupHandler)).Methods("POST") // ready-made presenter videos (presenter_video.go)
+    router.HandleFunc("/api/presenter/video", jwtAuthMiddleware(presenterVideoHandler)).Methods("GET")
     router.HandleFunc("/api/voice/status", jwtAuthMiddleware(voiceStatusHandler)).Methods("GET")  // the «phone» (voice.go)
     router.HandleFunc("/api/voice/ticket", jwtAuthMiddleware(voiceTicketHandler)).Methods("POST")
     router.HandleFunc("/api/voice/usage", jwtAuthMiddleware(voiceUsageHandler)).Methods("POST")
