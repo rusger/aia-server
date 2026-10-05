@@ -87,7 +87,10 @@ func migratePresenterJobs() {
 			done_at INTEGER
 		);
 		CREATE INDEX IF NOT EXISTS idx_presenter_jobs_status ON presenter_jobs(status, created_at);
-		CREATE INDEX IF NOT EXISTS idx_presenter_jobs_key ON presenter_jobs(version, key);`); err != nil {
+		CREATE INDEX IF NOT EXISTS idx_presenter_jobs_key ON presenter_jobs(version, key);
+		-- one active job per video, whoever asks and however many times at once
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_presenter_jobs_active ON presenter_jobs(version, key)
+			WHERE status IN ('voicing','queued','rendering');`); err != nil {
 		log.Printf("⚠️ presenter_jobs migration: %v", err)
 	}
 }
@@ -155,21 +158,20 @@ func presenterJobCreateHandler(w http.ResponseWriter, r *http.Request) {
 		presenterJSON(w, http.StatusOK, map[string]interface{}{"success": true, "status": "unavailable", "key": key, "node_online": false})
 		return
 	}
-	// One job per video, whoever asks.
-	var id int64
-	var status string
-	err := db.QueryRow(`SELECT id, status FROM presenter_jobs WHERE version = ? AND key = ? AND status IN ('voicing','queued','rendering') ORDER BY id LIMIT 1`,
-		req.Version, key).Scan(&id, &status)
-	if err == nil {
+	// One job per video, whoever asks: an existing active job is answered as is.
+	if id, status, found, err := presenterActiveJob(req.Version, key); err != nil {
+		presenterVideoError(w, http.StatusInternalServerError, "queue unavailable")
+		return
+	} else if found {
 		presenterJSON(w, http.StatusOK, map[string]interface{}{"success": true, "status": status, "key": key, "id": id, "node_online": true})
 		return
 	}
-	if err != sql.ErrNoRows {
+	var active int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM presenter_jobs WHERE device_id = ? AND status IN ('voicing','queued','rendering')`, claims.DeviceID).Scan(&active); err != nil {
+		log.Printf("⚠️ presenter jobs: active count for %s: %v", claims.DeviceID, err)
 		presenterVideoError(w, http.StatusInternalServerError, "queue unavailable")
 		return
 	}
-	var active int
-	db.QueryRow(`SELECT COUNT(*) FROM presenter_jobs WHERE device_id = ? AND status IN ('voicing','queued','rendering')`, claims.DeviceID).Scan(&active)
 	if active >= presenterMaxActivePerDev {
 		presenterVideoError(w, http.StatusTooManyRequests, "too many videos in progress")
 		return
@@ -178,12 +180,29 @@ func presenterJobCreateHandler(w http.ResponseWriter, r *http.Request) {
 	res, err := db.Exec(`INSERT INTO presenter_jobs (key, version, text, gender, lang, presenter, device_id, client_ip, status, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'voicing', ?)`, key, req.Version, text, req.Gender, req.Lang, req.Presenter, claims.DeviceID, ip, presenterNow())
 	if err != nil {
+		// Two identical requests at once: the unique index let only one in —
+		// the other gets that job (review r1: no second paid voice).
+		if id, status, found, err2 := presenterActiveJob(req.Version, key); err2 == nil && found {
+			presenterJSON(w, http.StatusOK, map[string]interface{}{"success": true, "status": status, "key": key, "id": id, "node_online": true})
+			return
+		}
+		log.Printf("⚠️ presenter jobs: insert: %v", err)
 		presenterVideoError(w, http.StatusInternalServerError, "queue unavailable")
 		return
 	}
-	id, _ = res.LastInsertId()
+	id, _ := res.LastInsertId()
 	go presenterVoiceJob(id, claims.DeviceID, ip, text, req.Gender, req.Lang)
 	presenterJSON(w, http.StatusOK, map[string]interface{}{"success": true, "status": "voicing", "key": key, "id": id, "node_online": true})
+}
+
+// presenterActiveJob: the active job of a video, if any.
+func presenterActiveJob(version, key string) (id int64, status string, found bool, err error) {
+	err = db.QueryRow(`SELECT id, status FROM presenter_jobs WHERE version = ? AND key = ? AND status IN ('voicing','queued','rendering') ORDER BY id LIMIT 1`,
+		version, key).Scan(&id, &status)
+	if err == sql.ErrNoRows {
+		return 0, "", false, nil
+	}
+	return id, status, err == nil, err
 }
 
 // presenterVoiceJob gets the voice of a new job and hands it to the queue.
@@ -267,13 +286,24 @@ func presenterNodeAuth(next http.HandlerFunc) http.HandlerFunc {
 // presenterSweep: stale claims go back once, forgotten jobs fail, old rows go.
 func presenterSweep() {
 	now := presenterNow()
-	db.Exec(`UPDATE presenter_jobs SET status = 'queued', claimed_at = NULL WHERE status = 'rendering' AND claimed_at < ? AND attempts < ?`,
-		now-presenterRenderStaleSec, presenterMaxAttempts)
-	db.Exec(`UPDATE presenter_jobs SET status = 'failed', error = 'render_timeout', text = '', done_at = ? WHERE status = 'rendering' AND claimed_at < ?`,
-		now, now-presenterRenderStaleSec)
-	db.Exec(`UPDATE presenter_jobs SET status = 'failed', error = 'expired', text = '', done_at = ? WHERE status IN ('voicing','queued') AND created_at < ?`,
-		now, now-presenterQueuedExpireSec)
-	db.Exec(`DELETE FROM presenter_jobs WHERE status IN ('ready','failed','cancelled') AND created_at < ?`, now-presenterJobKeepSec)
+	for _, step := range []struct {
+		what string
+		sql  string
+		args []interface{}
+	}{
+		{"requeue stale", `UPDATE presenter_jobs SET status = 'queued', claimed_at = NULL WHERE status = 'rendering' AND claimed_at < ? AND attempts < ?`,
+			[]interface{}{now - presenterRenderStaleSec, presenterMaxAttempts}},
+		{"fail stale", `UPDATE presenter_jobs SET status = 'failed', error = 'render_timeout', text = '', done_at = ? WHERE status = 'rendering' AND claimed_at < ?`,
+			[]interface{}{now, now - presenterRenderStaleSec}},
+		{"expire", `UPDATE presenter_jobs SET status = 'failed', error = 'expired', text = '', done_at = ? WHERE status IN ('voicing','queued') AND created_at < ?`,
+			[]interface{}{now, now - presenterQueuedExpireSec}},
+		{"delete old", `DELETE FROM presenter_jobs WHERE status IN ('ready','failed','cancelled') AND created_at < ?`,
+			[]interface{}{now - presenterJobKeepSec}},
+	} {
+		if _, err := db.Exec(step.sql, step.args...); err != nil {
+			log.Printf("⚠️ presenter sweep (%s): %v", step.what, err)
+		}
+	}
 }
 
 // presenterNodeClaimHandler: POST /api/presenter/node/claim

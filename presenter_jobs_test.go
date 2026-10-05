@@ -320,6 +320,25 @@ func TestPresenterJobsLimitsCancelAndSweep(t *testing.T) {
 	}
 }
 
+func TestPresenterJobsOneActivePerVideo(t *testing.T) {
+	setupPresenterJobsTest(t)
+	presenterNodeSeenAt.Store(presenterNow())
+	// the unique index refuses a second active job for the same video, whoever asks
+	for i, dev := range []string{"dev1", "dev2"} {
+		_, err := db.Exec(`INSERT INTO presenter_jobs (key, version, text, gender, lang, presenter, device_id, status, created_at)
+			VALUES (?, 'v17', 't', 'f', 'ru', 'j-b', ?, 'voicing', ?)`, strings.Repeat("c", 40), dev, presenterNow())
+		if (err == nil) != (i == 0) {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+	// a finished job frees the slot for a new one
+	presenterFinish(1, "failed", "x")
+	if _, err := db.Exec(`INSERT INTO presenter_jobs (key, version, text, gender, lang, presenter, device_id, status, created_at)
+		VALUES (?, 'v17', 't', 'f', 'ru', 'j-b', 'dev3', 'queued', ?)`, strings.Repeat("c", 40), presenterNow()); err != nil {
+		t.Fatalf("after finish: %v", err)
+	}
+}
+
 func TestPresenterJobsVoiceFailure(t *testing.T) {
 	setupPresenterJobsTest(t)
 	ttsFetch = func(model, voice, instructions, text string) ([]byte, error) { return nil, os.ErrDeadlineExceeded }
