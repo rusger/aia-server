@@ -51,9 +51,9 @@ import (
 )
 
 const (
-	presenterNodeOnlineSec   = 15  // the node polls every couple of seconds
-	presenterRenderStaleSec  = 120 // a claimed job with no result goes back to the queue once
-	presenterQueuedExpireSec = 600 // nobody waits ten minutes for a video
+	presenterNodeOnlineSec   = 15   // the node polls every couple of seconds
+	presenterRenderStaleSec  = 1500 // a claimed job with no result goes back to the queue once (Ditto on the Mac: 10–15 min a reading, owner 07.10.2026)
+	presenterQueuedExpireSec = 3600 // behind two Ditto jobs a third waits up to half an hour; an hour is the ceiling
 	presenterJobKeepSec      = 24 * 3600
 	presenterMaxAttempts     = 2
 	presenterMaxActivePerDev = 2
