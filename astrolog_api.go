@@ -9826,6 +9826,10 @@ func main() {
     router.HandleFunc("/api/referral/info", jwtAuthMiddleware(referralInfo)).Methods("GET")
     router.HandleFunc("/api/referral/claim", jwtAuthMiddleware(referralClaim)).Methods("POST")
     router.HandleFunc("/r/{code}", referralLandingPage).Methods("GET")
+    // Website consultant chat (see web_chat.go). Public on purpose — site
+    // visitors have no account; origin check + limits live in the handlers.
+    router.HandleFunc("/api/chat/message", webChat.handleMessage).Methods("POST")
+    router.HandleFunc("/api/chat/history", webChat.handleHistory).Methods("GET")
 
     // Bot endpoints (BOT_API_SECRET required - no 2FA)
     router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
