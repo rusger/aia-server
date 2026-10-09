@@ -146,7 +146,7 @@ func fcmAccessTokenValue(c *fcmConfig) (string, error) {
 // sendFCM delivers a notification to one Android FCM registration token.
 // ttl bounds how long FCM stores the message for an offline device; <= 0
 // keeps FCM's default (4 weeks) for messages that stay relevant.
-func sendFCM(deviceToken, title, body, payload string, ttl time.Duration) error {
+func sendFCM(deviceToken, title, body, payload, lang string, ttl time.Duration) error {
 	c, err := loadFCMConfig()
 	if err != nil {
 		return err
@@ -156,24 +156,7 @@ func sendFCM(deviceToken, title, body, payload string, ttl time.Duration) error 
 		return err
 	}
 
-	android := map[string]interface{}{
-		"priority": "high",
-	}
-	if ttl > 0 {
-		android["ttl"] = fmt.Sprintf("%ds", int(ttl/time.Second))
-	}
-	msg := map[string]interface{}{
-		"token": deviceToken,
-		"notification": map[string]string{
-			"title": title,
-			"body":  body,
-		},
-		"android": android,
-	}
-	if payload != "" {
-		// The app reads data["payload"] to deep-link on tap.
-		msg["data"] = map[string]string{"payload": payload}
-	}
+	msg := fcmMessageMap(deviceToken, title, body, payload, lang, ttl)
 	jsonBody, err := json.Marshal(map[string]interface{}{"message": msg})
 	if err != nil {
 		return err
@@ -199,6 +182,38 @@ func sendFCM(deviceToken, title, body, payload string, ttl time.Duration) error 
 	return fmt.Errorf("FCM %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 }
 
+// fcmMessageMap is the FCM v1 message for one push. lang is the language the
+// title/body were composed in ("" = unknown); the app records it with the
+// notification so the history card stays in one language (owner 09.10.2026).
+func fcmMessageMap(deviceToken, title, body, payload, lang string, ttl time.Duration) map[string]interface{} {
+	android := map[string]interface{}{
+		"priority": "high",
+	}
+	if ttl > 0 {
+		android["ttl"] = fmt.Sprintf("%ds", int(ttl/time.Second))
+	}
+	msg := map[string]interface{}{
+		"token": deviceToken,
+		"notification": map[string]string{
+			"title": title,
+			"body":  body,
+		},
+		"android": android,
+	}
+	data := map[string]string{}
+	if payload != "" {
+		// The app reads data["payload"] to deep-link on tap.
+		data["payload"] = payload
+	}
+	if lang != "" {
+		data["lang"] = lang
+	}
+	if len(data) > 0 {
+		msg["data"] = data
+	}
+	return msg
+}
+
 // sendPushToToken dispatches to the right transport for a device's platform:
 // Android → FCM, everything else (iOS / unknown) → APNs.
 //
@@ -207,9 +222,12 @@ func sendFCM(deviceToken, title, body, payload string, ttl time.Duration) error 
 // expire instead of being delivered days late when the phone comes back
 // online. Pass 0 for messages that stay relevant (admin/organizational),
 // keeping the transport defaults (FCM ~4 weeks, APNs limited storage).
-func sendPushToToken(platform, token, title, body, payload string, ttl time.Duration) error {
+//
+// lang is the language title/body were composed in ("" when unknown); it
+// travels with the push so the app can keep its history card in one language.
+func sendPushToToken(platform, token, title, body, payload, lang string, ttl time.Duration) error {
 	if strings.EqualFold(platform, "Android") {
-		return sendFCM(token, title, body, payload, ttl)
+		return sendFCM(token, title, body, payload, lang, ttl)
 	}
-	return sendAPNs(token, title, body, payload, ttl)
+	return sendAPNs(token, title, body, payload, lang, ttl)
 }

@@ -158,7 +158,7 @@ func notificationIDFromString(s string) int {
 // ttl > 0 sets the apns-expiration header so APNs drops the push instead of
 // storing it for an offline device past its relevance window; <= 0 omits the
 // header (APNs default storage) for messages that stay relevant.
-func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error {
+func sendAPNs(deviceToken, title, body, payload, lang string, ttl time.Duration) error {
 	c, err := loadAPNsConfig()
 	if err != nil {
 		return err
@@ -168,28 +168,7 @@ func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error
 		return err
 	}
 
-	aps := map[string]interface{}{
-		"alert": map[string]string{"title": title, "body": body},
-		"sound": "default",
-	}
-	payloadMap := map[string]interface{}{"aps": aps}
-	if payload != "" {
-		// Custom key the app's notification tap handler reads to deep-link.
-		payloadMap["payload"] = payload
-		// flutter_local_notifications' iOS delegate ONLY routes a tap to Dart
-		// for notifications carrying its marker keys (isAFlutterLocalNotification
-		// requires NotificationId + presentAlert/Sound/Badge + payload). Remote
-		// pushes lack them, so without this the tap is silently ignored. Adding
-		// them makes the plugin treat our server push like a local one and
-		// forward the payload to NotificationRouter.
-		payloadMap["NotificationId"] = notificationIDFromString(payload)
-		payloadMap["presentAlert"] = true // iOS < 14 foreground
-		payloadMap["presentSound"] = true
-		payloadMap["presentBadge"] = false
-		payloadMap["presentBanner"] = true // iOS 14+ foreground banner
-		payloadMap["presentList"] = true   // iOS 14+ notification center
-	}
-	jsonBody, err := json.Marshal(payloadMap)
+	jsonBody, err := json.Marshal(apnsPayloadMap(title, body, payload, lang))
 	if err != nil {
 		return err
 	}
@@ -206,6 +185,38 @@ func sendAPNs(deviceToken, title, body, payload string, ttl time.Duration) error
 	}
 
 	return sendAPNsWithFallback(c, jwt, c.bundleID, "alert", deviceToken, jsonBody, expiration)
+}
+
+// apnsPayloadMap is the APNs JSON body for one push. lang is the language the
+// title/body were composed in ("" = unknown, e.g. admin free text): the app
+// stores it with the notification so a card is rendered in ONE language even
+// after the phone switches languages (owner 09.10.2026).
+func apnsPayloadMap(title, body, payload, lang string) map[string]interface{} {
+	aps := map[string]interface{}{
+		"alert": map[string]string{"title": title, "body": body},
+		"sound": "default",
+	}
+	payloadMap := map[string]interface{}{"aps": aps}
+	if lang != "" {
+		payloadMap["lang"] = lang
+	}
+	if payload != "" {
+		// Custom key the app's notification tap handler reads to deep-link.
+		payloadMap["payload"] = payload
+		// flutter_local_notifications' iOS delegate ONLY routes a tap to Dart
+		// for notifications carrying its marker keys (isAFlutterLocalNotification
+		// requires NotificationId + presentAlert/Sound/Badge + payload). Remote
+		// pushes lack them, so without this the tap is silently ignored. Adding
+		// them makes the plugin treat our server push like a local one and
+		// forward the payload to NotificationRouter.
+		payloadMap["NotificationId"] = notificationIDFromString(payload)
+		payloadMap["presentAlert"] = true // iOS < 14 foreground
+		payloadMap["presentSound"] = true
+		payloadMap["presentBadge"] = false
+		payloadMap["presentBanner"] = true // iOS 14+ foreground banner
+		payloadMap["presentList"] = true   // iOS 14+ notification center
+	}
+	return payloadMap
 }
 
 // sendAPNsWithFallback delivers one prepared payload with the given topic and
@@ -358,6 +369,14 @@ func ensureNotificationHistorySchema() {
 		log.Printf("⚠️ notification_history schema failed: %v — will retry on next request", err)
 		return
 	}
+	// Language the title/body were composed in (NULL/'' = unknown: rows from
+	// before 09.10.2026 and admin free-text sends). Idempotent, like the
+	// devices.language migration — the deploy is git pull + build + restart.
+	if _, err := db.Exec(`ALTER TABLE notification_history ADD COLUMN lang TEXT`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		log.Printf("⚠️ notification_history lang column failed: %v — will retry on next request", err)
+		return
+	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notif_hist_email ON notification_history(email, sent_at)`); err != nil {
 		log.Printf("⚠️ notification_history index failed: %v — will retry on next request", err)
 		return
@@ -367,15 +386,16 @@ func ensureNotificationHistorySchema() {
 
 // recordNotificationHistory persists one sent push for a user account. Called
 // after a successful send; failures are logged but never block delivery.
-func recordNotificationHistory(email, deviceID, title, body, payload string) {
+// lang is the language of title/body ("" when unknown — admin/CLI free text).
+func recordNotificationHistory(email, deviceID, title, body, payload, lang string) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return
 	}
 	ensureNotificationHistorySchema()
 	if _, err := db.Exec(
-		`INSERT INTO notification_history (email, device_id, title, body, payload) VALUES (?, ?, ?, ?, ?)`,
-		email, deviceID, title, body, payload); err != nil {
+		`INSERT INTO notification_history (email, device_id, title, body, payload, lang) VALUES (?, ?, ?, ?, ?, ?)`,
+		email, deviceID, title, body, payload, lang); err != nil {
 		log.Printf("⚠️ notification_history insert failed: %v", err)
 	}
 }
@@ -400,7 +420,7 @@ func getUserNotificationHistory(w http.ResponseWriter, r *http.Request) {
 	// English device's row was newest → English card on a Russian phone).
 	deviceID := strings.TrimSpace(r.URL.Query().Get("device_id"))
 
-	rows, err := db.Query(`SELECT title, body, payload, sent_at, COALESCE(device_id,'') FROM notification_history
+	rows, err := db.Query(`SELECT title, body, payload, sent_at, COALESCE(device_id,''), COALESCE(lang,'') FROM notification_history
 		WHERE email = ? ORDER BY CASE WHEN device_id = ? THEN 0 ELSE 1 END, sent_at DESC LIMIT 100`, email, deviceID)
 	if err != nil {
 		log.Printf("⚠️ notification_history query failed: %v", err)
@@ -415,11 +435,15 @@ func getUserNotificationHistory(w http.ResponseWriter, r *http.Request) {
 		Payload  string `json:"payload"`
 		SentAt   string `json:"sent_at"`
 		DeviceID string `json:"device_id"`
+		// Language the row's title/body were composed in; "" = unknown (the
+		// app then judges it from the title, or keeps the card unmixed as
+		// best it can).
+		Lang string `json:"lang"`
 	}
 	items := []histItem{}
 	for rows.Next() {
 		var it histItem
-		if err := rows.Scan(&it.Title, &it.Body, &it.Payload, &it.SentAt, &it.DeviceID); err != nil {
+		if err := rows.Scan(&it.Title, &it.Body, &it.Payload, &it.SentAt, &it.DeviceID, &it.Lang); err != nil {
 			continue
 		}
 		items = append(items, it)
@@ -574,12 +598,13 @@ func adminSendPush(w http.ResponseWriter, r *http.Request) {
 	for _, t := range targets {
 		// Admin pushes are organizational — worth delivering even if the
 		// device has been offline for a while, so no expiry (ttl 0).
-		if err := sendPushToToken(t.platform, t.token, title, req.Message, req.Payload, 0); err != nil {
+		// Admin text is typed by hand — its language is not known here ("").
+		if err := sendPushToToken(t.platform, t.token, title, req.Message, req.Payload, "", 0); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", t.deviceID, err))
 			continue
 		}
 		sent++
-		recordNotificationHistory(t.email, t.deviceID, title, req.Message, req.Payload)
+		recordNotificationHistory(t.email, t.deviceID, title, req.Message, req.Payload, "")
 	}
 
 	log.Printf("📣 Admin %s sent push (sent=%d, failed=%d, target=%q%s)",
@@ -641,13 +666,14 @@ func runSendPushCLI(args []string) {
 
 	ok := 0
 	for _, t := range targets {
-		if err := sendPushToToken(t.platform, t.token, title, message, payload, 0); err != nil {
+		// CLI text is typed by hand — its language is not known here ("").
+		if err := sendPushToToken(t.platform, t.token, title, message, payload, "", 0); err != nil {
 			fmt.Printf("❌ %s: %v\n", t.deviceID, err)
 			continue
 		}
 		fmt.Printf("✅ sent to %s (%s)\n", t.deviceID, t.platform)
 		ok++
-		recordNotificationHistory(t.email, t.deviceID, title, message, payload)
+		recordNotificationHistory(t.email, t.deviceID, title, message, payload, "")
 	}
 	if ok == 0 {
 		os.Exit(1)

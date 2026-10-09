@@ -646,7 +646,7 @@ func deliverDueEvents() {
 			items[i] = dueItem{kind: e.kind, params: e.params, payload: e.payld}
 		}
 		title, body, payload := composeEventPush(items, d.lang)
-		if err := sendPushToToken(d.platform, d.token, title, body, payload, eventPushTTL); err != nil {
+		if err := sendPushToToken(d.platform, d.token, title, body, payload, d.lang, eventPushTTL); err != nil {
 			failedTotal++
 			if isDeadPushToken(err) {
 				// Token permanently invalid (app uninstalled / token rotated):
@@ -670,7 +670,7 @@ func deliverDueEvents() {
 		// app's Settings → Notifications → History (which merges this
 		// endpoint) shows scheduled event pushes too. Without this the
 		// scheduled pushes were invisible in history even when delivered.
-		recordNotificationHistory(d.email, d.id, title, body, payload)
+		recordNotificationHistory(d.email, d.id, title, body, payload, d.lang)
 	}
 	if sentTotal > 0 || failedTotal > 0 {
 		log.Printf("📅 event pushes: sent=%d failed=%d", sentTotal, failedTotal)

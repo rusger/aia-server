@@ -395,10 +395,11 @@ func sendReferralPush(email, kind string) {
 	if err != nil || len(targets) == 0 {
 		return
 	}
-	title, body := referralPushText(userAppLanguage(email), kind)
+	lang := userAppLanguage(email)
+	title, body := referralPushText(lang, kind)
 	payload := "astro:referral:" + kind
 	for _, t := range targets {
-		if sendErr := sendAPNs(t.token, title, body, payload, 0); sendErr != nil {
+		if sendErr := sendAPNs(t.token, title, body, payload, lang, 0); sendErr != nil {
 			log.Printf("⚠️ [referral] push to %s failed: %v", t.deviceID, sendErr)
 			continue
 		}
@@ -406,7 +407,7 @@ func sendReferralPush(email, kind string) {
 		if histEmail == "" {
 			histEmail = email
 		}
-		recordNotificationHistory(histEmail, t.deviceID, title, body, payload)
+		recordNotificationHistory(histEmail, t.deviceID, title, body, payload, lang)
 	}
 }
 
