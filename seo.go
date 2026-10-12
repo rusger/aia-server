@@ -17,6 +17,11 @@ package main
 //   <outdir>/<lang>/<year>/retrograde-<planet>.html   (5 planets)
 //   <outdir>/<lang>/<year>/moon-phases.html
 //   <outdir>/<lang>/<year>/eclipses.html
+//   <outdir>/<lang>/<yyyy>/<mm>/<dd>.html  daily positions (seo_day.go, seoDayLangs only)
+//   <outdir>/<lang>/<yyyy>/<mm>/           month hub of those days
+//   <outdir>/<lang>/today/                 today's page under a stable URL
+//   <outdir>/<lang>/today.json             summary lines for the site's home page
+//   <outdir>/.seo-state.json               content hashes → honest <lastmod> (seo_state.go)
 //
 // No DB, no HTTP server. Meant to run from cron on the production box and
 // be served by nginx under https://astrolytix.com/astro/. Every file is
@@ -94,6 +99,8 @@ type seoYearData struct {
 	retro     map[string][]seoRetroPeriod
 	moons     []seoMoonEvent
 	eclipses  []seoEclipse
+	stations  []stationEvt // stations inside the year (day pages list them)
+	lons      *noonLons    // noon longitudes sampled by the ingress scan; day pages reuse them
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +184,7 @@ func (n *noonLons) at(day time.Time) (map[string]float64, error) {
 
 func computeSeoYear(year int) (*seoYearData, error) {
 	lons := newNoonLons()
-	d := &seoYearData{year: year, retro: map[string][]seoRetroPeriod{}}
+	d := &seoYearData{year: year, retro: map[string][]seoRetroPeriod{}, lons: lons}
 
 	from := time.Date(year, 1, 1, 12, 0, 0, 0, time.UTC)
 	to := time.Date(year+1, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -218,6 +225,11 @@ func computeSeoYear(year int) (*seoYearData, error) {
 	if os.Getenv("SEO_DEBUG") != "" {
 		for _, s := range stations {
 			log.Printf("station %s retro=%v %s", s.planet, s.retro, s.date.Format("2006-01-02"))
+		}
+	}
+	for _, s := range stations {
+		if s.date.Year() == year {
+			d.stations = append(d.stations, s)
 		}
 	}
 	signAt := func(planet string, day time.Time) (int, error) {
@@ -363,57 +375,154 @@ func pairRetroPeriods(stations []stationEvt, planet string, year int, signAt fun
 // ---------------------------------------------------------------------------
 
 type seoPage struct {
-	rel   string // path relative to lang dir, e.g. "2026/transits.html"; "" = lang hub
+	langs []string // languages this rel is rendered in (nil = all seoLangs); drives hreflang + switcher
+	rel   string   // path relative to lang dir, e.g. "2026/transits.html"; "" = lang hub
 	title string
 	desc  string
 	body  string // inner HTML (already escaped where needed)
 }
 
 func writeSeoSite(outDir string, data []*seoYearData) (int, error) {
+	return writeSeoSiteAt(outDir, data, time.Now().UTC())
+}
+
+// seoSitemapItem is one <url> entry: its own lastmod and the hreflang set
+// of the languages that rel exists in.
+type seoSitemapItem struct {
+	loc     string
+	lastmod string
+	alts    map[string]string // lang -> url
+	langs   []string          // alts in seoLangs order
+}
+
+// writeSeoSiteAt renders every page, giving each the date its CONTENT last
+// changed (seo_state.go) rather than the run date, then the day pages,
+// today pages, today.json, root hub, sitemap and the state file.
+func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, error) {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return 0, err
+	}
+	statePath := filepath.Join(outDir, seoStateFile)
+	state, err := loadSeoState(statePath)
+	if err != nil {
+		return 0, fmt.Errorf("state %s: %w", statePath, err)
 	}
 	years := make([]int, 0, len(data))
 	for _, d := range data {
 		years = append(years, d.year)
 	}
-	generated := time.Now().UTC().Format("2006-01-02")
+	today := now.UTC().Format("2006-01-02")
+
+	// Year pages for every language.
+	type out struct {
+		lang string
+		pg   seoPage
+	}
+	var pages []out
+	for _, lang := range seoLangs {
+		pages = append(pages, out{lang, buildLangHub(lang, data, now)})
+		for _, d := range data {
+			pages = append(pages, out{lang, buildTransitsPage(lang, d)})
+			for _, p := range seoRetroPlanets {
+				pages = append(pages, out{lang, buildRetroPage(lang, d, p)})
+			}
+			pages = append(pages, out{lang, buildMoonPage(lang, d)})
+			pages = append(pages, out{lang, buildEclipsesPage(lang, d)})
+		}
+	}
+
+	// Day pages: launch epoch .. today+60, within the computed years.
+	days, err := computeSeoDays(data, seoDayEpoch, now.AddDate(0, 0, seoDayAhead))
+	if err != nil {
+		return 0, fmt.Errorf("day pages: %w", err)
+	}
+	events := seoYearEvents(data)
+	var todayDay *seoDay
+	for i := range days {
+		if days[i].date.Equal(utcDay(now)) {
+			todayDay = &days[i]
+		}
+	}
+	if len(days) > 0 && todayDay == nil {
+		return 0, fmt.Errorf("day pages: today %s is outside the rendered window", today)
+	}
+	for _, lang := range seoDayLangs {
+		months := map[string][]seoDay{}
+		var monthKeys []string
+		for i, d := range days {
+			pages = append(pages, out{lang, buildDayPage(lang, d, events, i > 0, i < len(days)-1)})
+			k := d.date.Format("2006/01")
+			if _, ok := months[k]; !ok {
+				monthKeys = append(monthKeys, k)
+			}
+			months[k] = append(months[k], d)
+		}
+		for _, k := range monthKeys {
+			first := months[k][0].date
+			pages = append(pages, out{lang, buildMonthPage(lang, first.Year(), int(first.Month()), months[k])})
+		}
+		if todayDay != nil {
+			pages = append(pages, out{lang, buildTodayPage(lang, *todayDay, events)})
+		}
+	}
 
 	count := 0
-	var sitemap []string
-	for _, lang := range seoLangs {
-		var pages []seoPage
-		pages = append(pages, buildLangHub(lang, data))
-		for _, d := range data {
-			pages = append(pages, buildTransitsPage(lang, d))
-			for _, p := range seoRetroPlanets {
-				pages = append(pages, buildRetroPage(lang, d, p))
-			}
-			pages = append(pages, buildMoonPage(lang, d))
-			pages = append(pages, buildEclipsesPage(lang, d))
+	items := map[string]*seoSitemapItem{} // keyed by rel
+	var itemOrder []string
+	for _, o := range pages {
+		rel := o.pg.rel
+		if rel == "" {
+			rel = "index.html"
 		}
-		for _, pg := range pages {
-			rel := pg.rel
-			if rel == "" {
-				rel = "index.html"
+		loc := seoURL(o.lang, rel)
+		lastmod := state.lastmod(loc, contentHash(o.pg.title, o.pg.desc, o.pg.body), today)
+		full := renderSeoLayout(o.lang, rel, o.pg, years, lastmod)
+		if err := writeAtomic(filepath.Join(outDir, o.lang, rel), []byte(full)); err != nil {
+			return count, err
+		}
+		count++
+		key := rel + "\x00" + o.lang
+		langs := o.pg.langSet()
+		alts := map[string]string{}
+		for _, l := range langs {
+			alts[l] = seoURL(l, rel)
+		}
+		items[key] = &seoSitemapItem{loc: loc, lastmod: lastmod, alts: alts, langs: langs}
+		itemOrder = append(itemOrder, key)
+	}
+
+	// today.json for every language the site speaks.
+	if todayDay != nil {
+		for _, lang := range seoLangs {
+			raw, err := seoTodayJSON(lang, *todayDay)
+			if err != nil {
+				return count, err
 			}
-			full := renderSeoLayout(lang, rel, pg, years, generated)
-			if err := writeAtomic(filepath.Join(outDir, lang, rel), []byte(full)); err != nil {
+			if err := writeAtomic(filepath.Join(outDir, lang, "today.json"), raw); err != nil {
 				return count, err
 			}
 			count++
-			sitemap = append(sitemap, rel)
 		}
 	}
+
 	// Root hub: list of languages (x-default), no astrology content itself.
-	if err := writeAtomic(filepath.Join(outDir, "index.html"), []byte(renderRootHub(years))); err != nil {
+	root := renderRootHub(years)
+	rootMod := state.lastmod(seoBaseURL+"/", contentHash(root), today)
+	if err := writeAtomic(filepath.Join(outDir, "index.html"), []byte(root)); err != nil {
 		return count, err
 	}
 	count++
-	if err := writeAtomic(filepath.Join(outDir, "sitemap.xml"), []byte(renderSitemap(uniqueStrings(sitemap), generated))); err != nil {
+	ordered := make([]seoSitemapItem, 0, len(itemOrder))
+	for _, k := range itemOrder {
+		ordered = append(ordered, *items[k])
+	}
+	if err := writeAtomic(filepath.Join(outDir, "sitemap.xml"), []byte(renderSitemap(rootMod, ordered))); err != nil {
 		return count, err
 	}
 	count++
+	if err := state.save(statePath); err != nil {
+		return count, fmt.Errorf("state %s: %w", statePath, err)
+	}
 	return count, nil
 }
 
@@ -459,7 +568,7 @@ func fmtDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
 
 func fmtInstant(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") + " UTC" }
 
-func buildLangHub(lang string, data []*seoYearData) seoPage {
+func buildLangHub(lang string, data []*seoYearData, now time.Time) seoPage {
 	years := make([]int, 0, len(data))
 	for _, d := range data {
 		years = append(years, d.year)
@@ -468,6 +577,12 @@ func buildLangHub(lang string, data []*seoYearData) seoPage {
 	var b strings.Builder
 	b.WriteString("<h1>" + esc(seoT("hub_h1", lang, nil)) + "</h1>\n")
 	b.WriteString("<p class=\"lead\">" + esc(seoT("hub_intro", lang, nil)) + "</p>\n")
+	if hasLang(seoDayLangs, lang) {
+		b.WriteString("<section class=\"year\"><h2>" + esc(seoT("section_days", lang, nil)) + "</h2><ul class=\"links\">\n")
+		b.WriteString("<li><a href=\"" + seoURL(lang, todayRel) + "\">" + esc(seoT("section_today", lang, nil)) + "</a></li>\n")
+		b.WriteString("<li><a href=\"" + seoURL(lang, monthRel(now)) + "\">" + esc(seoT("month_title", lang, map[string]string{"month": seoMonthName(int(now.Month()), lang), "year": yearStr(now.Year())})) + "</a></li>\n")
+		b.WriteString("</ul></section>\n")
+	}
 	for _, d := range data {
 		y := yearStr(d.year)
 		b.WriteString("<section class=\"year\"><h2>" + y + "</h2><ul class=\"links\">\n")
@@ -482,6 +597,15 @@ func buildLangHub(lang string, data []*seoYearData) seoPage {
 	}
 	title := seoT("hub_title", lang, map[string]string{"year": yr})
 	return seoPage{rel: "", title: title, desc: seoT("hub_intro", lang, nil), body: b.String()}
+}
+
+func hasLang(set []string, lang string) bool {
+	for _, l := range set {
+		if l == lang {
+			return true
+		}
+	}
+	return false
 }
 
 func intsToStrings(in []int) []string {
@@ -640,13 +764,24 @@ const seoStickyJS = `(function(){var ua=navigator.userAgent||'';var ios=/iPhone|
 
 // seoURL is the public URL of a page; hubs are addressed by their directory.
 func seoURL(lang, rel string) string {
-	if rel == "index.html" {
-		return seoBaseURL + "/" + lang + "/"
+	if rel == "index.html" || strings.HasSuffix(rel, "/index.html") {
+		return seoBaseURL + "/" + lang + "/" + strings.TrimSuffix(rel, "index.html")
 	}
 	return seoBaseURL + "/" + lang + "/" + rel
 }
 
-func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string) string {
+func (p seoPage) langSet() []string {
+	if len(p.langs) == 0 {
+		return seoLangs
+	}
+	return p.langs
+}
+
+// renderSeoLayout wraps a page; lastmod is the date its content last
+// changed (JSON-LD dateModified and the "computed" line) — see seo_state.go.
+func renderSeoLayout(lang, rel string, pg seoPage, years []int, lastmod string) string {
+	generated := lastmod
+	langs := pg.langSet()
 	dir := "ltr"
 	if lang == "ar" {
 		dir = "rtl"
@@ -658,7 +793,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 	b.WriteString("<title>" + esc(pg.title) + " | Astrolytix</title>\n")
 	b.WriteString("<meta name=\"description\" content=\"" + esc(truncDesc(pg.desc)) + "\">\n")
 	b.WriteString("<link rel=\"canonical\" href=\"" + canonical + "\">\n")
-	for _, l := range seoLangs {
+	for _, l := range langs {
 		b.WriteString("<link rel=\"alternate\" hreflang=\"" + l + "\" href=\"" + seoURL(l, rel) + "\">\n")
 	}
 	b.WriteString("<link rel=\"alternate\" hreflang=\"x-default\" href=\"" + seoURL("en", rel) + "\">\n")
@@ -671,7 +806,9 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 	b.WriteString("</head>\n<body>\n")
 	b.WriteString("<header class=\"top\"><a class=\"brand\" href=\"" + seoSiteURL + "/\">Astrolytix</a><nav><a href=\"" + seoSiteURL + "/\">" + esc(seoT("nav_back_home", lang, nil)) + "</a><a href=\"" + seoBaseURL + "/" + lang + "/\">" + esc(seoT("nav_calendar", lang, nil)) + "</a></nav></header>\n")
 	b.WriteString("<main>\n<div class=\"wrap\">\n" + pg.body + "</div>\n")
-	if rel != "index.html" {
+	// "Other years" only on the year pages (<year>/<topic>.html); day,
+	// month and today pages have their own navigation.
+	if strings.Count(rel, "/") == 1 && !strings.HasSuffix(rel, "/index.html") {
 		b.WriteString("<p class=\"note\">" + esc(seoT("other_years", lang, nil)) + ": ")
 		for i, y := range years {
 			if i > 0 {
@@ -686,7 +823,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, generated string
 	b.WriteString("<a class=\"btn alt\" rel=\"noopener\" href=\"" + seoGoAndroid + "\">" + esc(seoT("cta_android", lang, nil)) + "</a></div></section>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("updated", lang, nil)) + ": " + generated + "</p>\n")
 	b.WriteString("</main>\n<footer>\n<div class=\"langs\">" + esc(seoT("languages", lang, nil)) + ": ")
-	for _, l := range seoLangs {
+	for _, l := range langs {
 		if l == lang {
 			b.WriteString("<strong>" + esc(seoLangNames[l]) + "</strong> ")
 			continue
@@ -754,18 +891,16 @@ func renderRootHub(years []int) string {
 	return b.String()
 }
 
-func renderSitemap(rels []string, generated string) string {
+func renderSitemap(rootLastmod string, items []seoSitemapItem) string {
 	var b strings.Builder
 	b.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" xmlns:xhtml=\"http://www.w3.org/1999/xhtml\">\n")
-	b.WriteString("<url><loc>" + seoBaseURL + "/</loc><lastmod>" + generated + "</lastmod></url>\n")
-	for _, rel := range rels {
-		for _, l := range seoLangs {
-			b.WriteString("<url><loc>" + seoURL(l, rel) + "</loc><lastmod>" + generated + "</lastmod>\n")
-			for _, alt := range seoLangs {
-				b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"" + alt + "\" href=\"" + seoURL(alt, rel) + "\"/>\n")
-			}
-			b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"x-default\" href=\"" + seoURL("en", rel) + "\"/>\n</url>\n")
+	b.WriteString("<url><loc>" + seoBaseURL + "/</loc><lastmod>" + rootLastmod + "</lastmod></url>\n")
+	for _, it := range items {
+		b.WriteString("<url><loc>" + it.loc + "</loc><lastmod>" + it.lastmod + "</lastmod>\n")
+		for _, l := range it.langs {
+			b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"" + l + "\" href=\"" + it.alts[l] + "\"/>\n")
 		}
+		b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"x-default\" href=\"" + it.alts["en"] + "\"/>\n</url>\n")
 	}
 	b.WriteString("</urlset>\n")
 	return b.String()

@@ -24,7 +24,7 @@ func TestSeoStringsCoverAllLangs(t *testing.T) {
 				t.Errorf("%s: missing %s", key, lang)
 				continue
 			}
-			for _, ph := range []string{"{planet}", "{sign}", "{year}"} {
+			for _, ph := range []string{"{planet}", "{sign}", "{year}", "{date}", "{month}", "{nakshatra}", "{tithi}", "{paksha}", "{n}"} {
 				if strings.Contains(ref, ph) != strings.Contains(v, ph) {
 					t.Errorf("%s[%s]: placeholder %s mismatch vs ru", key, lang, ph)
 				}
