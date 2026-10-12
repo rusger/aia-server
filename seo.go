@@ -431,8 +431,10 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 		}
 	}
 
-	// Day pages: launch epoch .. today+60, within the computed years.
-	days, err := computeSeoDays(data, seoDayEpoch, now.AddDate(0, 0, seoDayAhead))
+	// Day pages: launch epoch .. today+60, extended to the end of the last
+	// month that gets Moon-sign facts, so every sign page has its month hub
+	// (and is linked from it) — within the computed years.
+	days, err := computeSeoDays(data, seoDayEpoch, seoDayWindowEnd(data, now))
 	if err != nil {
 		return 0, fmt.Errorf("day pages: %w", err)
 	}

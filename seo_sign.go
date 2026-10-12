@@ -226,6 +226,19 @@ func seoSignMonths(data []*seoYearData, now time.Time) [][2]int {
 	return out
 }
 
+// seoDayWindowEnd is the last day that gets a day page: today+seoDayAhead
+// or the end of the last sign-facts month, whichever is later.
+func seoDayWindowEnd(data []*seoYearData, now time.Time) time.Time {
+	end := utcDay(now).AddDate(0, 0, seoDayAhead)
+	for _, ym := range seoSignMonths(data, now) {
+		last := time.Date(ym[0], time.Month(ym[1]), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
+		if last.After(end) {
+			end = last
+		}
+	}
+	return end
+}
+
 // writeSignFacts writes the facts files for every sign of every month in
 // the window and returns them keyed by factsKey.
 func writeSignFacts(outDir string, data []*seoYearData, now time.Time) (map[string]*seoSignFacts, error) {

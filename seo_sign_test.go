@@ -84,6 +84,8 @@ func TestSignPagesRenderOnlyWithText(t *testing.T) {
 	data := fixtureWithRetro(t)
 	key := factsKey(2026, 10, "libra")
 	writeText(t, out, "ru", key, "Месяц для Весов.")
+	// A sign page two months ahead must also have its month hub (review r1).
+	writeText(t, out, "ru", factsKey(2026, 12, "aries"), "Декабрь для Овна.")
 	n1, err := writeSeoSiteAt(out, data, now)
 	if err != nil {
 		t.Fatal(err)
@@ -132,6 +134,24 @@ func TestSignPagesRenderOnlyWithText(t *testing.T) {
 	if strings.Contains(string(enHub), "By Moon sign") {
 		t.Error("en month hub must not list sign pages it does not have")
 	}
+	// Every rendered sign page links a month hub that exists and is listed by it.
+	for _, rel := range []string{"2026/10/libra.html", "2026/12/aries.html"} {
+		pg, err := os.ReadFile(filepath.Join(out, "ru", rel))
+		if err != nil {
+			t.Fatalf("%s: %v", rel, err)
+		}
+		hubRel := filepath.Dir(rel) + "/index.html"
+		if !strings.Contains(string(pg), `href="https://astrolytix.com/astro/ru/`+filepath.Dir(rel)+`/"`) {
+			t.Errorf("%s lacks its month link", rel)
+		}
+		hubHTML, err := os.ReadFile(filepath.Join(out, "ru", hubRel))
+		if err != nil {
+			t.Fatalf("month hub for %s missing: %v", rel, err)
+		}
+		if !strings.Contains(string(hubHTML), `href="https://astrolytix.com/astro/ru/`+rel+`"`) {
+			t.Errorf("hub %s does not list %s", hubRel, rel)
+		}
+	}
 	sm, _ := os.ReadFile(filepath.Join(out, "sitemap.xml"))
 	if !strings.Contains(string(sm), "<loc>https://astrolytix.com/astro/ru/2026/10/libra.html</loc>") || strings.Contains(string(sm), "/astro/en/2026/10/libra.html") {
 		t.Error("sitemap lists exactly the rendered sign pages")
@@ -147,7 +167,7 @@ func TestSignPagesRenderOnlyWithText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n2 != n1+len(seoDayLangs) { // one more day in the window per day language, nothing else
+	if n2 != n1 { // the day window ends at the sign-facts horizon: nothing new on day 2
 		t.Errorf("file count changed %d → %d", n1, n2)
 	}
 	sm2, _ := os.ReadFile(filepath.Join(out, "sitemap.xml"))

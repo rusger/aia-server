@@ -163,8 +163,9 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 16 hubs + 16×8 year pages + 4 langs × (72 days 10-01..12-11 + 3 months + today) + 16 json + root + sitemap
-	if want := 16 + 128 + 4*(72+3+1) + 16 + 2; n != want {
+	// 16 hubs + 16×8 year pages + 4 langs × (92 days 10-01..12-31: the sign-facts
+	// window Oct..Jan reaches past today+60, Jan 2027 has no data + 3 months + today) + 16 json + root + sitemap
+	if want := 16 + 128 + 4*(92+3+1) + 16 + 2; n != want {
 		t.Fatalf("%d files, want %d", n, want)
 	}
 	page, err := os.ReadFile(filepath.Join(out, "ru", "2026", "10", "12.html"))
@@ -203,8 +204,11 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	if strings.Contains(string(first), "/2026/09/30.html") {
 		t.Error("first day links a page that is not rendered")
 	}
-	if _, err := os.Stat(filepath.Join(out, "en", "2026", "12", "11.html")); err != nil {
-		t.Error("window must reach today+60 (2026-12-11)")
+	if _, err := os.Stat(filepath.Join(out, "en", "2026", "12", "31.html")); err != nil {
+		t.Error("window must cover the whole last sign-facts month (2026-12-31)")
+	}
+	if _, err := os.Stat(filepath.Join(out, "en", "2027", "01", "01.html")); err == nil {
+		t.Error("no data for 2027 → no page")
 	}
 	if _, err := os.Stat(filepath.Join(out, "de", "2026", "10", "12.html")); err == nil {
 		t.Error("day pages are rendered for seoDayLangs only")
@@ -293,20 +297,19 @@ func TestWriteSeoSiteHonestLastmod(t *testing.T) {
 		return m
 	}
 	a, b := lastmods(sm1), lastmods(sm2)
-	// Legitimately changed on day 2: the today pages, the former last day of
-	// the window (it gained a "next day" link) and the month hub that gained
-	// a row — 3 pages per day language. Everything else must stand still.
+	// Legitimately changed on day 2: only the today pages (the day window
+	// ends at the sign-facts horizon, which moves monthly, not daily).
 	moved := 0
 	for loc, d := range b {
 		if prev, ok := a[loc]; ok && prev != d {
 			moved++
-			if !strings.Contains(loc, "/today/") && !strings.HasSuffix(loc, "/2026/12/11.html") && !strings.HasSuffix(loc, "/2026/12/") {
+			if !strings.Contains(loc, "/today/") {
 				t.Errorf("%s moved %s → %s although its content is unchanged", loc, prev, d)
 			}
 		}
 	}
-	if moved != 3*len(seoDayLangs) {
-		t.Errorf("%d pages moved, want %d", moved, 3*len(seoDayLangs))
+	if moved != len(seoDayLangs) {
+		t.Errorf("%d pages moved, want %d", moved, len(seoDayLangs))
 	}
 	if b["https://astrolytix.com/astro/en/today/"] != "2026-10-13" {
 		t.Errorf("today page must carry today's date, got %s", b["https://astrolytix.com/astro/en/today/"])
@@ -314,9 +317,8 @@ func TestWriteSeoSiteHonestLastmod(t *testing.T) {
 	if b["https://astrolytix.com/astro/en/2026/transits.html"] != "2026-10-12" {
 		t.Errorf("year page must keep its first date, got %s", b["https://astrolytix.com/astro/en/2026/transits.html"])
 	}
-	// The new day (2026-12-12) appears with the new date; the old ones keep theirs.
-	if b["https://astrolytix.com/astro/en/2026/12/12.html"] != "2026-10-13" || b["https://astrolytix.com/astro/en/2026/10/05.html"] != "2026-10-12" {
-		t.Error("new day page gets the run date, existing ones keep theirs")
+	if b["https://astrolytix.com/astro/en/2026/10/05.html"] != "2026-10-12" || b["https://astrolytix.com/astro/en/2026/12/31.html"] != "2026-10-12" {
+		t.Error("existing day pages keep their first date")
 	}
 	// Rendered HTML carries the same date (JSON-LD dateModified).
 	page, _ := os.ReadFile(filepath.Join(out, "en", "2026", "transits.html"))
