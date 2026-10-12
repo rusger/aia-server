@@ -422,12 +422,12 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 	for _, lang := range seoLangs {
 		pages = append(pages, out{lang, buildLangHub(lang, data, now)})
 		for _, d := range data {
-			pages = append(pages, out{lang, buildTransitsPage(lang, d)})
+			pages = append(pages, out{lang, buildTransitsPage(lang, d, now)})
 			for _, p := range seoRetroPlanets {
-				pages = append(pages, out{lang, buildRetroPage(lang, d, p)})
+				pages = append(pages, out{lang, buildRetroPage(lang, d, p, now)})
 			}
-			pages = append(pages, out{lang, buildMoonPage(lang, d)})
-			pages = append(pages, out{lang, buildEclipsesPage(lang, d)})
+			pages = append(pages, out{lang, buildMoonPage(lang, d, now)})
+			pages = append(pages, out{lang, buildEclipsesPage(lang, d, now)})
 		}
 	}
 
@@ -618,7 +618,36 @@ func intsToStrings(in []int) []string {
 	return out
 }
 
-func buildTransitsPage(lang string, d *seoYearData) seoPage {
+// headline prefixes a year page's title and description with its nearest
+// event and date (owner 12.10.2026): the title then says what the searcher
+// typed («Jupiter enters Leo 31 October 2026 · Planetary transits 2026…»)
+// and the nightly run moves it on when the event has passed — content that
+// really changed, so the honest lastmod moves with it. [dates] are the
+// table's event days in order; the first one on or after today wins,
+// otherwise (all past) the year's first.
+func headlineIndex(dates []time.Time, now time.Time) int {
+	if len(dates) == 0 {
+		return -1
+	}
+	today := utcDay(now)
+	for i, t := range dates {
+		if !utcDay(t).Before(today) {
+			return i
+		}
+	}
+	return 0
+}
+
+func withHeadline(pg seoPage, event string) seoPage {
+	if event == "" {
+		return pg
+	}
+	pg.title = event + " · " + pg.title
+	pg.desc = event + ". " + pg.desc
+	return pg
+}
+
+func buildTransitsPage(lang string, d *seoYearData, now time.Time) seoPage {
 	y := yearStr(d.year)
 	repl := map[string]string{"year": y}
 	var b strings.Builder
@@ -632,10 +661,19 @@ func buildTransitsPage(lang string, d *seoYearData) seoPage {
 	b.WriteString("</tbody></table>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("sidereal_note", lang, nil)) + "</p>\n")
 	b.WriteString(seoRelatedLinks(lang, d.year, "transits"))
-	return seoPage{rel: y + "/transits.html", title: seoT("transits_title", lang, repl), desc: seoT("transits_intro", lang, repl), body: b.String()}
+	pg := seoPage{rel: y + "/transits.html", title: seoT("transits_title", lang, repl), desc: seoT("transits_intro", lang, repl), body: b.String()}
+	dates := make([]time.Time, len(d.ingresses))
+	for i, in := range d.ingresses {
+		dates[i] = in.date
+	}
+	if i := headlineIndex(dates, now); i >= 0 {
+		in := d.ingresses[i]
+		pg = withHeadline(pg, seoT("enters", lang, map[string]string{"planet": planetName(in.planet, lang), "sign": signName(in.signIdx, lang)})+" "+seoDate(lang, in.date))
+	}
+	return pg
 }
 
-func buildRetroPage(lang string, d *seoYearData, planet string) seoPage {
+func buildRetroPage(lang string, d *seoYearData, planet string, now time.Time) seoPage {
 	y := yearStr(d.year)
 	pn := planetName(planet, lang)
 	repl := map[string]string{"year": y, "planet": pn}
@@ -659,10 +697,20 @@ func buildRetroPage(lang string, d *seoYearData, planet string) seoPage {
 	b.WriteString("<p>" + esc(seoT("retro_meaning_"+planet, lang, nil)) + "</p>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("sidereal_note", lang, nil)) + "</p>\n")
 	b.WriteString(seoRelatedLinks(lang, d.year, "retrograde-"+planetSlug(planet)))
-	return seoPage{rel: y + "/retrograde-" + planetSlug(planet) + ".html", title: seoT("retro_title", lang, repl), desc: seoT("retro_intro", lang, repl), body: b.String()}
+	pg := seoPage{rel: y + "/retrograde-" + planetSlug(planet) + ".html", title: seoT("retro_title", lang, repl), desc: seoT("retro_intro", lang, repl), body: b.String()}
+	// the nearest period is the one that has not ENDED yet
+	ends := make([]time.Time, len(periods))
+	for i, p := range periods {
+		ends[i] = p.end
+	}
+	if i := headlineIndex(ends, now); i >= 0 {
+		p := periods[i]
+		pg = withHeadline(pg, seoT("retro_period", lang, map[string]string{"planet": pn, "date": seoDate(lang, p.start), "date2": seoDate(lang, p.end)}))
+	}
+	return pg
 }
 
-func buildMoonPage(lang string, d *seoYearData) seoPage {
+func buildMoonPage(lang string, d *seoYearData, now time.Time) seoPage {
 	y := yearStr(d.year)
 	repl := map[string]string{"year": y}
 	var b strings.Builder
@@ -679,10 +727,23 @@ func buildMoonPage(lang string, d *seoYearData) seoPage {
 	b.WriteString("</tbody></table>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("sidereal_note", lang, nil)) + "</p>\n")
 	b.WriteString(seoRelatedLinks(lang, d.year, "moon-phases"))
-	return seoPage{rel: y + "/moon-phases.html", title: seoT("moon_title", lang, repl), desc: seoT("moon_intro", lang, repl), body: b.String()}
+	pg := seoPage{rel: y + "/moon-phases.html", title: seoT("moon_title", lang, repl), desc: seoT("moon_intro", lang, repl), body: b.String()}
+	dates := make([]time.Time, len(d.moons))
+	for i, m := range d.moons {
+		dates[i] = m.at
+	}
+	if i := headlineIndex(dates, now); i >= 0 {
+		m := d.moons[i]
+		kind := "new_moon"
+		if m.full {
+			kind = "full_moon"
+		}
+		pg = withHeadline(pg, seoT(kind, lang, nil)+" "+seoDate(lang, m.at)+" · "+signName(m.signIdx, lang))
+	}
+	return pg
 }
 
-func buildEclipsesPage(lang string, d *seoYearData) seoPage {
+func buildEclipsesPage(lang string, d *seoYearData, now time.Time) seoPage {
 	y := yearStr(d.year)
 	repl := map[string]string{"year": y}
 	var b strings.Builder
@@ -699,7 +760,20 @@ func buildEclipsesPage(lang string, d *seoYearData) seoPage {
 	b.WriteString("</tbody></table>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("sidereal_note", lang, nil)) + "</p>\n")
 	b.WriteString(seoRelatedLinks(lang, d.year, "eclipses"))
-	return seoPage{rel: y + "/eclipses.html", title: seoT("eclipses_title", lang, repl), desc: seoT("eclipses_intro", lang, repl), body: b.String()}
+	pg := seoPage{rel: y + "/eclipses.html", title: seoT("eclipses_title", lang, repl), desc: seoT("eclipses_intro", lang, repl), body: b.String()}
+	dates := make([]time.Time, len(d.eclipses))
+	for i, e := range d.eclipses {
+		dates[i] = e.at
+	}
+	if i := headlineIndex(dates, now); i >= 0 {
+		e := d.eclipses[i]
+		kind := "lunar_eclipse"
+		if e.solar {
+			kind = "solar_eclipse"
+		}
+		pg = withHeadline(pg, seoT(kind, lang, nil)+" "+seoDate(lang, e.at)+" · "+signName(e.signIdx, lang))
+	}
+	return pg
 }
 
 // seoRelatedLinks is the in-year navigation block under every page (internal

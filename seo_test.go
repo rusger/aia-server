@@ -24,7 +24,7 @@ func TestSeoStringsCoverAllLangs(t *testing.T) {
 				t.Errorf("%s: missing %s", key, lang)
 				continue
 			}
-			for _, ph := range []string{"{planet}", "{sign}", "{year}", "{date}", "{month}", "{nakshatra}", "{tithi}", "{paksha}", "{n}"} {
+			for _, ph := range []string{"{planet}", "{sign}", "{year}", "{date}", "{date2}", "{month}", "{nakshatra}", "{tithi}", "{paksha}", "{n}"} {
 				if strings.Contains(ref, ph) != strings.Contains(v, ph) {
 					t.Errorf("%s[%s]: placeholder %s mismatch vs ru", key, lang, ph)
 				}
@@ -178,5 +178,42 @@ func TestSeoStoreButtonsUseGoRedirects(t *testing.T) {
 	}
 	if strings.Contains(html, `href="`+seoAppStoreURL+`"`) || strings.Contains(html, `href="`+seoPlayURL+`"`) {
 		t.Fatalf("a button still links the store directly")
+	}
+}
+
+// Year pages lead with the nearest event: before it — that event, after its
+// day — the next one, when everything has passed — the year's first.
+func TestYearPageHeadlines(t *testing.T) {
+	d := fixtureYear(t)
+	d.ingresses = append(d.ingresses, seoIngress{date: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC), planet: "Mars", signIdx: 8})
+	d.retro["Venus"] = []seoRetroPeriod{{planet: "Venus", start: day(2026, 10, 3), end: day(2026, 11, 13), startSign: 6, endSign: 5}}
+	before := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	pg := buildTransitsPage("ru", d, before)
+	if !strings.HasPrefix(pg.title, "Солнце входит в Весы 17 октября 2026 · ") || !strings.HasPrefix(pg.desc, "Солнце входит в Весы 17 октября 2026. ") {
+		t.Errorf("before: %q / %q", pg.title, pg.desc)
+	}
+	if pg := buildTransitsPage("en", d, time.Date(2026, 10, 17, 23, 0, 0, 0, time.UTC)); !strings.HasPrefix(pg.title, "Sun enters Libra 17 October 2026 · ") {
+		t.Errorf("on the day it is still that event: %q", pg.title)
+	}
+	if pg := buildTransitsPage("en", d, time.Date(2026, 10, 18, 1, 0, 0, 0, time.UTC)); !strings.HasPrefix(pg.title, "Mars enters Sagittarius 20 November 2026 · ") {
+		t.Errorf("after: %q", pg.title)
+	}
+	if pg := buildTransitsPage("en", d, time.Date(2026, 12, 31, 1, 0, 0, 0, time.UTC)); !strings.HasPrefix(pg.title, "Sun enters Libra 17 October 2026 · ") {
+		t.Errorf("all past → first of the year: %q", pg.title)
+	}
+	if pg := buildRetroPage("ru", d, "Venus", before); !strings.HasPrefix(pg.title, "Венера: ретроградность с 3 октября 2026 по 13 ноября 2026 · ") {
+		t.Errorf("retro: %q", pg.title)
+	}
+	if pg := buildRetroPage("en", d, "Mars", before); strings.Contains(pg.title, "·") {
+		t.Errorf("no periods → plain title: %q", pg.title)
+	}
+	if pg := buildMoonPage("en", d, before); !strings.HasPrefix(pg.title, "New Moon (Amavasya) 10 October 2026 · Virgo · ") {
+		t.Errorf("moon: %q", pg.title)
+	}
+	if pg := buildEclipsesPage("en", d, before); strings.Contains(pg.title, "·") {
+		t.Errorf("no eclipses in fixture → plain title: %q", pg.title)
+	}
+	if headlineIndex(nil, before) != -1 {
+		t.Error("empty → -1")
 	}
 }
