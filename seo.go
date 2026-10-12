@@ -437,6 +437,14 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 		return 0, fmt.Errorf("day pages: %w", err)
 	}
 	events := seoYearEvents(data)
+	facts, err := writeSignFacts(outDir, data, now)
+	if err != nil {
+		return 0, fmt.Errorf("sign facts: %w", err)
+	}
+	signs, err := loadSignPages(outDir, facts)
+	if err != nil {
+		return 0, fmt.Errorf("sign texts: %w", err)
+	}
 	var todayDay *seoDay
 	for i := range days {
 		if days[i].date.Equal(utcDay(now)) {
@@ -459,10 +467,16 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 		}
 		for _, k := range monthKeys {
 			first := months[k][0].date
-			pages = append(pages, out{lang, buildMonthPage(lang, first.Year(), int(first.Month()), months[k])})
+			pages = append(pages, out{lang, buildMonthPage(lang, first.Year(), int(first.Month()), months[k], signs.monthSignLinks(lang, first.Year(), int(first.Month())))})
 		}
 		if todayDay != nil {
 			pages = append(pages, out{lang, buildTodayPage(lang, *todayDay, events)})
+		}
+		// Moon-sign month pages: only where the text script has delivered.
+		for _, key := range signs.sortedKeys() {
+			if t, ok := signs.texts[lang][key]; ok {
+				pages = append(pages, out{lang, buildSignPage(lang, facts[key], t, signs.langsWithText(key))})
+			}
 		}
 	}
 
@@ -756,6 +770,15 @@ func seoURL(lang, rel string) string {
 	return seoBaseURL + "/" + lang + "/" + rel
 }
 
+// xDefaultLang is the hreflang x-default target: English when the page
+// exists in English, otherwise the first language it exists in.
+func xDefaultLang(langs []string) string {
+	if hasLang(langs, "en") || len(langs) == 0 {
+		return "en"
+	}
+	return langs[0]
+}
+
 func (p seoPage) langSet() []string {
 	if len(p.langs) == 0 {
 		return seoLangs
@@ -782,7 +805,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, lastmod string) 
 	for _, l := range langs {
 		b.WriteString("<link rel=\"alternate\" hreflang=\"" + l + "\" href=\"" + seoURL(l, rel) + "\">\n")
 	}
-	b.WriteString("<link rel=\"alternate\" hreflang=\"x-default\" href=\"" + seoURL("en", rel) + "\">\n")
+	b.WriteString("<link rel=\"alternate\" hreflang=\"x-default\" href=\"" + seoURL(xDefaultLang(langs), rel) + "\">\n")
 	b.WriteString("<meta property=\"og:title\" content=\"" + esc(pg.title) + "\">\n<meta property=\"og:description\" content=\"" + esc(truncDesc(pg.desc)) + "\">\n<meta property=\"og:url\" content=\"" + canonical + "\">\n<meta property=\"og:type\" content=\"article\">\n<meta property=\"og:site_name\" content=\"Astrolytix\">\n")
 	b.WriteString("<link rel=\"icon\" href=\"/logo-star.svg\" type=\"image/svg+xml\">\n")
 	b.WriteString("<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"><link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n")
@@ -886,7 +909,7 @@ func renderSitemap(rootLastmod string, items []seoSitemapItem) string {
 		for _, l := range it.langs {
 			b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"" + l + "\" href=\"" + it.alts[l] + "\"/>\n")
 		}
-		b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"x-default\" href=\"" + it.alts["en"] + "\"/>\n</url>\n")
+		b.WriteString("<xhtml:link rel=\"alternate\" hreflang=\"x-default\" href=\"" + it.alts[xDefaultLang(it.langs)] + "\"/>\n</url>\n")
 	}
 	b.WriteString("</urlset>\n")
 	return b.String()

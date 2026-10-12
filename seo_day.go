@@ -416,7 +416,7 @@ func buildTodayPage(lang string, d seoDay, events []seoDayEvent) seoPage {
 
 // buildMonthPage lists the rendered days of one month with the Moon's sign,
 // nakshatra and the tithi, each linking to its day page.
-func buildMonthPage(lang string, year, month int, days []seoDay) seoPage {
+func buildMonthPage(lang string, year, month int, days []seoDay, signLinks string) seoPage {
 	repl := map[string]string{"month": seoMonthName(month, lang), "year": strconv.Itoa(year)}
 	var b strings.Builder
 	b.WriteString("<h1>" + esc(seoT("month_title", lang, repl)) + "</h1>\n")
@@ -430,6 +430,7 @@ func buildMonthPage(lang string, year, month int, days []seoDay) seoPage {
 			"</td><td>" + esc(tithiLabel(d.tithi, lang)) + "</td></tr>\n")
 	}
 	b.WriteString("</tbody></table>\n")
+	b.WriteString(signLinks)
 	b.WriteString("<nav class=\"related\"><ul>\n")
 	b.WriteString("<li><a href=\"" + seoURL(lang, todayRel) + "\">" + esc(seoT("section_today", lang, nil)) + "</a></li>\n")
 	b.WriteString("<li><a href=\"" + seoURL(lang, strconv.Itoa(year)+"/transits.html") + "\">" + esc(seoT("section_transits", lang, nil)) + " " + strconv.Itoa(year) + "</a></li>\n")
