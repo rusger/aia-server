@@ -526,20 +526,6 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 	return count, nil
 }
 
-func uniqueStrings(in []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range in {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// writeAtomic writes to <path>.tmp then renames, so readers (nginx) never see
-// a partially written file.
 func writeAtomic(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

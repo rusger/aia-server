@@ -56,6 +56,14 @@ func TestTithiLabel(t *testing.T) {
 	}
 }
 
+func TestFmtDeg(t *testing.T) {
+	for in, want := range map[float64]string{0: "0°00′", 12.5: "12°30′", 29.999: "29°59′", 7.9999: "8°00′"} {
+		if got := fmtDeg(in); got != want {
+			t.Errorf("fmtDeg(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestMotionIsRetro(t *testing.T) {
 	if motionIsRetro("Mercury", 100, 101) != true || motionIsRetro("Mercury", 101, 100) != false {
 		t.Error("sign of the daily delta decides")

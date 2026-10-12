@@ -268,12 +268,17 @@ func seoDate(lang string, t time.Time) string {
 	}
 }
 
+// fmtDeg renders a within-sign longitude as D°MM′; a value a hair under
+// the boundary stays "29°59′" so the figure never reads as the next sign.
 func fmtDeg(deg float64) string {
 	whole := int(deg)
 	min := int(math.Round((deg - float64(whole)) * 60))
 	if min == 60 {
 		whole++
 		min = 0
+	}
+	if whole >= 30 {
+		whole, min = 29, 59
 	}
 	return fmt.Sprintf("%d°%02d′", whole, min)
 }
