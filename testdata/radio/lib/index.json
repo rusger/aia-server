@@ -1,0 +1,6317 @@
+{
+ "tracks": [
+  {
+   "key": "signs/01-aries",
+   "file": "signs-01-aries.m4a",
+   "title": "Still think you're an Aries? Check the real sky",
+   "tags": {
+    "sign": "aries"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "b799fb818ba9"
+  },
+  {
+   "key": "signs/02-taurus",
+   "file": "signs-02-taurus.m4a",
+   "title": "Taurus by birthday, Aries by the actual sky?",
+   "tags": {
+    "sign": "taurus"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "e1a1b518b092"
+  },
+  {
+   "key": "signs/03-gemini",
+   "file": "signs-03-gemini.m4a",
+   "title": "Gemini? The stars moved. You might not be one",
+   "tags": {
+    "sign": "gemini"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "16496a4ef180"
+  },
+  {
+   "key": "signs/04-cancer",
+   "file": "signs-04-cancer.m4a",
+   "title": "Cancer sign truth: the sky shifted a whole sign",
+   "tags": {
+    "sign": "cancer"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "54e27d55622a"
+  },
+  {
+   "key": "signs/05-leo",
+   "file": "signs-05-leo.m4a",
+   "title": "Leo pride... but your real Sun may be in Cancer",
+   "tags": {
+    "sign": "leo"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "46c92a7b276e"
+  },
+  {
+   "key": "signs/06-virgo",
+   "file": "signs-06-virgo.m4a",
+   "title": "Virgo by horoscope, Leo by the actual stars?",
+   "tags": {
+    "sign": "virgo"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "b34ca3de1c9d"
+  },
+  {
+   "key": "signs/07-libra",
+   "file": "signs-07-libra.m4a",
+   "title": "Libra? Astronomy quietly says Virgo",
+   "tags": {
+    "sign": "libra"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "6a55c1984862"
+  },
+  {
+   "key": "signs/08-scorpio",
+   "file": "signs-08-scorpio.m4a",
+   "title": "Scorpio? Your Sun may not even be there",
+   "tags": {
+    "sign": "scorpio"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "56f17818cac6"
+  },
+  {
+   "key": "signs/09-sagittarius",
+   "file": "signs-09-sagittarius.m4a",
+   "title": "Sagittarius? Your real Sun may sit in Scorpio",
+   "tags": {
+    "sign": "sagittarius"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "f364d0f3a691"
+  },
+  {
+   "key": "signs/10-capricorn",
+   "file": "signs-10-capricorn.m4a",
+   "title": "Capricorn grind, or secretly a Sagittarius?",
+   "tags": {
+    "sign": "capricorn"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "4a2e9a81f360"
+  },
+  {
+   "key": "signs/11-aquarius",
+   "file": "signs-11-aquarius.m4a",
+   "title": "Aquarius? The real sky votes Capricorn",
+   "tags": {
+    "sign": "aquarius"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "832fb76702bd"
+  },
+  {
+   "key": "signs/12-pisces",
+   "file": "signs-12-pisces.m4a",
+   "title": "Pisces dreamer, or an Aquarius in disguise?",
+   "tags": {
+    "sign": "pisces"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "c25dbccc81f7"
+  },
+  {
+   "key": "transit-lens/lagna/01-aries",
+   "file": "transit-lens-lagna-01-aries.m4a",
+   "title": "Aries rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "aries",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "f4236b367295"
+  },
+  {
+   "key": "transit-lens/lagna/02-taurus",
+   "file": "transit-lens-lagna-02-taurus.m4a",
+   "title": "Taurus rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "taurus",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "348e375730de"
+  },
+  {
+   "key": "transit-lens/lagna/03-gemini",
+   "file": "transit-lens-lagna-03-gemini.m4a",
+   "title": "Gemini rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "gemini",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "6f464e3f2ca7"
+  },
+  {
+   "key": "transit-lens/lagna/04-cancer",
+   "file": "transit-lens-lagna-04-cancer.m4a",
+   "title": "Cancer rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "cancer",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "68f6f84402b5"
+  },
+  {
+   "key": "transit-lens/lagna/05-leo",
+   "file": "transit-lens-lagna-05-leo.m4a",
+   "title": "Leo rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "leo",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "6ee71853bc6d"
+  },
+  {
+   "key": "transit-lens/lagna/06-virgo",
+   "file": "transit-lens-lagna-06-virgo.m4a",
+   "title": "Virgo rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "virgo",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "fc1c771f9acf"
+  },
+  {
+   "key": "transit-lens/lagna/07-libra",
+   "file": "transit-lens-lagna-07-libra.m4a",
+   "title": "Libra rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "libra",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "1aed9388e7b3"
+  },
+  {
+   "key": "transit-lens/lagna/08-scorpio",
+   "file": "transit-lens-lagna-08-scorpio.m4a",
+   "title": "Scorpio rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "scorpio",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "b1421682a1c5"
+  },
+  {
+   "key": "transit-lens/lagna/09-sagittarius",
+   "file": "transit-lens-lagna-09-sagittarius.m4a",
+   "title": "Sagittarius rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "sagittarius",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "dcada21b3905"
+  },
+  {
+   "key": "transit-lens/lagna/10-capricorn",
+   "file": "transit-lens-lagna-10-capricorn.m4a",
+   "title": "Capricorn rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "capricorn",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "e6b1d43262bc"
+  },
+  {
+   "key": "transit-lens/lagna/11-aquarius",
+   "file": "transit-lens-lagna-11-aquarius.m4a",
+   "title": "Aquarius rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "aquarius",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "2a9c4b04414e"
+  },
+  {
+   "key": "transit-lens/lagna/12-pisces",
+   "file": "transit-lens-lagna-12-pisces.m4a",
+   "title": "Pisces rising: Saturn, Jupiter, Rahu, your sky this season",
+   "tags": {
+    "ref": "lagna",
+    "sign": "pisces",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "0de2dcff2274"
+  },
+  {
+   "key": "transit-lens/sun/01-aries",
+   "file": "transit-lens-sun-01-aries.m4a",
+   "title": "Aries Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "aries",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "6f215bbe60d0"
+  },
+  {
+   "key": "transit-lens/sun/02-taurus",
+   "file": "transit-lens-sun-02-taurus.m4a",
+   "title": "Taurus Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "taurus",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "98e30db02792"
+  },
+  {
+   "key": "transit-lens/sun/03-gemini",
+   "file": "transit-lens-sun-03-gemini.m4a",
+   "title": "Gemini Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "gemini",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "60070246f1e8"
+  },
+  {
+   "key": "transit-lens/sun/04-cancer",
+   "file": "transit-lens-sun-04-cancer.m4a",
+   "title": "Cancer Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "cancer",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "6361fa900011"
+  },
+  {
+   "key": "transit-lens/sun/05-leo",
+   "file": "transit-lens-sun-05-leo.m4a",
+   "title": "Leo Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "leo",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "392afad65860"
+  },
+  {
+   "key": "transit-lens/sun/06-virgo",
+   "file": "transit-lens-sun-06-virgo.m4a",
+   "title": "Virgo Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "virgo",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "f37ab4519991"
+  },
+  {
+   "key": "transit-lens/sun/07-libra",
+   "file": "transit-lens-sun-07-libra.m4a",
+   "title": "Libra Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "libra",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "9ff4f6cb4ae3"
+  },
+  {
+   "key": "transit-lens/sun/08-scorpio",
+   "file": "transit-lens-sun-08-scorpio.m4a",
+   "title": "Scorpio Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "scorpio",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "a8ed7dce8619"
+  },
+  {
+   "key": "transit-lens/sun/09-sagittarius",
+   "file": "transit-lens-sun-09-sagittarius.m4a",
+   "title": "Sagittarius Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "sagittarius",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "aac8a4f99205"
+  },
+  {
+   "key": "transit-lens/sun/10-capricorn",
+   "file": "transit-lens-sun-10-capricorn.m4a",
+   "title": "Capricorn Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "capricorn",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "981658e0f06c"
+  },
+  {
+   "key": "transit-lens/sun/11-aquarius",
+   "file": "transit-lens-sun-11-aquarius.m4a",
+   "title": "Aquarius Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "aquarius",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "c7f56b42949f"
+  },
+  {
+   "key": "transit-lens/sun/12-pisces",
+   "file": "transit-lens-sun-12-pisces.m4a",
+   "title": "Pisces Sun: where the slow planets hit you this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "pisces",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "d5cdaf003ab2"
+  },
+  {
+   "key": "transit-lens/moon/01-aries",
+   "file": "transit-lens-moon-01-aries.m4a",
+   "title": "Aries Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "aries",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "42e454e6892d"
+  },
+  {
+   "key": "transit-lens/moon/02-taurus",
+   "file": "transit-lens-moon-02-taurus.m4a",
+   "title": "Taurus Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "taurus",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "aa31321c789a"
+  },
+  {
+   "key": "transit-lens/moon/03-gemini",
+   "file": "transit-lens-moon-03-gemini.m4a",
+   "title": "Gemini Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "gemini",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "82c04aca95e9"
+  },
+  {
+   "key": "transit-lens/moon/04-cancer",
+   "file": "transit-lens-moon-04-cancer.m4a",
+   "title": "Cancer Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "cancer",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "aece3b18e2dd"
+  },
+  {
+   "key": "transit-lens/moon/05-leo",
+   "file": "transit-lens-moon-05-leo.m4a",
+   "title": "Leo Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "leo",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "d425f8298085"
+  },
+  {
+   "key": "transit-lens/moon/06-virgo",
+   "file": "transit-lens-moon-06-virgo.m4a",
+   "title": "Virgo Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "virgo",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "c6b362f39aa0"
+  },
+  {
+   "key": "transit-lens/moon/07-libra",
+   "file": "transit-lens-moon-07-libra.m4a",
+   "title": "Libra Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "libra",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "0544cdd184a3"
+  },
+  {
+   "key": "transit-lens/moon/08-scorpio",
+   "file": "transit-lens-moon-08-scorpio.m4a",
+   "title": "Scorpio Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "scorpio",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "3ff3a5967fb2"
+  },
+  {
+   "key": "transit-lens/moon/09-sagittarius",
+   "file": "transit-lens-moon-09-sagittarius.m4a",
+   "title": "Sagittarius Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "sagittarius",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "feb64f684786"
+  },
+  {
+   "key": "transit-lens/moon/10-capricorn",
+   "file": "transit-lens-moon-10-capricorn.m4a",
+   "title": "Capricorn Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "capricorn",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "d1e25efcdf6d"
+  },
+  {
+   "key": "transit-lens/moon/11-aquarius",
+   "file": "transit-lens-moon-11-aquarius.m4a",
+   "title": "Aquarius Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "aquarius",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "756d47cb8246"
+  },
+  {
+   "key": "transit-lens/moon/12-pisces",
+   "file": "transit-lens-moon-12-pisces.m4a",
+   "title": "Pisces Moon: your emotional weather this season",
+   "tags": {
+    "ref": "moon",
+    "sign": "pisces",
+    "transit": "lens"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "7aef994daf89"
+  },
+  {
+   "key": "transit-lens-q4/lagna/01-aries",
+   "file": "transit-lens-q4-lagna-01-aries.m4a",
+   "title": "Aries rising: Jupiter in Leo lights house 5, Saturn turns direct",
+   "tags": {
+    "ref": "lagna",
+    "sign": "aries",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "e48af57bec2d"
+  },
+  {
+   "key": "transit-lens-q4/lagna/02-taurus",
+   "file": "transit-lens-q4-lagna-02-taurus.m4a",
+   "title": "Taurus rising: Jupiter in Leo, nodes flip in December, your sky",
+   "tags": {
+    "ref": "lagna",
+    "sign": "taurus",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "3dfd404d2f79"
+  },
+  {
+   "key": "transit-lens-q4/lagna/03-gemini",
+   "file": "transit-lens-q4-lagna-03-gemini.m4a",
+   "title": "Gemini rising: career pressure builds as Jupiter shifts in Leo",
+   "tags": {
+    "ref": "lagna",
+    "sign": "gemini",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "f96054bd0186"
+  },
+  {
+   "key": "transit-lens-q4/lagna/04-cancer",
+   "file": "transit-lens-q4-lagna-04-cancer.m4a",
+   "title": "Cancer rising: Jupiter blesses house 2 before heading home in Leo",
+   "tags": {
+    "ref": "lagna",
+    "sign": "cancer",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "a3a350687f1f"
+  },
+  {
+   "key": "transit-lens-q4/lagna/05-leo",
+   "file": "transit-lens-q4-lagna-05-leo.m4a",
+   "title": "Leo rising: Jupiter lights up YOU before its January retreat",
+   "tags": {
+    "ref": "lagna",
+    "sign": "leo",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "7d70fde70753"
+  },
+  {
+   "key": "transit-lens-q4/lagna/06-virgo",
+   "file": "transit-lens-q4-lagna-06-virgo.m4a",
+   "title": "Virgo rising: rest deepens as Jupiter closes out its Leo run",
+   "tags": {
+    "ref": "lagna",
+    "sign": "virgo",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "5b84414975ce"
+  },
+  {
+   "key": "transit-lens-q4/lagna/07-libra",
+   "file": "transit-lens-q4-lagna-07-libra.m4a",
+   "title": "Libra rising: networks grow while Saturn tightens your routines",
+   "tags": {
+    "ref": "lagna",
+    "sign": "libra",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "47b105aef3e8"
+  },
+  {
+   "key": "transit-lens-q4/lagna/08-scorpio",
+   "file": "transit-lens-q4-lagna-08-scorpio.m4a",
+   "title": "Scorpio rising: career rises as the nodes cross in December",
+   "tags": {
+    "ref": "lagna",
+    "sign": "scorpio",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "5b9c87d599c1"
+  },
+  {
+   "key": "transit-lens-q4/lagna/09-sagittarius",
+   "file": "transit-lens-q4-lagna-09-sagittarius.m4a",
+   "title": "Sagittarius rising: teachers and travel call before Jupiter turns home",
+   "tags": {
+    "ref": "lagna",
+    "sign": "sagittarius",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "e86d50b4293c"
+  },
+  {
+   "key": "transit-lens-q4/lagna/10-capricorn",
+   "file": "transit-lens-q4-lagna-10-capricorn.m4a",
+   "title": "Capricorn rising: shared resources shift as Saturn steadies your skills",
+   "tags": {
+    "ref": "lagna",
+    "sign": "capricorn",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "21dbbcc23cac"
+  },
+  {
+   "key": "transit-lens-q4/lagna/11-aquarius",
+   "file": "transit-lens-q4-lagna-11-aquarius.m4a",
+   "title": "Aquarius rising: partnerships test as the nodes leave your ascendant",
+   "tags": {
+    "ref": "lagna",
+    "sign": "aquarius",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "e76a3a9a21b4"
+  },
+  {
+   "key": "transit-lens-q4/lagna/12-pisces",
+   "file": "transit-lens-q4-lagna-12-pisces.m4a",
+   "title": "Pisces rising: Saturn steadies you as Jupiter nears its Cancer return",
+   "tags": {
+    "ref": "lagna",
+    "sign": "pisces",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "d330a8834ce7"
+  },
+  {
+   "key": "transit-lens-q4/sun/01-aries",
+   "file": "transit-lens-q4-sun-01-aries.m4a",
+   "title": "Aries Sun: Jupiter lights your 5th house, your sky this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "aries",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "dd07b8b139a2"
+  },
+  {
+   "key": "transit-lens-q4/sun/02-taurus",
+   "file": "transit-lens-q4-sun-02-taurus.m4a",
+   "title": "Taurus Sun: Jupiter's home blessing before the January shift",
+   "tags": {
+    "ref": "sun",
+    "sign": "taurus",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "d5ba7e92b643"
+  },
+  {
+   "key": "transit-lens-q4/sun/03-gemini",
+   "file": "transit-lens-q4-sun-03-gemini.m4a",
+   "title": "Gemini Sun: Jupiter boosts courage, what changes this quarter",
+   "tags": {
+    "ref": "sun",
+    "sign": "gemini",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "921f189e6c50"
+  },
+  {
+   "key": "transit-lens-q4/sun/04-cancer",
+   "file": "transit-lens-q4-sun-04-cancer.m4a",
+   "title": "Cancer Sun: Jupiter is heading straight for your own Sun",
+   "tags": {
+    "ref": "sun",
+    "sign": "cancer",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "6834a074b447"
+  },
+  {
+   "key": "transit-lens-q4/sun/05-leo",
+   "file": "transit-lens-q4-sun-05-leo.m4a",
+   "title": "Leo Sun: Jupiter on your Sun until January, your sky this season",
+   "tags": {
+    "ref": "sun",
+    "sign": "leo",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "35434b0d479b"
+  },
+  {
+   "key": "transit-lens-q4/sun/06-virgo",
+   "file": "transit-lens-q4-sun-06-virgo.m4a",
+   "title": "Virgo Sun: rest now, network gains after Jupiter's January move",
+   "tags": {
+    "ref": "sun",
+    "sign": "virgo",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "4a1ff6759287"
+  },
+  {
+   "key": "transit-lens-q4/sun/07-libra",
+   "file": "transit-lens-q4-sun-07-libra.m4a",
+   "title": "Libra Sun: work gets real before Jupiter lifts your career",
+   "tags": {
+    "ref": "sun",
+    "sign": "libra",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "c86a7b767c9f"
+  },
+  {
+   "key": "transit-lens-q4/sun/08-scorpio",
+   "file": "transit-lens-q4-sun-08-scorpio.m4a",
+   "title": "Scorpio Sun: Jupiter fuels your career this transit season",
+   "tags": {
+    "ref": "sun",
+    "sign": "scorpio",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "b55d556c17d6"
+  },
+  {
+   "key": "transit-lens-q4/sun/09-sagittarius",
+   "file": "transit-lens-q4-sun-09-sagittarius.m4a",
+   "title": "Sagittarius Sun: home gets serious while Jupiter blesses belief",
+   "tags": {
+    "ref": "sun",
+    "sign": "sagittarius",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "72e905d1ffec"
+  },
+  {
+   "key": "transit-lens-q4/sun/10-capricorn",
+   "file": "transit-lens-q4-sun-10-capricorn.m4a",
+   "title": "Capricorn Sun: Rahu lands on your own Sun in December",
+   "tags": {
+    "ref": "sun",
+    "sign": "capricorn",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "ec0e158a28c7"
+  },
+  {
+   "key": "transit-lens-q4/sun/11-aquarius",
+   "file": "transit-lens-q4-sun-11-aquarius.m4a",
+   "title": "Aquarius Sun: Rahu finally leaves your Sun this December",
+   "tags": {
+    "ref": "sun",
+    "sign": "aquarius",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "f1c6f0078920"
+  },
+  {
+   "key": "transit-lens-q4/sun/12-pisces",
+   "file": "transit-lens-q4-sun-12-pisces.m4a",
+   "title": "Pisces Sun: Saturn sits on your own Sun this quarter",
+   "tags": {
+    "ref": "sun",
+    "sign": "pisces",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "c02db3f9519c"
+  },
+  {
+   "key": "transit-lens-q4/moon/01-aries",
+   "file": "transit-lens-q4-moon-01-aries.m4a",
+   "title": "Aries Moon: Sade Sati chapter one, Jupiter lifts your romance house",
+   "tags": {
+    "ref": "moon",
+    "sign": "aries",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "504d0ae0e30f"
+  },
+  {
+   "key": "transit-lens-q4/moon/02-taurus",
+   "file": "transit-lens-q4-moon-02-taurus.m4a",
+   "title": "Taurus Moon: Jupiter warms your home, Saturn audits your circle",
+   "tags": {
+    "ref": "moon",
+    "sign": "taurus",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "d2c7029ae2ac"
+  },
+  {
+   "key": "transit-lens-q4/moon/03-gemini",
+   "file": "transit-lens-q4-moon-03-gemini.m4a",
+   "title": "Gemini Moon: Saturn builds your career, Jupiter sharpens your voice",
+   "tags": {
+    "ref": "moon",
+    "sign": "gemini",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "b2f4eaa0d4aa"
+  },
+  {
+   "key": "transit-lens-q4/moon/04-cancer",
+   "file": "transit-lens-q4-moon-04-cancer.m4a",
+   "title": "Cancer Moon: Ketu lands on your Moon, Jupiter returns January 24",
+   "tags": {
+    "ref": "moon",
+    "sign": "cancer",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "966dcd8911a9"
+  },
+  {
+   "key": "transit-lens-q4/moon/05-leo",
+   "file": "transit-lens-q4-moon-05-leo.m4a",
+   "title": "Leo Moon: Jupiter lifts your own sign, then retreats to your 12th",
+   "tags": {
+    "ref": "moon",
+    "sign": "leo",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "6f4f40eb09b4"
+  },
+  {
+   "key": "transit-lens-q4/moon/06-virgo",
+   "file": "transit-lens-q4-moon-06-virgo.m4a",
+   "title": "Virgo Moon: Saturn tests your partnerships, Jupiter gifts real rest",
+   "tags": {
+    "ref": "moon",
+    "sign": "virgo",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "22882666fab6"
+  },
+  {
+   "key": "transit-lens-q4/moon/07-libra",
+   "file": "transit-lens-q4-moon-07-libra.m4a",
+   "title": "Libra Moon: Saturn rewards routine, Jupiter opens your network",
+   "tags": {
+    "ref": "moon",
+    "sign": "libra",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "4aa662899561"
+  },
+  {
+   "key": "transit-lens-q4/moon/08-scorpio",
+   "file": "transit-lens-q4-moon-08-scorpio.m4a",
+   "title": "Scorpio Moon: Jupiter boosts your career, Saturn matures your art",
+   "tags": {
+    "ref": "moon",
+    "sign": "scorpio",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "ba94c2dfc7a0"
+  },
+  {
+   "key": "transit-lens-q4/moon/09-sagittarius",
+   "file": "transit-lens-q4-moon-09-sagittarius.m4a",
+   "title": "Sagittarius Moon: Jupiter lights your own house before shifting on",
+   "tags": {
+    "ref": "moon",
+    "sign": "sagittarius",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "cf8f2c0e014c"
+  },
+  {
+   "key": "transit-lens-q4/moon/10-capricorn",
+   "file": "transit-lens-q4-moon-10-capricorn.m4a",
+   "title": "Capricorn Moon: Rahu lands on your Moon, Jupiter eases shared money",
+   "tags": {
+    "ref": "moon",
+    "sign": "capricorn",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "52bf6949bffb"
+  },
+  {
+   "key": "transit-lens-q4/moon/11-aquarius",
+   "file": "transit-lens-q4-moon-11-aquarius.m4a",
+   "title": "Aquarius Moon: Sade Sati closes, Jupiter brings generous partners",
+   "tags": {
+    "ref": "moon",
+    "sign": "aquarius",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "1008d76c53e8"
+  },
+  {
+   "key": "transit-lens-q4/moon/12-pisces",
+   "file": "transit-lens-q4-moon-12-pisces.m4a",
+   "title": "Pisces Moon: Sade Sati peak, Jupiter in Leo braces your routines",
+   "tags": {
+    "ref": "moon",
+    "sign": "pisces",
+    "transit": "lens"
+   },
+   "valid_until": "2027-01-24",
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "27e9a84c3b17"
+  },
+  {
+   "key": "transit-combo/01-saturn-for-aries-moon",
+   "file": "transit-combo-01-saturn-for-aries-moon.m4a",
+   "title": "Aries Moon: Sade Sati has already started for you",
+   "tags": {
+    "planet": "saturn",
+    "sign": "aries",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "bd2e69f81f43"
+  },
+  {
+   "key": "transit-combo/02-saturn-for-cancer-moon",
+   "file": "transit-combo-02-saturn-for-cancer-moon.m4a",
+   "title": "Cancer Moon: Saturn is testing your faith until 2027",
+   "tags": {
+    "planet": "saturn",
+    "sign": "cancer",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "3e88db19334f"
+  },
+  {
+   "key": "transit-combo/03-saturn-for-taurus-moon",
+   "file": "transit-combo-03-saturn-for-taurus-moon.m4a",
+   "title": "Taurus Moon: Saturn is auditing your income now",
+   "tags": {
+    "planet": "saturn",
+    "sign": "taurus",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "fdb8683f0f05"
+  },
+  {
+   "key": "transit-combo/04-saturn-for-gemini-moon",
+   "file": "transit-combo-04-saturn-for-gemini-moon.m4a",
+   "title": "Gemini Moon: Saturn sits on your career until 2027",
+   "tags": {
+    "planet": "saturn",
+    "sign": "gemini",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "f9a44bd6481a"
+  },
+  {
+   "key": "transit-combo/05-saturn-for-leo-moon",
+   "file": "transit-combo-05-saturn-for-leo-moon.m4a",
+   "title": "Leo Moon: the hardest Saturn transit, and how to pass it",
+   "tags": {
+    "planet": "saturn",
+    "sign": "leo",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "98b923c2b02d"
+  },
+  {
+   "key": "transit-combo/06-saturn-for-virgo-moon",
+   "file": "transit-combo-06-saturn-for-virgo-moon.m4a",
+   "title": "Virgo Moon: Saturn is testing your marriage",
+   "tags": {
+    "planet": "saturn",
+    "sign": "virgo",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "99c2badc2fcd"
+  },
+  {
+   "key": "transit-combo/07-saturn-for-libra-moon",
+   "file": "transit-combo-07-saturn-for-libra-moon.m4a",
+   "title": "Libra Moon: Saturn in the 6th, your enemies lose",
+   "tags": {
+    "planet": "saturn",
+    "sign": "libra",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "bc50fac45a96"
+  },
+  {
+   "key": "transit-combo/08-saturn-for-scorpio-moon",
+   "file": "transit-combo-08-saturn-for-scorpio-moon.m4a",
+   "title": "Scorpio Moon: Saturn on children, romance, creativity",
+   "tags": {
+    "planet": "saturn",
+    "sign": "scorpio",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "3b527a037376"
+  },
+  {
+   "key": "transit-combo/09-saturn-for-sagittarius-moon",
+   "file": "transit-combo-09-saturn-for-sagittarius-moon.m4a",
+   "title": "Sagittarius Moon: Saturn at home, moves and mothers",
+   "tags": {
+    "planet": "saturn",
+    "sign": "sagittarius",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "1322b7879257"
+  },
+  {
+   "key": "transit-combo/10-saturn-for-capricorn-moon",
+   "file": "transit-combo-10-saturn-for-capricorn-moon.m4a",
+   "title": "Capricorn Moon: Saturn's easiest transit for you",
+   "tags": {
+    "planet": "saturn",
+    "sign": "capricorn",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "302dfd7354e6"
+  },
+  {
+   "key": "transit-combo/11-saturn-for-aquarius-moon",
+   "file": "transit-combo-11-saturn-for-aquarius-moon.m4a",
+   "title": "Aquarius Moon: your Sade Sati is almost over",
+   "tags": {
+    "planet": "saturn",
+    "sign": "aquarius",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "386ebafe4ea7"
+  },
+  {
+   "key": "transit-combo/12-saturn-for-pisces-moon",
+   "file": "transit-combo-12-saturn-for-pisces-moon.m4a",
+   "title": "Pisces Moon: Saturn on top of you, peak Sade Sati",
+   "tags": {
+    "planet": "saturn",
+    "sign": "pisces",
+    "ref": "moon",
+    "transit": "combo"
+   },
+   "valid_until": "2027-06-01",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "e39fc73f48de"
+  },
+  {
+   "key": "graha-watch/01-saturn",
+   "file": "graha-watch-01-saturn.m4a",
+   "title": "Saturn in Pisces until 2027: what it's doing to you",
+   "tags": {
+    "planet": "saturn",
+    "transit": "watch"
+   },
+   "valid_until": "2026-12-10",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "e127cfb40405"
+  },
+  {
+   "key": "graha-watch/02-jupiter",
+   "file": "graha-watch-02-jupiter.m4a",
+   "title": "Jupiter in Cancer: the luckiest transit of the year",
+   "tags": {
+    "planet": "jupiter",
+    "transit": "watch"
+   },
+   "valid_until": "2026-10-30",
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "023dfa0e1c5a"
+  },
+  {
+   "key": "graha-watch/03-rahu-ketu",
+   "file": "graha-watch-03-rahu-ketu.m4a",
+   "title": "Rahu and Ketu right now: which house is under fire?",
+   "tags": {
+    "planet": "rahu-ketu",
+    "transit": "watch"
+   },
+   "valid_until": "2026-12-04",
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "d583ddca05aa"
+  },
+  {
+   "key": "breakdowns/01-moon-ketu",
+   "file": "breakdowns-01-moon-ketu.m4a",
+   "title": "Moon with Ketu: why love never feels safe, and the childhood behind it",
+   "tags": {
+    "planets": [
+     "moon",
+     "ketu"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "ddd29fdcb41a"
+  },
+  {
+   "key": "breakdowns/02-moon-saturn",
+   "file": "breakdowns-02-moon-saturn.m4a",
+   "title": "Moon with Saturn: why you learned not to cry, and what it costs you now",
+   "tags": {
+    "planets": [
+     "moon",
+     "saturn"
+    ]
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "d185cf109d13"
+  },
+  {
+   "key": "breakdowns/03-moon-rahu-afflicted",
+   "file": "breakdowns-03-moon-rahu-afflicted.m4a",
+   "title": "Moon with Rahu, or combust, or in the 6th12th: the anxious attachment chart",
+   "tags": {
+    "planets": [
+     "moon",
+     "rahu"
+    ],
+    "flag": "afflicted"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "ba68c2ad8242"
+  },
+  {
+   "key": "breakdowns/04-moon-mars",
+   "file": "breakdowns-04-moon-mars.m4a",
+   "title": "Moon with Mars: the child who learned that love comes with a fight",
+   "tags": {
+    "planets": [
+     "moon",
+     "mars"
+    ]
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "75cbd2fc605a"
+  },
+  {
+   "key": "breakdowns/05-sun-saturn",
+   "file": "breakdowns-05-sun-saturn.m4a",
+   "title": "Sun with Saturn: the father who was never satisfied, and the self-worth it left",
+   "tags": {
+    "planets": [
+     "sun",
+     "saturn"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "5050abb51c5f"
+  },
+  {
+   "key": "breakdowns/06-sun-nodes",
+   "file": "breakdowns-06-sun-nodes.m4a",
+   "title": "Sun with Rahu or Ketu: the absent father, and the two ways it shapes you",
+   "tags": {
+    "planets": [
+     "sun"
+    ],
+    "flag": "nodes"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "4c352dfcf875"
+  },
+  {
+   "key": "breakdowns/07-venus-saturn",
+   "file": "breakdowns-07-venus-saturn.m4a",
+   "title": "Venus with Saturn: why love always feels like something you have to earn",
+   "tags": {
+    "planets": [
+     "venus",
+     "saturn"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "c68f4c2d1c79"
+  },
+  {
+   "key": "breakdowns/08-venus-nodes",
+   "file": "breakdowns-08-venus-nodes.m4a",
+   "title": "Venus with Rahu or Ketu: why you keep falling for the unavailable",
+   "tags": {
+    "planets": [
+     "venus"
+    ],
+    "flag": "nodes"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "a218a3552fea"
+  },
+  {
+   "key": "breakdowns/09-mars-saturn",
+   "file": "breakdowns-09-mars-saturn.m4a",
+   "title": "Mars with Saturn: why your anger comes out sideways, and how to use it",
+   "tags": {
+    "planets": [
+     "mars",
+     "saturn"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "6bccd4d503b9"
+  },
+  {
+   "key": "breakdowns/10-mercury-nodes",
+   "file": "breakdowns-10-mercury-nodes.m4a",
+   "title": "Mercury with Rahu or Ketu: why talking makes you anxious",
+   "tags": {
+    "planets": [
+     "mercury"
+    ],
+    "flag": "nodes"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "124e6f86a39f"
+  },
+  {
+   "key": "breakdowns/11-jupiter-nodes",
+   "file": "breakdowns-11-jupiter-nodes.m4a",
+   "title": "Jupiter with Rahu or Ketu: why you can't find a teacher you trust",
+   "tags": {
+    "planets": [
+     "jupiter"
+    ],
+    "flag": "nodes"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "4438507f8ab1"
+  },
+  {
+   "key": "breakdowns/12-lagna-lord-afflicted",
+   "file": "breakdowns-12-lagna-lord-afflicted.m4a",
+   "title": "Afflicted ascendant lord: why you apologise for existing, and how to fix it",
+   "tags": {
+    "planets": [],
+    "flag": "lagna-lord-afflicted"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "74f5880778b9"
+  },
+  {
+   "key": "breakdowns/13-moon-8th",
+   "file": "breakdowns-13-moon-8th.m4a",
+   "title": "Moon in the 8th house: the child who learned to keep secrets, and the adult who cannot rest",
+   "tags": {
+    "planets": [
+     "moon"
+    ],
+    "house": 8
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "102f5da23de1"
+  },
+  {
+   "key": "breakdowns/14-venus-mars",
+   "file": "breakdowns-14-venus-mars.m4a",
+   "title": "Venus with Mars: love that must be a fight, and how to keep the fire without the war",
+   "tags": {
+    "planets": [
+     "venus",
+     "mars"
+    ]
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "542992a7faee"
+  },
+  {
+   "key": "breakdowns/15-mercury-saturn",
+   "file": "breakdowns-15-mercury-saturn.m4a",
+   "title": "Mercury with Saturn: the child who was told to think before speaking, forever",
+   "tags": {
+    "planets": [
+     "mercury",
+     "saturn"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "38bff8c270b1"
+  },
+  {
+   "key": "breakdowns/16-sun-mars",
+   "file": "breakdowns-16-sun-mars.m4a",
+   "title": "Sun with Mars: the father who was a fighter, and the temper you inherited",
+   "tags": {
+    "planets": [
+     "sun",
+     "mars"
+    ]
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "9fc536ec04a6"
+  },
+  {
+   "key": "breakdowns/17-mars-rahu",
+   "file": "breakdowns-17-mars-rahu.m4a",
+   "title": "Mars with Rahu: the energy that does not know how to stop, and where it sends you",
+   "tags": {
+    "planets": [
+     "mars",
+     "rahu"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "8cbbd6ec6680"
+  },
+  {
+   "key": "breakdowns/18-saturn-1st",
+   "file": "breakdowns-18-saturn-1st.m4a",
+   "title": "Saturn in the 1st house: why you felt old at ten, and young at fifty",
+   "tags": {
+    "planets": [
+     "saturn"
+    ],
+    "house": 1
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "bed5e3a7d582"
+  },
+  {
+   "key": "breakdowns/19-jupiter-saturn",
+   "file": "breakdowns-19-jupiter-saturn.m4a",
+   "title": "Jupiter with Saturn: faith and doubt in the same room, the teacher who was also the judge",
+   "tags": {
+    "planets": [
+     "jupiter",
+     "saturn"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "dd7a11279e5d"
+  },
+  {
+   "key": "breakdowns/20-venus-12th",
+   "file": "breakdowns-20-venus-12th.m4a",
+   "title": "Venus in the 12th house: love that lives in secret, and the partner from far away",
+   "tags": {
+    "planets": [
+     "venus"
+    ],
+    "house": 12
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "9d9fb51ec4c3"
+  },
+  {
+   "key": "breakdowns/21-moon-12th",
+   "file": "breakdowns-21-moon-12th.m4a",
+   "title": "Moon in the 12th house: the child who lived in another world, and the adult who still visits it",
+   "tags": {
+    "planets": [
+     "moon"
+    ],
+    "house": 12
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "9303d2bb2b05"
+  },
+  {
+   "key": "breakdowns/22-mercury-combust",
+   "file": "breakdowns-22-mercury-combust.m4a",
+   "title": "Combust Mercury: when the Sun swallows your words, the child who was never heard",
+   "tags": {
+    "planets": [
+     "mercury"
+    ],
+    "flag": "combust"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "d336295d78cc"
+  },
+  {
+   "key": "breakdowns/23-saturn-rahu",
+   "file": "breakdowns-23-saturn-rahu.m4a",
+   "title": "Saturn with Rahu: the fear you inherited but never lived, and how it runs your choices",
+   "tags": {
+    "planets": [
+     "saturn",
+     "rahu"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "6ed5ee1dedc5"
+  },
+  {
+   "key": "breakdowns/24-moon-venus",
+   "file": "breakdowns-24-moon-venus.m4a",
+   "title": "Moon with Venus: the child who was adored, and the adult who cannot bear to be ordinary",
+   "tags": {
+    "planets": [
+     "moon",
+     "venus"
+    ]
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "907026bd3743"
+  },
+  {
+   "key": "breakdowns/25-moon-4th",
+   "file": "breakdowns-25-moon-4th.m4a",
+   "title": "Moon in the 4th house: the child who read the mood of the house, and the adult for whom home is a feeling",
+   "tags": {
+    "planets": [
+     "moon"
+    ],
+    "house": 4
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "d36e2b2a76e2"
+  },
+  {
+   "key": "breakdowns/26-saturn-7th",
+   "file": "breakdowns-26-saturn-7th.m4a",
+   "title": "Saturn in the 7th house: why the partner comes late, and then does not leave",
+   "tags": {
+    "planets": [
+     "saturn"
+    ],
+    "house": 7
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "e09281de6b14"
+  },
+  {
+   "key": "breakdowns/27-mars-7th",
+   "file": "breakdowns-27-mars-7th.m4a",
+   "title": "Mars in the 7th house, Kuja Dosha: what Manglik really means, and when it stops mattering",
+   "tags": {
+    "planets": [
+     "mars"
+    ],
+    "house": 7
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "2950d4422ff8"
+  },
+  {
+   "key": "breakdowns/28-rahu-2nd",
+   "file": "breakdowns-28-rahu-2nd.m4a",
+   "title": "Rahu in the 2nd house: raised where money was a secret, and never having enough",
+   "tags": {
+    "planets": [
+     "rahu"
+    ],
+    "house": 2
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "fc89c0eff8d9"
+  },
+  {
+   "key": "breakdowns/29-ketu-4th",
+   "file": "breakdowns-29-ketu-4th.m4a",
+   "title": "Ketu in the 4th house: the home you left in your head, and feeling at home nowhere",
+   "tags": {
+    "planets": [
+     "ketu"
+    ],
+    "house": 4
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "c6619cf2cfc1"
+  },
+  {
+   "key": "breakdowns/30-jupiter-5th",
+   "file": "breakdowns-30-jupiter-5th.m4a",
+   "title": "Jupiter in the 5th house: the child who was believed in, and the adult who knows better",
+   "tags": {
+    "planets": [
+     "jupiter"
+    ],
+    "house": 5
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "da92dd268fe0"
+  },
+  {
+   "key": "breakdowns/31-saturn-10th",
+   "file": "breakdowns-31-saturn-10th.m4a",
+   "title": "Saturn in the 10th house: the career marathon, slow rise, late summit, no shortcuts",
+   "tags": {
+    "planets": [
+     "saturn"
+    ],
+    "house": 10
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "baf3fb6dd426"
+  },
+  {
+   "key": "breakdowns/32-sun-12th",
+   "file": "breakdowns-32-sun-12th.m4a",
+   "title": "Sun in the 12th house: the father who was not there, and the adult who works best unseen",
+   "tags": {
+    "planets": [
+     "sun"
+    ],
+    "house": 12
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "7000cac2b8ab"
+  },
+  {
+   "key": "breakdowns/33-venus-ketu",
+   "file": "breakdowns-33-venus-ketu.m4a",
+   "title": "Venus with Ketu: love without greed, or without appetite? the art of letting go too easily",
+   "tags": {
+    "planets": [
+     "venus",
+     "ketu"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "c90df287cd6c"
+  },
+  {
+   "key": "breakdowns/34-mercury-mars",
+   "file": "breakdowns-34-mercury-mars.m4a",
+   "title": "Mercury with Mars: the sharp tongue that wins every argument and loses the room",
+   "tags": {
+    "planets": [
+     "mercury",
+     "mars"
+    ]
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "141e897a7a34"
+  },
+  {
+   "key": "breakdowns/35-moon-jupiter",
+   "file": "breakdowns-35-moon-jupiter.m4a",
+   "title": "Moon with Jupiter, Gaja Kesari from the inside: the rescuer's heart and its hidden cost",
+   "tags": {
+    "planets": [
+     "moon",
+     "jupiter"
+    ]
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "78ed022aa87f"
+  },
+  {
+   "key": "breakdowns/36-saturn-8th",
+   "file": "breakdowns-36-saturn-8th.m4a",
+   "title": "Saturn in the 8th house: the fear of losing, a long life, and an inheritance with conditions",
+   "tags": {
+    "planets": [
+     "saturn"
+    ],
+    "house": 8
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "dedfeb37e58f"
+  },
+  {
+   "key": "houses/01-first-house",
+   "file": "houses-01-first-house.m4a",
+   "title": "Your rising sign runs the whole chart. Here's how",
+   "tags": {
+    "house": 1
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "a0d91674f700"
+  },
+  {
+   "key": "houses/02-second-house",
+   "file": "houses-02-second-house.m4a",
+   "title": "The house that decides how money finds you",
+   "tags": {
+    "house": 2
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "4dc03e750804"
+  },
+  {
+   "key": "houses/03-third-house",
+   "file": "houses-03-third-house.m4a",
+   "title": "Your courage has an address: the 3rd house",
+   "tags": {
+    "house": 3
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "915f07a87e35"
+  },
+  {
+   "key": "houses/04-fourth-house",
+   "file": "houses-04-fourth-house.m4a",
+   "title": "The house that explains your childhood home",
+   "tags": {
+    "house": 4
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "37591a9b6d90"
+  },
+  {
+   "key": "houses/05-fifth-house",
+   "file": "houses-05-fifth-house.m4a",
+   "title": "Children, luck, romance, one house rules all",
+   "tags": {
+    "house": 5
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "934457a6ddf5"
+  },
+  {
+   "key": "houses/06-sixth-house",
+   "file": "houses-06-sixth-house.m4a",
+   "title": "The house of enemies and illness, and winning",
+   "tags": {
+    "house": 6
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "dfb12a069870"
+  },
+  {
+   "key": "houses/07-seventh-house",
+   "file": "houses-07-seventh-house.m4a",
+   "title": "Your marriage is written in this house",
+   "tags": {
+    "house": 7
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "37179264fe8c"
+  },
+  {
+   "key": "houses/08-eighth-house",
+   "file": "houses-08-eighth-house.m4a",
+   "title": "The most feared house in astrology, explained",
+   "tags": {
+    "house": 8
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "a8fe731148d1"
+  },
+  {
+   "key": "houses/09-ninth-house",
+   "file": "houses-09-ninth-house.m4a",
+   "title": "Your luck has an address: the 9th house",
+   "tags": {
+    "house": 9
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "bc0ae6627c2c"
+  },
+  {
+   "key": "houses/10-tenth-house",
+   "file": "houses-10-tenth-house.m4a",
+   "title": "Career karma: what the 10th house owes you",
+   "tags": {
+    "house": 10
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "c90be1684518"
+  },
+  {
+   "key": "houses/11-eleventh-house",
+   "file": "houses-11-eleventh-house.m4a",
+   "title": "The house where wishes actually come true",
+   "tags": {
+    "house": 11
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "31d050505bd8"
+  },
+  {
+   "key": "houses/12-twelfth-house",
+   "file": "houses-12-twelfth-house.m4a",
+   "title": "The hidden 12th house: loss, dreams, liberation",
+   "tags": {
+    "house": 12
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "3caefa66f7f2"
+  },
+  {
+   "key": "grahas/01-sun",
+   "file": "grahas-01-sun.m4a",
+   "title": "Your real Sun sign might not be the one you know",
+   "tags": {
+    "planet": "sun"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "1e59e14222d8"
+  },
+  {
+   "key": "grahas/02-moon",
+   "file": "grahas-02-moon.m4a",
+   "title": "Your Moon sign explains your mind better than your Sun",
+   "tags": {
+    "planet": "moon"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "e006af3a1f25"
+  },
+  {
+   "key": "grahas/03-mars",
+   "file": "grahas-03-mars.m4a",
+   "title": "Where is your Mars? That's where you fight",
+   "tags": {
+    "planet": "mars"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "b4f9759fceec"
+  },
+  {
+   "key": "grahas/04-mercury",
+   "file": "grahas-04-mercury.m4a",
+   "title": "Mercury: why some people talk their way into money",
+   "tags": {
+    "planet": "mercury"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "737dbe42a782"
+  },
+  {
+   "key": "grahas/05-jupiter",
+   "file": "grahas-05-jupiter.m4a",
+   "title": "Jupiter: the house he sits in is where luck lives",
+   "tags": {
+    "planet": "jupiter"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "11b92b23c0f2"
+  },
+  {
+   "key": "grahas/06-venus",
+   "file": "grahas-06-venus.m4a",
+   "title": "Venus: why you love the way you love",
+   "tags": {
+    "planet": "venus"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "3ff94ce60352"
+  },
+  {
+   "key": "grahas/07-saturn",
+   "file": "grahas-07-saturn.m4a",
+   "title": "Saturn return at 29: did your life change then?",
+   "tags": {
+    "planet": "saturn"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "026cc36961b4"
+  },
+  {
+   "key": "grahas/08-rahu",
+   "file": "grahas-08-rahu.m4a",
+   "title": "Rahu: the planet behind your obsessions",
+   "tags": {
+    "planet": "rahu"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "b0dce5901164"
+  },
+  {
+   "key": "grahas/09-ketu",
+   "file": "grahas-09-ketu.m4a",
+   "title": "Ketu: why some things never felt like yours",
+   "tags": {
+    "planet": "ketu"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "613e7f8fc783"
+  },
+  {
+   "key": "nakshatras/01-ashwini",
+   "file": "nakshatras-01-ashwini.m4a",
+   "title": "Born under Ashwini? Fast, healing, first to arrive",
+   "tags": {
+    "nakshatra": "ashwini"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "52997a145543"
+  },
+  {
+   "key": "nakshatras/02-bharani",
+   "file": "nakshatras-02-bharani.m4a",
+   "title": "Bharani: the star that carries life and death",
+   "tags": {
+    "nakshatra": "bharani"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "8029ab414b5a"
+  },
+  {
+   "key": "nakshatras/03-krittika",
+   "file": "nakshatras-03-krittika.m4a",
+   "title": "Krittika: the razor star, are you one?",
+   "tags": {
+    "nakshatra": "krittika"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "a813cedf23e5"
+  },
+  {
+   "key": "nakshatras/04-rohini",
+   "file": "nakshatras-04-rohini.m4a",
+   "title": "Rohini: the Moon's favorite, and why it shows",
+   "tags": {
+    "nakshatra": "rohini"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "37c3a19e79dc"
+  },
+  {
+   "key": "nakshatras/05-mrigashira",
+   "file": "nakshatras-05-mrigashira.m4a",
+   "title": "Mrigashira: the star of people who keep searching",
+   "tags": {
+    "nakshatra": "mrigashira"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "e6dd28b11e9f"
+  },
+  {
+   "key": "nakshatras/06-ardra",
+   "file": "nakshatras-06-ardra.m4a",
+   "title": "Ardra: the storm star that breaks to rebuild",
+   "tags": {
+    "nakshatra": "ardra"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "da8c825cd62c"
+  },
+  {
+   "key": "nakshatras/07-punarvasu",
+   "file": "nakshatras-07-punarvasu.m4a",
+   "title": "Punarvasu: the star of second chances",
+   "tags": {
+    "nakshatra": "punarvasu"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "99d4883be3c7"
+  },
+  {
+   "key": "nakshatras/08-pushya",
+   "file": "nakshatras-08-pushya.m4a",
+   "title": "Pushya: the most nourishing star in the sky",
+   "tags": {
+    "nakshatra": "pushya"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "5e74a884d1a8"
+  },
+  {
+   "key": "nakshatras/09-ashlesha",
+   "file": "nakshatras-09-ashlesha.m4a",
+   "title": "Ashlesha: the serpent star, hypnotic or toxic?",
+   "tags": {
+    "nakshatra": "ashlesha"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "3e77f41051c5"
+  },
+  {
+   "key": "nakshatras/10-magha",
+   "file": "nakshatras-10-magha.m4a",
+   "title": "Magha: born with a throne, and ancestors watching",
+   "tags": {
+    "nakshatra": "magha"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "23a7148d80d6"
+  },
+  {
+   "key": "nakshatras/11-purva-phalguni",
+   "file": "nakshatras-11-purva-phalguni.m4a",
+   "title": "Purva Phalguni: the star of pleasure and fortune",
+   "tags": {
+    "nakshatra": "purva-phalguni"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "e7fbb07589f3"
+  },
+  {
+   "key": "nakshatras/12-uttara-phalguni",
+   "file": "nakshatras-12-uttara-phalguni.m4a",
+   "title": "Uttara Phalguni: the star of lasting marriages",
+   "tags": {
+    "nakshatra": "uttara-phalguni"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "6abf6c328ec4"
+  },
+  {
+   "key": "nakshatras/13-hasta",
+   "file": "nakshatras-13-hasta.m4a",
+   "title": "Hasta: skilled hands, the star of makers",
+   "tags": {
+    "nakshatra": "hasta"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "6b0c80b36e68"
+  },
+  {
+   "key": "nakshatras/14-chitra",
+   "file": "nakshatras-14-chitra.m4a",
+   "title": "Chitra: the jewel star of designers and builders",
+   "tags": {
+    "nakshatra": "chitra"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "5e42f2881ef6"
+  },
+  {
+   "key": "nakshatras/15-swati",
+   "file": "nakshatras-15-swati.m4a",
+   "title": "Swati: the star that refuses to be controlled",
+   "tags": {
+    "nakshatra": "swati"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "c419a705b918"
+  },
+  {
+   "key": "nakshatras/16-vishakha",
+   "file": "nakshatras-16-vishakha.m4a",
+   "title": "Vishakha: the star that wins, at a cost",
+   "tags": {
+    "nakshatra": "vishakha"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "eb9816883929"
+  },
+  {
+   "key": "nakshatras/17-anuradha",
+   "file": "nakshatras-17-anuradha.m4a",
+   "title": "Anuradha: the star of loyal friends and devotion",
+   "tags": {
+    "nakshatra": "anuradha"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "6b595aea0366"
+  },
+  {
+   "key": "nakshatras/18-jyeshtha",
+   "file": "nakshatras-18-jyeshtha.m4a",
+   "title": "Jyeshtha: the eldest star, power and its price",
+   "tags": {
+    "nakshatra": "jyeshtha"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "c378ed85208c"
+  },
+  {
+   "key": "nakshatras/19-mula",
+   "file": "nakshatras-19-mula.m4a",
+   "title": "Mula: the root star that tears things down",
+   "tags": {
+    "nakshatra": "mula"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "ac4536e7d9e2"
+  },
+  {
+   "key": "nakshatras/20-purva-ashadha",
+   "file": "nakshatras-20-purva-ashadha.m4a",
+   "title": "Purva Ashadha: the invincible star",
+   "tags": {
+    "nakshatra": "purva-ashadha"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "9f18de96b8b9"
+  },
+  {
+   "key": "nakshatras/21-uttara-ashadha",
+   "file": "nakshatras-21-uttara-ashadha.m4a",
+   "title": "Uttara Ashadha: victory that lasts",
+   "tags": {
+    "nakshatra": "uttara-ashadha"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "6e0a60eef2b9"
+  },
+  {
+   "key": "nakshatras/22-shravana",
+   "file": "nakshatras-22-shravana.m4a",
+   "title": "Shravana: the star of people who really listen",
+   "tags": {
+    "nakshatra": "shravana"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "bebb2e03ddcf"
+  },
+  {
+   "key": "nakshatras/23-dhanishta",
+   "file": "nakshatras-23-dhanishta.m4a",
+   "title": "Dhanishta: the wealthiest star, and the loneliest?",
+   "tags": {
+    "nakshatra": "dhanishta"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "4250eeb83a1e"
+  },
+  {
+   "key": "nakshatras/24-shatabhisha",
+   "file": "nakshatras-24-shatabhisha.m4a",
+   "title": "Shatabhisha: hundred healers, one secret",
+   "tags": {
+    "nakshatra": "shatabhisha"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "f818f31607a9"
+  },
+  {
+   "key": "nakshatras/25-purva-bhadrapada",
+   "file": "nakshatras-25-purva-bhadrapada.m4a",
+   "title": "Purva Bhadrapada: the two-faced fire star",
+   "tags": {
+    "nakshatra": "purva-bhadrapada"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "a75db24f89f1"
+  },
+  {
+   "key": "nakshatras/26-uttara-bhadrapada",
+   "file": "nakshatras-26-uttara-bhadrapada.m4a",
+   "title": "Uttara Bhadrapada: the calm at the bottom of the sea",
+   "tags": {
+    "nakshatra": "uttara-bhadrapada"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "160ee120e278"
+  },
+  {
+   "key": "nakshatras/27-revati",
+   "file": "nakshatras-27-revati.m4a",
+   "title": "Revati: the last star, safe passage home",
+   "tags": {
+    "nakshatra": "revati"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "9e98789f5e4d"
+  },
+  {
+   "key": "topics/01-love",
+   "file": "topics-01-love.m4a",
+   "title": "Why your relationships don't work: check this house",
+   "tags": {
+    "topic": "love"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "2c6b5587e18f"
+  },
+  {
+   "key": "topics/02-wealth",
+   "file": "topics-02-wealth.m4a",
+   "title": "The house that decides if money stays with you",
+   "tags": {
+    "topic": "wealth"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "e9e6db210521"
+  },
+  {
+   "key": "topics/03-career",
+   "file": "topics-03-career.m4a",
+   "title": "Your career is written in the 10th house, here's how",
+   "tags": {
+    "topic": "career"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "907b5a442db4"
+  },
+  {
+   "key": "topics/04-health",
+   "file": "topics-04-health.m4a",
+   "title": "The house of illness, and how to win there",
+   "tags": {
+    "topic": "health"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "468f6c9c70ae"
+  },
+  {
+   "key": "topics/05-luck",
+   "file": "topics-05-luck.m4a",
+   "title": "Are you lucky? Your 9th house already knows",
+   "tags": {
+    "topic": "luck"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "09fe26933d11"
+  },
+  {
+   "key": "topics/06-children",
+   "file": "topics-06-children.m4a",
+   "title": "Kids, creativity, romance: one house rules them all",
+   "tags": {
+    "topic": "children"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "94be448322a2"
+  },
+  {
+   "key": "topics/07-home",
+   "file": "topics-07-home.m4a",
+   "title": "Why home feels the way it feels: the 4th house",
+   "tags": {
+    "topic": "home"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "0b9879b4678e"
+  },
+  {
+   "key": "topics/08-courage",
+   "file": "topics-08-courage.m4a",
+   "title": "Courage isn't given, it's in your 3rd house",
+   "tags": {
+    "topic": "courage"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "614d98969485"
+  },
+  {
+   "key": "topics/09-friends",
+   "file": "topics-09-friends.m4a",
+   "title": "Your friends are your ceiling, says the 11th house",
+   "tags": {
+    "topic": "friends"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "2efd5a5a3778"
+  },
+  {
+   "key": "topics/10-depth",
+   "file": "topics-10-depth.m4a",
+   "title": "The 8th house: inheritance, crisis, rebirth",
+   "tags": {
+    "topic": "depth"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "140603996bfb"
+  },
+  {
+   "key": "topics/11-self",
+   "file": "topics-11-self.m4a",
+   "title": "The one house that reads your whole chart",
+   "tags": {
+    "topic": "self"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 68,
+   "text_hash": "f81b20cab5d7"
+  },
+  {
+   "key": "topics/12-freedom",
+   "file": "topics-12-freedom.m4a",
+   "title": "The 12th house: what you lose to become free",
+   "tags": {
+    "topic": "freedom"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 68,
+   "text_hash": "1dd7a9cbd85c"
+  },
+  {
+   "key": "year-2027/01-aries",
+   "file": "year-2027-01-aries.m4a",
+   "title": "Aries Moon in 2027: Saturn Arrives on Your Sign",
+   "tags": {
+    "sign": "aries",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "fe9f77a0031e"
+  },
+  {
+   "key": "year-2027/02-taurus",
+   "file": "year-2027-02-taurus.m4a",
+   "title": "Taurus Moon in 2027: A Preview of Sade Sati",
+   "tags": {
+    "sign": "taurus",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "2e58bea16dfb"
+  },
+  {
+   "key": "year-2027/03-gemini",
+   "file": "year-2027-03-gemini.m4a",
+   "title": "Gemini Moon in 2027: Money Talks, Career Holds",
+   "tags": {
+    "sign": "gemini",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "a5a5a35eea1e"
+  },
+  {
+   "key": "year-2027/04-cancer",
+   "file": "year-2027-04-cancer.m4a",
+   "title": "Cancer Moon in 2027: Exalted Jupiter on Your Moon",
+   "tags": {
+    "sign": "cancer",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "98070e9e61c5"
+  },
+  {
+   "key": "year-2027/05-leo",
+   "file": "year-2027-05-leo.m4a",
+   "title": "Leo Moon in 2027: A Break From Eighth-House Saturn",
+   "tags": {
+    "sign": "leo",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "5f8b0152cacb"
+  },
+  {
+   "key": "year-2027/06-virgo",
+   "file": "year-2027-06-virgo.m4a",
+   "title": "Virgo Moon in 2027: Jupiter Comes to You in November",
+   "tags": {
+    "sign": "virgo",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "23166ff7bc15"
+  },
+  {
+   "key": "year-2027/07-libra",
+   "file": "year-2027-07-libra.m4a",
+   "title": "Libra Moon in 2027: Career Peak Under Jupiter",
+   "tags": {
+    "sign": "libra",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "bf09b09b94f9"
+  },
+  {
+   "key": "year-2027/08-scorpio",
+   "file": "year-2027-08-scorpio.m4a",
+   "title": "Scorpio Moon in 2027: Luck Returns to the Ninth",
+   "tags": {
+    "sign": "scorpio",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "6db303bba194"
+  },
+  {
+   "key": "year-2027/09-sagittarius",
+   "file": "year-2027-09-sagittarius.m4a",
+   "title": "Sagittarius Moon in 2027: Home Is the Work",
+   "tags": {
+    "sign": "sagittarius",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "ae1fbda1961d"
+  },
+  {
+   "key": "year-2027/10-capricorn",
+   "file": "year-2027-10-capricorn.m4a",
+   "title": "Capricorn Moon in 2027: Rahu and an Eclipse on Your Sign",
+   "tags": {
+    "sign": "capricorn",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "744e2a97a9b0"
+  },
+  {
+   "key": "year-2027/11-aquarius",
+   "file": "year-2027-11-aquarius.m4a",
+   "title": "Aquarius Moon in 2027: Sade Sati Loosens Its Grip",
+   "tags": {
+    "sign": "aquarius",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "e60907149bf6"
+  },
+  {
+   "key": "year-2027/12-pisces",
+   "file": "year-2027-12-pisces.m4a",
+   "title": "Pisces Moon in 2027: The Middle of Sade Sati",
+   "tags": {
+    "sign": "pisces",
+    "year": 2027
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "e3f05f3cc2a5"
+  },
+  {
+   "key": "dashas/01-sun",
+   "file": "dashas-01-sun.m4a",
+   "title": "Sun period: 6 years that decide your status",
+   "tags": {
+    "dasha": "sun"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "dd7d1cb32c6e"
+  },
+  {
+   "key": "dashas/02-moon",
+   "file": "dashas-02-moon.m4a",
+   "title": "Moon period: the decade your mind runs the show",
+   "tags": {
+    "dasha": "moon"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "26d1a1a73a89"
+  },
+  {
+   "key": "dashas/03-mars",
+   "file": "dashas-03-mars.m4a",
+   "title": "Mars period: 7 years you'll fight for something",
+   "tags": {
+    "dasha": "mars"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "fa50b2c8aa12"
+  },
+  {
+   "key": "dashas/04-mercury",
+   "file": "dashas-04-mercury.m4a",
+   "title": "Mercury period: 17 years to change your career",
+   "tags": {
+    "dasha": "mercury"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "532fe325fa49"
+  },
+  {
+   "key": "dashas/05-jupiter",
+   "file": "dashas-05-jupiter.m4a",
+   "title": "Jupiter period: the 16 luckiest years, or not",
+   "tags": {
+    "dasha": "jupiter"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "8058b288ce74"
+  },
+  {
+   "key": "dashas/06-venus",
+   "file": "dashas-06-venus.m4a",
+   "title": "Venus period: 20 years of love, money, comfort",
+   "tags": {
+    "dasha": "venus"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "d3eb67c2b2bf"
+  },
+  {
+   "key": "dashas/07-saturn",
+   "file": "dashas-07-saturn.m4a",
+   "title": "Saturn period: 19 years nobody wants, explained",
+   "tags": {
+    "dasha": "saturn"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "e14909260185"
+  },
+  {
+   "key": "dashas/08-rahu",
+   "file": "dashas-08-rahu.m4a",
+   "title": "Rahu period: 18 years abroad, online, obsessed",
+   "tags": {
+    "dasha": "rahu"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 60,
+   "text_hash": "552f76164a1e"
+  },
+  {
+   "key": "dashas/09-ketu",
+   "file": "dashas-09-ketu.m4a",
+   "title": "Ketu period: 7 years of losing what you thought was yours",
+   "tags": {
+    "dasha": "ketu"
+   },
+   "valid_until": null,
+   "voice": "am_michael",
+   "dur": 60,
+   "text_hash": "38ffebeb6ad0"
+  },
+  {
+   "key": "month/2026-09-lagna/aries",
+   "file": "month-2026-09-lagna-aries.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Aries rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "aries"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "7967205b25c6"
+  },
+  {
+   "key": "month/2026-09-lagna/taurus",
+   "file": "month-2026-09-lagna-taurus.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Taurus rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "df71a03d74bf"
+  },
+  {
+   "key": "month/2026-09-lagna/gemini",
+   "file": "month-2026-09-lagna-gemini.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Gemini rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "6ed82cbe6270"
+  },
+  {
+   "key": "month/2026-09-lagna/cancer",
+   "file": "month-2026-09-lagna-cancer.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Cancer rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "e15dd8677eca"
+  },
+  {
+   "key": "month/2026-09-lagna/leo",
+   "file": "month-2026-09-lagna-leo.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Leo rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "leo"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "a4ec6b8265b6"
+  },
+  {
+   "key": "month/2026-09-lagna/virgo",
+   "file": "month-2026-09-lagna-virgo.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Virgo rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "a0f285cec2dc"
+  },
+  {
+   "key": "month/2026-09-lagna/libra",
+   "file": "month-2026-09-lagna-libra.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Libra rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "libra"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "42ea77761ba2"
+  },
+  {
+   "key": "month/2026-09-lagna/scorpio",
+   "file": "month-2026-09-lagna-scorpio.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Scorpio rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "3b70a9d7e7c4"
+  },
+  {
+   "key": "month/2026-09-lagna/sagittarius",
+   "file": "month-2026-09-lagna-sagittarius.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Sagittarius rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "8b81e834e9ec"
+  },
+  {
+   "key": "month/2026-09-lagna/capricorn",
+   "file": "month-2026-09-lagna-capricorn.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Capricorn rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "05603ec447fd"
+  },
+  {
+   "key": "month/2026-09-lagna/aquarius",
+   "file": "month-2026-09-lagna-aquarius.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Aquarius rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "30aa5db4ac74"
+  },
+  {
+   "key": "month/2026-09-lagna/pisces",
+   "file": "month-2026-09-lagna-pisces.m4a",
+   "title": "September 2026: What the Sky Does to Your Rising Sign: Pisces rising",
+   "tags": {
+    "month": "2026-09",
+    "ref": "lagna",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "cad483f4bd82"
+  },
+  {
+   "key": "month/2026-09-moon/aries",
+   "file": "month-2026-09-moon-aries.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Aries",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "aries"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "0e16db8a206f"
+  },
+  {
+   "key": "month/2026-09-moon/taurus",
+   "file": "month-2026-09-moon-taurus.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Taurus",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "1d1a5aa4a3bc"
+  },
+  {
+   "key": "month/2026-09-moon/gemini",
+   "file": "month-2026-09-moon-gemini.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Gemini",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "39ce3fd788c7"
+  },
+  {
+   "key": "month/2026-09-moon/cancer",
+   "file": "month-2026-09-moon-cancer.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Cancer",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "e3ef002814f6"
+  },
+  {
+   "key": "month/2026-09-moon/leo",
+   "file": "month-2026-09-moon-leo.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Leo",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "leo"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "65f4f2e275f9"
+  },
+  {
+   "key": "month/2026-09-moon/virgo",
+   "file": "month-2026-09-moon-virgo.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Virgo",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "ec8d234552e1"
+  },
+  {
+   "key": "month/2026-09-moon/libra",
+   "file": "month-2026-09-moon-libra.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Libra",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "libra"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "d831e6b80184"
+  },
+  {
+   "key": "month/2026-09-moon/scorpio",
+   "file": "month-2026-09-moon-scorpio.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Scorpio",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "f3d5698a4c4e"
+  },
+  {
+   "key": "month/2026-09-moon/sagittarius",
+   "file": "month-2026-09-moon-sagittarius.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Sagittarius",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "2618cb51a095"
+  },
+  {
+   "key": "month/2026-09-moon/capricorn",
+   "file": "month-2026-09-moon-capricorn.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Capricorn",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "5e05fb3da3c0"
+  },
+  {
+   "key": "month/2026-09-moon/aquarius",
+   "file": "month-2026-09-moon-aquarius.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Aquarius",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "b195808af91f"
+  },
+  {
+   "key": "month/2026-09-moon/pisces",
+   "file": "month-2026-09-moon-pisces.m4a",
+   "title": "September 2026: What the Sky Does to Your Moon Sign: Moon in Pisces",
+   "tags": {
+    "month": "2026-09",
+    "ref": "moon",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "cd99ce02b625"
+  },
+  {
+   "key": "month/2026-09-sun/aries",
+   "file": "month-2026-09-sun-aries.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Aries",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "aries"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "269f794cdd80"
+  },
+  {
+   "key": "month/2026-09-sun/taurus",
+   "file": "month-2026-09-sun-taurus.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Taurus",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "37bc4d41368d"
+  },
+  {
+   "key": "month/2026-09-sun/gemini",
+   "file": "month-2026-09-sun-gemini.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Gemini",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "99cb86cfc79e"
+  },
+  {
+   "key": "month/2026-09-sun/cancer",
+   "file": "month-2026-09-sun-cancer.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Cancer",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "5b24cfdaee30"
+  },
+  {
+   "key": "month/2026-09-sun/leo",
+   "file": "month-2026-09-sun-leo.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Leo",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "leo"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "8ae527f1816e"
+  },
+  {
+   "key": "month/2026-09-sun/virgo",
+   "file": "month-2026-09-sun-virgo.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Virgo",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "98c53e89378e"
+  },
+  {
+   "key": "month/2026-09-sun/libra",
+   "file": "month-2026-09-sun-libra.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Libra",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "libra"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "f98250b1c23d"
+  },
+  {
+   "key": "month/2026-09-sun/scorpio",
+   "file": "month-2026-09-sun-scorpio.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Scorpio",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "be5bdfce191d"
+  },
+  {
+   "key": "month/2026-09-sun/sagittarius",
+   "file": "month-2026-09-sun-sagittarius.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Sagittarius",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "77f1cd1c0d18"
+  },
+  {
+   "key": "month/2026-09-sun/capricorn",
+   "file": "month-2026-09-sun-capricorn.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Capricorn",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "a432913c85d6"
+  },
+  {
+   "key": "month/2026-09-sun/aquarius",
+   "file": "month-2026-09-sun-aquarius.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Aquarius",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "1d100c9ead28"
+  },
+  {
+   "key": "month/2026-09-sun/pisces",
+   "file": "month-2026-09-sun-pisces.m4a",
+   "title": "September 2026: What the Sky Does to Your Sun Sign: Sun in Pisces",
+   "tags": {
+    "month": "2026-09",
+    "ref": "sun",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-09-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "a8efb714286b"
+  },
+  {
+   "key": "month/2026-10-lagna/aries",
+   "file": "month-2026-10-lagna-aries.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Aries rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "aries"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "2c8fbcc147cc"
+  },
+  {
+   "key": "month/2026-10-lagna/taurus",
+   "file": "month-2026-10-lagna-taurus.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Taurus rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "9882963617c9"
+  },
+  {
+   "key": "month/2026-10-lagna/gemini",
+   "file": "month-2026-10-lagna-gemini.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Gemini rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "49cf770e45f1"
+  },
+  {
+   "key": "month/2026-10-lagna/cancer",
+   "file": "month-2026-10-lagna-cancer.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Cancer rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "11351fd25d06"
+  },
+  {
+   "key": "month/2026-10-lagna/leo",
+   "file": "month-2026-10-lagna-leo.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Leo rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "leo"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "7acfd6b5cccd"
+  },
+  {
+   "key": "month/2026-10-lagna/virgo",
+   "file": "month-2026-10-lagna-virgo.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Virgo rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "3e2f6b04966d"
+  },
+  {
+   "key": "month/2026-10-lagna/libra",
+   "file": "month-2026-10-lagna-libra.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Libra rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "libra"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "e350961b7f3b"
+  },
+  {
+   "key": "month/2026-10-lagna/scorpio",
+   "file": "month-2026-10-lagna-scorpio.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Scorpio rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "b76b59b4ff1e"
+  },
+  {
+   "key": "month/2026-10-lagna/sagittarius",
+   "file": "month-2026-10-lagna-sagittarius.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Sagittarius rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "efae8159b224"
+  },
+  {
+   "key": "month/2026-10-lagna/capricorn",
+   "file": "month-2026-10-lagna-capricorn.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Capricorn rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "08d1ba26c38c"
+  },
+  {
+   "key": "month/2026-10-lagna/aquarius",
+   "file": "month-2026-10-lagna-aquarius.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Aquarius rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "5b57b7376f3d"
+  },
+  {
+   "key": "month/2026-10-lagna/pisces",
+   "file": "month-2026-10-lagna-pisces.m4a",
+   "title": "October 2026: What the Sky Does to Your Rising Sign: Pisces rising",
+   "tags": {
+    "month": "2026-10",
+    "ref": "lagna",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "91cf8d4430ae"
+  },
+  {
+   "key": "month/2026-10-moon/aries",
+   "file": "month-2026-10-moon-aries.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Aries",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "aries"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "23c3994fa1dd"
+  },
+  {
+   "key": "month/2026-10-moon/taurus",
+   "file": "month-2026-10-moon-taurus.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Taurus",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "b83c1f6de607"
+  },
+  {
+   "key": "month/2026-10-moon/gemini",
+   "file": "month-2026-10-moon-gemini.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Gemini",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "ef5633a3204b"
+  },
+  {
+   "key": "month/2026-10-moon/cancer",
+   "file": "month-2026-10-moon-cancer.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Cancer",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "af4362f82b34"
+  },
+  {
+   "key": "month/2026-10-moon/leo",
+   "file": "month-2026-10-moon-leo.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Leo",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "leo"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "bdab0e8ee8ea"
+  },
+  {
+   "key": "month/2026-10-moon/virgo",
+   "file": "month-2026-10-moon-virgo.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Virgo",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "e40fef3ea08c"
+  },
+  {
+   "key": "month/2026-10-moon/libra",
+   "file": "month-2026-10-moon-libra.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Libra",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "libra"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "865eb21bdb4c"
+  },
+  {
+   "key": "month/2026-10-moon/scorpio",
+   "file": "month-2026-10-moon-scorpio.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Scorpio",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "bb22b5b07c8f"
+  },
+  {
+   "key": "month/2026-10-moon/sagittarius",
+   "file": "month-2026-10-moon-sagittarius.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Sagittarius",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "5d3044940c65"
+  },
+  {
+   "key": "month/2026-10-moon/capricorn",
+   "file": "month-2026-10-moon-capricorn.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Capricorn",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "6b94c7da46cb"
+  },
+  {
+   "key": "month/2026-10-moon/aquarius",
+   "file": "month-2026-10-moon-aquarius.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Aquarius",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "2eb2a740b0b6"
+  },
+  {
+   "key": "month/2026-10-moon/pisces",
+   "file": "month-2026-10-moon-pisces.m4a",
+   "title": "October 2026: What the Sky Does to Your Moon Sign: Moon in Pisces",
+   "tags": {
+    "month": "2026-10",
+    "ref": "moon",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "cfcd5d2b131c"
+  },
+  {
+   "key": "month/2026-10-sun/aries",
+   "file": "month-2026-10-sun-aries.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Aries",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "aries"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "57b45952ee96"
+  },
+  {
+   "key": "month/2026-10-sun/taurus",
+   "file": "month-2026-10-sun-taurus.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Taurus",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "0cb8d66faead"
+  },
+  {
+   "key": "month/2026-10-sun/gemini",
+   "file": "month-2026-10-sun-gemini.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Gemini",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "e54f43ec83e7"
+  },
+  {
+   "key": "month/2026-10-sun/cancer",
+   "file": "month-2026-10-sun-cancer.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Cancer",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "1a6a0128fb46"
+  },
+  {
+   "key": "month/2026-10-sun/leo",
+   "file": "month-2026-10-sun-leo.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Leo",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "leo"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "45390a70495e"
+  },
+  {
+   "key": "month/2026-10-sun/virgo",
+   "file": "month-2026-10-sun-virgo.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Virgo",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "851edec18394"
+  },
+  {
+   "key": "month/2026-10-sun/libra",
+   "file": "month-2026-10-sun-libra.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Libra",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "libra"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "8daca604d028"
+  },
+  {
+   "key": "month/2026-10-sun/scorpio",
+   "file": "month-2026-10-sun-scorpio.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Scorpio",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "e3ba0b9f5a8b"
+  },
+  {
+   "key": "month/2026-10-sun/sagittarius",
+   "file": "month-2026-10-sun-sagittarius.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Sagittarius",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "1e52277952cd"
+  },
+  {
+   "key": "month/2026-10-sun/capricorn",
+   "file": "month-2026-10-sun-capricorn.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Capricorn",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "8bfe8c66e50d"
+  },
+  {
+   "key": "month/2026-10-sun/aquarius",
+   "file": "month-2026-10-sun-aquarius.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Aquarius",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "a55efb4710b2"
+  },
+  {
+   "key": "month/2026-10-sun/pisces",
+   "file": "month-2026-10-sun-pisces.m4a",
+   "title": "October 2026: What the Sky Does to Your Sun Sign: Sun in Pisces",
+   "tags": {
+    "month": "2026-10",
+    "ref": "sun",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-10-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "bc86dad3ddb0"
+  },
+  {
+   "key": "month/2026-11-lagna/aries",
+   "file": "month-2026-11-lagna-aries.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Aries rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "aries"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "cded9413cdb2"
+  },
+  {
+   "key": "month/2026-11-lagna/taurus",
+   "file": "month-2026-11-lagna-taurus.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Taurus rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "af9ee4ab808d"
+  },
+  {
+   "key": "month/2026-11-lagna/gemini",
+   "file": "month-2026-11-lagna-gemini.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Gemini rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "229984f029fb"
+  },
+  {
+   "key": "month/2026-11-lagna/cancer",
+   "file": "month-2026-11-lagna-cancer.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Cancer rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "1c4e7386d900"
+  },
+  {
+   "key": "month/2026-11-lagna/leo",
+   "file": "month-2026-11-lagna-leo.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Leo rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "leo"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "90a0f5fa143a"
+  },
+  {
+   "key": "month/2026-11-lagna/virgo",
+   "file": "month-2026-11-lagna-virgo.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Virgo rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "d900926616ae"
+  },
+  {
+   "key": "month/2026-11-lagna/libra",
+   "file": "month-2026-11-lagna-libra.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Libra rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "libra"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "3d709b83c995"
+  },
+  {
+   "key": "month/2026-11-lagna/scorpio",
+   "file": "month-2026-11-lagna-scorpio.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Scorpio rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "cfd8a127a455"
+  },
+  {
+   "key": "month/2026-11-lagna/sagittarius",
+   "file": "month-2026-11-lagna-sagittarius.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Sagittarius rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "0d9b4f55cfff"
+  },
+  {
+   "key": "month/2026-11-lagna/capricorn",
+   "file": "month-2026-11-lagna-capricorn.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Capricorn rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "54820be84b91"
+  },
+  {
+   "key": "month/2026-11-lagna/aquarius",
+   "file": "month-2026-11-lagna-aquarius.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Aquarius rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "1b75dc706bd6"
+  },
+  {
+   "key": "month/2026-11-lagna/pisces",
+   "file": "month-2026-11-lagna-pisces.m4a",
+   "title": "November 2026: What the Sky Does to Your Rising Sign: Pisces rising",
+   "tags": {
+    "month": "2026-11",
+    "ref": "lagna",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "c55730fa1274"
+  },
+  {
+   "key": "month/2026-11-moon/aries",
+   "file": "month-2026-11-moon-aries.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Aries",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "aries"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "90e8992df118"
+  },
+  {
+   "key": "month/2026-11-moon/taurus",
+   "file": "month-2026-11-moon-taurus.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Taurus",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "0a77301419c9"
+  },
+  {
+   "key": "month/2026-11-moon/gemini",
+   "file": "month-2026-11-moon-gemini.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Gemini",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "9f37c95d249c"
+  },
+  {
+   "key": "month/2026-11-moon/cancer",
+   "file": "month-2026-11-moon-cancer.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Cancer",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "8496be5b1078"
+  },
+  {
+   "key": "month/2026-11-moon/leo",
+   "file": "month-2026-11-moon-leo.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Leo",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "leo"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "71a1fbf63bdb"
+  },
+  {
+   "key": "month/2026-11-moon/virgo",
+   "file": "month-2026-11-moon-virgo.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Virgo",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "458bd9c29f6e"
+  },
+  {
+   "key": "month/2026-11-moon/libra",
+   "file": "month-2026-11-moon-libra.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Libra",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "libra"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "fe3a536f5131"
+  },
+  {
+   "key": "month/2026-11-moon/scorpio",
+   "file": "month-2026-11-moon-scorpio.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Scorpio",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "e57a40880bbf"
+  },
+  {
+   "key": "month/2026-11-moon/sagittarius",
+   "file": "month-2026-11-moon-sagittarius.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Sagittarius",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "4f9cdd18fab9"
+  },
+  {
+   "key": "month/2026-11-moon/capricorn",
+   "file": "month-2026-11-moon-capricorn.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Capricorn",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "5ff74417495b"
+  },
+  {
+   "key": "month/2026-11-moon/aquarius",
+   "file": "month-2026-11-moon-aquarius.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Aquarius",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "8f16b78da702"
+  },
+  {
+   "key": "month/2026-11-moon/pisces",
+   "file": "month-2026-11-moon-pisces.m4a",
+   "title": "November 2026: What the Sky Does to Your Moon Sign: Moon in Pisces",
+   "tags": {
+    "month": "2026-11",
+    "ref": "moon",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "841360ed6471"
+  },
+  {
+   "key": "month/2026-11-sun/aries",
+   "file": "month-2026-11-sun-aries.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Aries",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "aries"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "8083a41d0c55"
+  },
+  {
+   "key": "month/2026-11-sun/taurus",
+   "file": "month-2026-11-sun-taurus.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Taurus",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "1e5cca303e82"
+  },
+  {
+   "key": "month/2026-11-sun/gemini",
+   "file": "month-2026-11-sun-gemini.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Gemini",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "92e44f28429b"
+  },
+  {
+   "key": "month/2026-11-sun/cancer",
+   "file": "month-2026-11-sun-cancer.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Cancer",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "5fb1a8ed0530"
+  },
+  {
+   "key": "month/2026-11-sun/leo",
+   "file": "month-2026-11-sun-leo.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Leo",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "leo"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "524df82636d7"
+  },
+  {
+   "key": "month/2026-11-sun/virgo",
+   "file": "month-2026-11-sun-virgo.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Virgo",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "e93ebc04202c"
+  },
+  {
+   "key": "month/2026-11-sun/libra",
+   "file": "month-2026-11-sun-libra.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Libra",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "libra"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "22ee5b5881f9"
+  },
+  {
+   "key": "month/2026-11-sun/scorpio",
+   "file": "month-2026-11-sun-scorpio.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Scorpio",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "1d55353bee06"
+  },
+  {
+   "key": "month/2026-11-sun/sagittarius",
+   "file": "month-2026-11-sun-sagittarius.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Sagittarius",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "d0975368b2ca"
+  },
+  {
+   "key": "month/2026-11-sun/capricorn",
+   "file": "month-2026-11-sun-capricorn.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Capricorn",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "ea4b9aa8e7f4"
+  },
+  {
+   "key": "month/2026-11-sun/aquarius",
+   "file": "month-2026-11-sun-aquarius.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Aquarius",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "0399f133fbbc"
+  },
+  {
+   "key": "month/2026-11-sun/pisces",
+   "file": "month-2026-11-sun-pisces.m4a",
+   "title": "November 2026: What the Sky Does to Your Sun Sign: Sun in Pisces",
+   "tags": {
+    "month": "2026-11",
+    "ref": "sun",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-11-30",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "fc1649ebb002"
+  },
+  {
+   "key": "month/2026-12-lagna/aries",
+   "file": "month-2026-12-lagna-aries.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Aries rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "aries"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "37855eca61d7"
+  },
+  {
+   "key": "month/2026-12-lagna/taurus",
+   "file": "month-2026-12-lagna-taurus.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Taurus rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "79a3c887302f"
+  },
+  {
+   "key": "month/2026-12-lagna/gemini",
+   "file": "month-2026-12-lagna-gemini.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Gemini rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "17f2ea845665"
+  },
+  {
+   "key": "month/2026-12-lagna/cancer",
+   "file": "month-2026-12-lagna-cancer.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Cancer rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "b47c93b97892"
+  },
+  {
+   "key": "month/2026-12-lagna/leo",
+   "file": "month-2026-12-lagna-leo.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Leo rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "leo"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "7c71c4389f72"
+  },
+  {
+   "key": "month/2026-12-lagna/virgo",
+   "file": "month-2026-12-lagna-virgo.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Virgo rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "2c52d6f3887f"
+  },
+  {
+   "key": "month/2026-12-lagna/libra",
+   "file": "month-2026-12-lagna-libra.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Libra rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "libra"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "d60b0602e528"
+  },
+  {
+   "key": "month/2026-12-lagna/scorpio",
+   "file": "month-2026-12-lagna-scorpio.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Scorpio rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "2a022ac3ec3b"
+  },
+  {
+   "key": "month/2026-12-lagna/sagittarius",
+   "file": "month-2026-12-lagna-sagittarius.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Sagittarius rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "ed00461ab1b2"
+  },
+  {
+   "key": "month/2026-12-lagna/capricorn",
+   "file": "month-2026-12-lagna-capricorn.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Capricorn rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "62054486cc00"
+  },
+  {
+   "key": "month/2026-12-lagna/aquarius",
+   "file": "month-2026-12-lagna-aquarius.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Aquarius rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "44b75aff7a49"
+  },
+  {
+   "key": "month/2026-12-lagna/pisces",
+   "file": "month-2026-12-lagna-pisces.m4a",
+   "title": "December 2026: What the Sky Does to Your Rising Sign: Pisces rising",
+   "tags": {
+    "month": "2026-12",
+    "ref": "lagna",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "77d9516b6bf7"
+  },
+  {
+   "key": "month/2026-12-moon/aries",
+   "file": "month-2026-12-moon-aries.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Aries",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "aries"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "84f56035b5f3"
+  },
+  {
+   "key": "month/2026-12-moon/taurus",
+   "file": "month-2026-12-moon-taurus.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Taurus",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "20d1cc0b9933"
+  },
+  {
+   "key": "month/2026-12-moon/gemini",
+   "file": "month-2026-12-moon-gemini.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Gemini",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "a3c38b4e30dd"
+  },
+  {
+   "key": "month/2026-12-moon/cancer",
+   "file": "month-2026-12-moon-cancer.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Cancer",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "71d5dfbe39ba"
+  },
+  {
+   "key": "month/2026-12-moon/leo",
+   "file": "month-2026-12-moon-leo.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Leo",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "leo"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "b71e314526bf"
+  },
+  {
+   "key": "month/2026-12-moon/virgo",
+   "file": "month-2026-12-moon-virgo.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Virgo",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "ea463fd965e0"
+  },
+  {
+   "key": "month/2026-12-moon/libra",
+   "file": "month-2026-12-moon-libra.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Libra",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "libra"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "d95a4e7039dd"
+  },
+  {
+   "key": "month/2026-12-moon/scorpio",
+   "file": "month-2026-12-moon-scorpio.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Scorpio",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "06086d1e853d"
+  },
+  {
+   "key": "month/2026-12-moon/sagittarius",
+   "file": "month-2026-12-moon-sagittarius.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Sagittarius",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "2cdd16c6fdea"
+  },
+  {
+   "key": "month/2026-12-moon/capricorn",
+   "file": "month-2026-12-moon-capricorn.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Capricorn",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "c0fbeb7c19b7"
+  },
+  {
+   "key": "month/2026-12-moon/aquarius",
+   "file": "month-2026-12-moon-aquarius.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Aquarius",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "638cf20a5fff"
+  },
+  {
+   "key": "month/2026-12-moon/pisces",
+   "file": "month-2026-12-moon-pisces.m4a",
+   "title": "December 2026: What the Sky Does to Your Moon Sign: Moon in Pisces",
+   "tags": {
+    "month": "2026-12",
+    "ref": "moon",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "481be10d2dac"
+  },
+  {
+   "key": "month/2026-12-sun/aries",
+   "file": "month-2026-12-sun-aries.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Aries",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "aries"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "9f37d332d918"
+  },
+  {
+   "key": "month/2026-12-sun/taurus",
+   "file": "month-2026-12-sun-taurus.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Taurus",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "c2dc5fcac3e5"
+  },
+  {
+   "key": "month/2026-12-sun/gemini",
+   "file": "month-2026-12-sun-gemini.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Gemini",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "4ffafcc75d14"
+  },
+  {
+   "key": "month/2026-12-sun/cancer",
+   "file": "month-2026-12-sun-cancer.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Cancer",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "cancer"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "96c2c3869132"
+  },
+  {
+   "key": "month/2026-12-sun/leo",
+   "file": "month-2026-12-sun-leo.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Leo",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "leo"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "f148c106e10a"
+  },
+  {
+   "key": "month/2026-12-sun/virgo",
+   "file": "month-2026-12-sun-virgo.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Virgo",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "dd9e16139767"
+  },
+  {
+   "key": "month/2026-12-sun/libra",
+   "file": "month-2026-12-sun-libra.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Libra",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "libra"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "2c7613424f71"
+  },
+  {
+   "key": "month/2026-12-sun/scorpio",
+   "file": "month-2026-12-sun-scorpio.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Scorpio",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "1b64744e0dc8"
+  },
+  {
+   "key": "month/2026-12-sun/sagittarius",
+   "file": "month-2026-12-sun-sagittarius.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Sagittarius",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "4c4f10a712c4"
+  },
+  {
+   "key": "month/2026-12-sun/capricorn",
+   "file": "month-2026-12-sun-capricorn.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Capricorn",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "capricorn"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "9c25011dc1bb"
+  },
+  {
+   "key": "month/2026-12-sun/aquarius",
+   "file": "month-2026-12-sun-aquarius.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Aquarius",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "207c8f810e13"
+  },
+  {
+   "key": "month/2026-12-sun/pisces",
+   "file": "month-2026-12-sun-pisces.m4a",
+   "title": "December 2026: What the Sky Does to Your Sun Sign: Sun in Pisces",
+   "tags": {
+    "month": "2026-12",
+    "ref": "sun",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-12-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "c9389fb3361a"
+  },
+  {
+   "key": "month/2027-01-lagna/aries",
+   "file": "month-2027-01-lagna-aries.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Aries rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "aries"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "de137253943f"
+  },
+  {
+   "key": "month/2027-01-lagna/taurus",
+   "file": "month-2027-01-lagna-taurus.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Taurus rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "taurus"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "7a76110e1179"
+  },
+  {
+   "key": "month/2027-01-lagna/gemini",
+   "file": "month-2027-01-lagna-gemini.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Gemini rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "gemini"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "bb37b23b74a9"
+  },
+  {
+   "key": "month/2027-01-lagna/cancer",
+   "file": "month-2027-01-lagna-cancer.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Cancer rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "cancer"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "d34095b4b779"
+  },
+  {
+   "key": "month/2027-01-lagna/leo",
+   "file": "month-2027-01-lagna-leo.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Leo rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "leo"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "003994059edd"
+  },
+  {
+   "key": "month/2027-01-lagna/virgo",
+   "file": "month-2027-01-lagna-virgo.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Virgo rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "virgo"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "ce820128743e"
+  },
+  {
+   "key": "month/2027-01-lagna/libra",
+   "file": "month-2027-01-lagna-libra.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Libra rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "libra"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "6ec042dddd9b"
+  },
+  {
+   "key": "month/2027-01-lagna/scorpio",
+   "file": "month-2027-01-lagna-scorpio.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Scorpio rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "scorpio"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "f32e2f82b47e"
+  },
+  {
+   "key": "month/2027-01-lagna/sagittarius",
+   "file": "month-2027-01-lagna-sagittarius.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Sagittarius rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "9340cd8a9391"
+  },
+  {
+   "key": "month/2027-01-lagna/capricorn",
+   "file": "month-2027-01-lagna-capricorn.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Capricorn rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "capricorn"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "909fa136f640"
+  },
+  {
+   "key": "month/2027-01-lagna/aquarius",
+   "file": "month-2027-01-lagna-aquarius.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Aquarius rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "aquarius"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "6bd35ccfbc06"
+  },
+  {
+   "key": "month/2027-01-lagna/pisces",
+   "file": "month-2027-01-lagna-pisces.m4a",
+   "title": "January 2027: What the Sky Does to Your Rising Sign: Pisces rising",
+   "tags": {
+    "month": "2027-01",
+    "ref": "lagna",
+    "sign": "pisces"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "17558b1d7791"
+  },
+  {
+   "key": "month/2027-01-moon/aries",
+   "file": "month-2027-01-moon-aries.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Aries",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "aries"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "6193e4b4ac5c"
+  },
+  {
+   "key": "month/2027-01-moon/taurus",
+   "file": "month-2027-01-moon-taurus.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Taurus",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "taurus"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "a1807ffaf0d6"
+  },
+  {
+   "key": "month/2027-01-moon/gemini",
+   "file": "month-2027-01-moon-gemini.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Gemini",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "gemini"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "703e49bedacd"
+  },
+  {
+   "key": "month/2027-01-moon/cancer",
+   "file": "month-2027-01-moon-cancer.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Cancer",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "cancer"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "2800c42c7606"
+  },
+  {
+   "key": "month/2027-01-moon/leo",
+   "file": "month-2027-01-moon-leo.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Leo",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "leo"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "e3dd7a5ba511"
+  },
+  {
+   "key": "month/2027-01-moon/virgo",
+   "file": "month-2027-01-moon-virgo.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Virgo",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "virgo"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "57b65b3cfe03"
+  },
+  {
+   "key": "month/2027-01-moon/libra",
+   "file": "month-2027-01-moon-libra.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Libra",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "libra"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "ef84cd7b5679"
+  },
+  {
+   "key": "month/2027-01-moon/scorpio",
+   "file": "month-2027-01-moon-scorpio.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Scorpio",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "scorpio"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "0ff5284a4124"
+  },
+  {
+   "key": "month/2027-01-moon/sagittarius",
+   "file": "month-2027-01-moon-sagittarius.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Sagittarius",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "97142a450de0"
+  },
+  {
+   "key": "month/2027-01-moon/capricorn",
+   "file": "month-2027-01-moon-capricorn.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Capricorn",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "capricorn"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "545a7042d781"
+  },
+  {
+   "key": "month/2027-01-moon/aquarius",
+   "file": "month-2027-01-moon-aquarius.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Aquarius",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "aquarius"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "eed3ecad6d7c"
+  },
+  {
+   "key": "month/2027-01-moon/pisces",
+   "file": "month-2027-01-moon-pisces.m4a",
+   "title": "January 2027: What the Sky Does to Your Moon Sign: Moon in Pisces",
+   "tags": {
+    "month": "2027-01",
+    "ref": "moon",
+    "sign": "pisces"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "9031d581b472"
+  },
+  {
+   "key": "month/2027-01-sun/aries",
+   "file": "month-2027-01-sun-aries.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Aries",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "aries"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "87335bb9141c"
+  },
+  {
+   "key": "month/2027-01-sun/taurus",
+   "file": "month-2027-01-sun-taurus.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Taurus",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "taurus"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "23023f9d1cb7"
+  },
+  {
+   "key": "month/2027-01-sun/gemini",
+   "file": "month-2027-01-sun-gemini.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Gemini",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "gemini"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "5fdd3d790f9b"
+  },
+  {
+   "key": "month/2027-01-sun/cancer",
+   "file": "month-2027-01-sun-cancer.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Cancer",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "cancer"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "d0b7572eba5c"
+  },
+  {
+   "key": "month/2027-01-sun/leo",
+   "file": "month-2027-01-sun-leo.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Leo",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "leo"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "22d12da35859"
+  },
+  {
+   "key": "month/2027-01-sun/virgo",
+   "file": "month-2027-01-sun-virgo.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Virgo",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "virgo"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "ddadbe2664cb"
+  },
+  {
+   "key": "month/2027-01-sun/libra",
+   "file": "month-2027-01-sun-libra.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Libra",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "libra"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "dc8b572e45b0"
+  },
+  {
+   "key": "month/2027-01-sun/scorpio",
+   "file": "month-2027-01-sun-scorpio.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Scorpio",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "scorpio"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "d573327c9534"
+  },
+  {
+   "key": "month/2027-01-sun/sagittarius",
+   "file": "month-2027-01-sun-sagittarius.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Sagittarius",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "sagittarius"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "8f694d66df7e"
+  },
+  {
+   "key": "month/2027-01-sun/capricorn",
+   "file": "month-2027-01-sun-capricorn.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Capricorn",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "capricorn"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "f22266a1d53e"
+  },
+  {
+   "key": "month/2027-01-sun/aquarius",
+   "file": "month-2027-01-sun-aquarius.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Aquarius",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "aquarius"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "af_heart",
+   "dur": 28,
+   "text_hash": "88373aace396"
+  },
+  {
+   "key": "month/2027-01-sun/pisces",
+   "file": "month-2027-01-sun-pisces.m4a",
+   "title": "January 2027: What the Sky Does to Your Sun Sign: Sun in Pisces",
+   "tags": {
+    "month": "2027-01",
+    "ref": "sun",
+    "sign": "pisces"
+   },
+   "valid_until": "2027-01-31",
+   "voice": "am_michael",
+   "dur": 28,
+   "text_hash": "917f04b35f69"
+  },
+  {
+   "key": "events/lunar-eclipse_2026-08-28",
+   "file": "events-lunar-eclipse-2026-08-28.m4a",
+   "title": "Lunar eclipse in Aquarius",
+   "tags": {
+    "event": "lunar-eclipse",
+    "date": "2026-08-28",
+    "sign": "aquarius"
+   },
+   "valid_until": "2026-08-29",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "2d48c2620784"
+  },
+  {
+   "key": "events/ingress_2026-09-18",
+   "file": "events-ingress-2026-09-18.m4a",
+   "title": "Mars enters Cancer",
+   "tags": {
+    "event": "ingress",
+    "date": "2026-09-18",
+    "sign": ""
+   },
+   "valid_until": "2026-09-19",
+   "voice": "am_michael",
+   "dur": 36,
+   "text_hash": "dd48b4d6efe9"
+  },
+  {
+   "key": "events/full-moon_2026-09-26",
+   "file": "events-full-moon-2026-09-26.m4a",
+   "title": "Full Moon in Pisces",
+   "tags": {
+    "event": "full-moon",
+    "date": "2026-09-26",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-09-27",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "dfb57c0f8a7c"
+  },
+  {
+   "key": "events/retrograde-start_2026-10-03",
+   "file": "events-retrograde-start-2026-10-03.m4a",
+   "title": "Venus turns retrograde in Libra",
+   "tags": {
+    "event": "retrograde-start",
+    "date": "2026-10-03",
+    "sign": "libra"
+   },
+   "valid_until": "2026-10-04",
+   "voice": "am_michael",
+   "dur": 44,
+   "text_hash": "1852a052c402"
+  },
+  {
+   "key": "events/new-moon_2026-10-10",
+   "file": "events-new-moon-2026-10-10.m4a",
+   "title": "New Moon in Virgo",
+   "tags": {
+    "event": "new-moon",
+    "date": "2026-10-10",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-10-11",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "8ef956811e0e"
+  },
+  {
+   "key": "events/retrograde-start_2026-10-24",
+   "file": "events-retrograde-start-2026-10-24.m4a",
+   "title": "Mercury turns retrograde in Libra",
+   "tags": {
+    "event": "retrograde-start",
+    "date": "2026-10-24",
+    "sign": "libra"
+   },
+   "valid_until": "2026-10-25",
+   "voice": "am_michael",
+   "dur": 44,
+   "text_hash": "1ca4caea5023"
+  },
+  {
+   "key": "events/full-moon_2026-10-26",
+   "file": "events-full-moon-2026-10-26.m4a",
+   "title": "Full Moon in Aries",
+   "tags": {
+    "event": "full-moon",
+    "date": "2026-10-26",
+    "sign": "aries"
+   },
+   "valid_until": "2026-10-27",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "6a2a1cfff8dd"
+  },
+  {
+   "key": "events/ingress_2026-10-31",
+   "file": "events-ingress-2026-10-31.m4a",
+   "title": "Jupiter enters Leo",
+   "tags": {
+    "event": "ingress",
+    "date": "2026-10-31",
+    "sign": ""
+   },
+   "valid_until": "2026-11-01",
+   "voice": "am_michael",
+   "dur": 36,
+   "text_hash": "87cb5b2c4b1d"
+  },
+  {
+   "key": "events/new-moon_2026-11-09",
+   "file": "events-new-moon-2026-11-09.m4a",
+   "title": "New Moon in Libra",
+   "tags": {
+    "event": "new-moon",
+    "date": "2026-11-09",
+    "sign": "libra"
+   },
+   "valid_until": "2026-11-10",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "5661a2290f1f"
+  },
+  {
+   "key": "events/ingress_2026-11-12",
+   "file": "events-ingress-2026-11-12.m4a",
+   "title": "Mars enters Leo",
+   "tags": {
+    "event": "ingress",
+    "date": "2026-11-12",
+    "sign": ""
+   },
+   "valid_until": "2026-11-13",
+   "voice": "am_michael",
+   "dur": 36,
+   "text_hash": "551704453345"
+  },
+  {
+   "key": "events/retrograde-end_2026-11-14",
+   "file": "events-retrograde-end-2026-11-14.m4a",
+   "title": "Venus turns direct in Virgo",
+   "tags": {
+    "event": "retrograde-end",
+    "date": "2026-11-14",
+    "sign": "virgo"
+   },
+   "valid_until": "2026-11-15",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "13fdec764016"
+  },
+  {
+   "key": "events/full-moon_2026-11-24",
+   "file": "events-full-moon-2026-11-24.m4a",
+   "title": "Full Moon in Taurus",
+   "tags": {
+    "event": "full-moon",
+    "date": "2026-11-24",
+    "sign": "taurus"
+   },
+   "valid_until": "2026-11-25",
+   "voice": "am_michael",
+   "dur": 44,
+   "text_hash": "4f6b1da1ae5d"
+  },
+  {
+   "key": "events/ingress_2026-12-05",
+   "file": "events-ingress-2026-12-05.m4a",
+   "title": "Rahu enters Capricorn",
+   "tags": {
+    "event": "ingress",
+    "date": "2026-12-05",
+    "sign": ""
+   },
+   "valid_until": "2026-12-06",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "e4d1722481ae"
+  },
+  {
+   "key": "events/new-moon_2026-12-09",
+   "file": "events-new-moon-2026-12-09.m4a",
+   "title": "New Moon in Scorpio",
+   "tags": {
+    "event": "new-moon",
+    "date": "2026-12-09",
+    "sign": "scorpio"
+   },
+   "valid_until": "2026-12-10",
+   "voice": "am_michael",
+   "dur": 44,
+   "text_hash": "fa42f4a94315"
+  },
+  {
+   "key": "events/retrograde-end_2026-12-11",
+   "file": "events-retrograde-end-2026-12-11.m4a",
+   "title": "Saturn turns direct in Pisces",
+   "tags": {
+    "event": "retrograde-end",
+    "date": "2026-12-11",
+    "sign": "pisces"
+   },
+   "valid_until": "2026-12-12",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "c51252bb183d"
+  },
+  {
+   "key": "events/retrograde-start_2026-12-13",
+   "file": "events-retrograde-start-2026-12-13.m4a",
+   "title": "Jupiter turns retrograde in Leo",
+   "tags": {
+    "event": "retrograde-start",
+    "date": "2026-12-13",
+    "sign": "leo"
+   },
+   "valid_until": "2026-12-14",
+   "voice": "am_michael",
+   "dur": 44,
+   "text_hash": "beab88a3281f"
+  },
+  {
+   "key": "events/full-moon_2026-12-24",
+   "file": "events-full-moon-2026-12-24.m4a",
+   "title": "Full Moon in Gemini",
+   "tags": {
+    "event": "full-moon",
+    "date": "2026-12-24",
+    "sign": "gemini"
+   },
+   "valid_until": "2026-12-25",
+   "voice": "af_heart",
+   "dur": 44,
+   "text_hash": "4fb8d1209cfb"
+  },
+  {
+   "key": "you/ident/0",
+   "file": "you-ident-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "ident"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 28,
+   "text_hash": "da8461633b12"
+  },
+  {
+   "key": "you/ident/1",
+   "file": "you-ident-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "ident"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 28,
+   "text_hash": "dc2a505d1212"
+  },
+  {
+   "key": "you/ident/2",
+   "file": "you-ident-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "ident"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 28,
+   "text_hash": "edc9c6208f37"
+  },
+  {
+   "key": "you/sky_today/0",
+   "file": "you-sky-today-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "sky_today"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "884bf3284ce0"
+  },
+  {
+   "key": "you/sky_today/1",
+   "file": "you-sky-today-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "sky_today"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "30a8cfeb5a42"
+  },
+  {
+   "key": "you/sky_today/2",
+   "file": "you-sky-today-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "sky_today"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "b5b6f0e2574f"
+  },
+  {
+   "key": "you/tithi/0",
+   "file": "you-tithi-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "tithi"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "95b22ddbe8ec"
+  },
+  {
+   "key": "you/tithi/1",
+   "file": "you-tithi-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "tithi"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "ba63fee5dc6a"
+  },
+  {
+   "key": "you/tithi/2",
+   "file": "you-tithi-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "tithi"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "75a14218b1ce"
+  },
+  {
+   "key": "you/lagna/0",
+   "file": "you-lagna-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "lagna"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "c5f5951cc3cc"
+  },
+  {
+   "key": "you/lagna/1",
+   "file": "you-lagna-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "lagna"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "b6c62ef7ee8d"
+  },
+  {
+   "key": "you/lagna/2",
+   "file": "you-lagna-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "lagna"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "cc4115617449"
+  },
+  {
+   "key": "you/month/0",
+   "file": "you-month-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "month"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "196202f9da98"
+  },
+  {
+   "key": "you/month/1",
+   "file": "you-month-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "month"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "e3a9668ed92f"
+  },
+  {
+   "key": "you/month/2",
+   "file": "you-month-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "month"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "9ce565e6bac4"
+  },
+  {
+   "key": "you/transits/0",
+   "file": "you-transits-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "transits"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "27467626b24f"
+  },
+  {
+   "key": "you/transits/1",
+   "file": "you-transits-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "transits"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "fde470b9c26b"
+  },
+  {
+   "key": "you/transits/2",
+   "file": "you-transits-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "transits"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "fa33122b4eaa"
+  },
+  {
+   "key": "you/dasha/0",
+   "file": "you-dasha-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "dasha"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "10318f9c29ec"
+  },
+  {
+   "key": "you/dasha/1",
+   "file": "you-dasha-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "dasha"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "534b2d9eb9a6"
+  },
+  {
+   "key": "you/dasha/2",
+   "file": "you-dasha-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "dasha"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "cbd099ef6269"
+  },
+  {
+   "key": "you/sade_sati/0",
+   "file": "you-sade-sati-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "sade_sati"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "2b38b927841e"
+  },
+  {
+   "key": "you/sade_sati/1",
+   "file": "you-sade-sati-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "sade_sati"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "5ffeebb06bf9"
+  },
+  {
+   "key": "you/sade_sati/2",
+   "file": "you-sade-sati-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "sade_sati"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "405e4230d7b3"
+  },
+  {
+   "key": "you/yogas/0",
+   "file": "you-yogas-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "yogas"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "2590fb8696bc"
+  },
+  {
+   "key": "you/yogas/1",
+   "file": "you-yogas-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "yogas"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "cc1ba5b2d755"
+  },
+  {
+   "key": "you/yogas/2",
+   "file": "you-yogas-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "yogas"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "9775ac446e30"
+  },
+  {
+   "key": "you/planet_house/0",
+   "file": "you-planet-house-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "planet_house"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "a4b317962844"
+  },
+  {
+   "key": "you/planet_house/1",
+   "file": "you-planet-house-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "planet_house"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "f7f003190b6e"
+  },
+  {
+   "key": "you/planet_house/2",
+   "file": "you-planet-house-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "planet_house"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "1c13fb72a47c"
+  },
+  {
+   "key": "you/conjunction/0",
+   "file": "you-conjunction-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "conjunction"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "989222a204bf"
+  },
+  {
+   "key": "you/conjunction/1",
+   "file": "you-conjunction-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "conjunction"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "35a7f5205235"
+  },
+  {
+   "key": "you/conjunction/2",
+   "file": "you-conjunction-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "conjunction"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "5b4405b7813a"
+  },
+  {
+   "key": "you/nakshatra/0",
+   "file": "you-nakshatra-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "nakshatra"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "d836cbf2ac1b"
+  },
+  {
+   "key": "you/nakshatra/1",
+   "file": "you-nakshatra-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "nakshatra"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "d79be2594d5b"
+  },
+  {
+   "key": "you/nakshatra/2",
+   "file": "you-nakshatra-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "nakshatra"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "d140f764f6c1"
+  },
+  {
+   "key": "you/topic/0",
+   "file": "you-topic-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "topic"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "56d1c5875026"
+  },
+  {
+   "key": "you/topic/1",
+   "file": "you-topic-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "topic"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "3828a8e1c609"
+  },
+  {
+   "key": "you/topic/2",
+   "file": "you-topic-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "topic"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "191a379339db"
+  },
+  {
+   "key": "you/year/0",
+   "file": "you-year-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "year"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "7017a02ee4b9"
+  },
+  {
+   "key": "you/year/1",
+   "file": "you-year-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "year"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "03f67320818a"
+  },
+  {
+   "key": "you/year/2",
+   "file": "you-year-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "year"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "e4905d87cf9b"
+  },
+  {
+   "key": "you/release/0",
+   "file": "you-release-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "release"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "a3323964ea37"
+  },
+  {
+   "key": "you/release/1",
+   "file": "you-release-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "release"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "25a36ebf36f2"
+  },
+  {
+   "key": "you/release/2",
+   "file": "you-release-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "release"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "96001ba4e6f4"
+  },
+  {
+   "key": "you/event/0",
+   "file": "you-event-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "event"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "872528e7ec8f"
+  },
+  {
+   "key": "you/event/1",
+   "file": "you-event-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "event"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "4873e94f4870"
+  },
+  {
+   "key": "you/event/2",
+   "file": "you-event-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lead",
+    "rubric": "event"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 36,
+   "text_hash": "b5484ddf0fe5"
+  },
+  {
+   "key": "you/closing/0",
+   "file": "you-closing-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "closing",
+    "rubric": "closing"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 28,
+   "text_hash": "c138a2e9a29f"
+  },
+  {
+   "key": "you/closing/1",
+   "file": "you-closing-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "closing",
+    "rubric": "closing"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 28,
+   "text_hash": "b7a0a774370c"
+  },
+  {
+   "key": "you/closing/2",
+   "file": "you-closing-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "closing",
+    "rubric": "closing"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 28,
+   "text_hash": "0cb3e624dbb4"
+  }
+ ],
+ "skipped": []
+}

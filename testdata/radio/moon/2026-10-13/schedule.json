@@ -1,0 +1,2036 @@
+{
+ "channel": "moon",
+ "date": "2026-10-13",
+ "tz": "Europe/Berlin",
+ "music": {
+  "src": "../ever/music.m4a",
+  "dur": 112.0,
+  "duck": 0.15
+ },
+ "items": [
+  {
+   "start": 0,
+   "dur": 6.4,
+   "kind": "time_check",
+   "id": "tc_00_A_0",
+   "src": "../ever/tc_00_A_0.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 7.4,
+   "dur": 5.2,
+   "kind": "ident",
+   "id": "ident_12",
+   "src": "../ever/ident_12.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 60,
+   "dur": 20.4,
+   "kind": "sky_news_short",
+   "id": "sky_news_short",
+   "src": "seg/sky_news_short.m4a",
+   "title": "Sky news in brief"
+  },
+  {
+   "start": 3600,
+   "dur": 7.4,
+   "kind": "time_check",
+   "id": "tc_01_B_7",
+   "src": "../ever/tc_01_B_7.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 3608.4,
+   "dur": 6.3,
+   "kind": "ident",
+   "id": "ident_4",
+   "src": "../ever/ident_4.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 3660,
+   "dur": 20.4,
+   "kind": "sky_news_short",
+   "id": "sky_news_short",
+   "src": "seg/sky_news_short.m4a",
+   "title": "Sky news in brief"
+  },
+  {
+   "start": 7200,
+   "dur": 6.7,
+   "kind": "time_check",
+   "id": "tc_02_A_8",
+   "src": "../ever/tc_02_A_8.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 7207.7,
+   "dur": 5.0,
+   "kind": "ident",
+   "id": "ident_3",
+   "src": "../ever/ident_3.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 7260,
+   "dur": 20.4,
+   "kind": "sky_news_short",
+   "id": "sky_news_short",
+   "src": "seg/sky_news_short.m4a",
+   "title": "Sky news in brief"
+  },
+  {
+   "start": 10800,
+   "dur": 7.5,
+   "kind": "time_check",
+   "id": "tc_03_B_15",
+   "src": "../ever/tc_03_B_15.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 10808.5,
+   "dur": 5.1,
+   "kind": "ident",
+   "id": "ident_7",
+   "src": "../ever/ident_7.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 10860,
+   "dur": 20.4,
+   "kind": "sky_news_short",
+   "id": "sky_news_short",
+   "src": "seg/sky_news_short.m4a",
+   "title": "Sky news in brief"
+  },
+  {
+   "start": 14400,
+   "dur": 6.6,
+   "kind": "time_check",
+   "id": "tc_04_A_16",
+   "src": "../ever/tc_04_A_16.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 14407.6,
+   "dur": 5.8,
+   "kind": "ident",
+   "id": "ident_6",
+   "src": "../ever/ident_6.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 14460,
+   "dur": 20.4,
+   "kind": "sky_news_short",
+   "id": "sky_news_short",
+   "src": "seg/sky_news_short.m4a",
+   "title": "Sky news in brief"
+  },
+  {
+   "start": 18000,
+   "dur": 7.8,
+   "kind": "time_check",
+   "id": "tc_05_B_22",
+   "src": "../ever/tc_05_B_22.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 18008.8,
+   "dur": 4.2,
+   "kind": "ident",
+   "id": "ident_1",
+   "src": "../ever/ident_1.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 18060,
+   "dur": 20.4,
+   "kind": "sky_news_short",
+   "id": "sky_news_short",
+   "src": "seg/sky_news_short.m4a",
+   "title": "Sky news in brief"
+  },
+  {
+   "start": 21600,
+   "dur": 8.7,
+   "kind": "time_check",
+   "id": "tc_06_A_25",
+   "src": "../ever/tc_06_A_25.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 21609.7,
+   "dur": 5.0,
+   "kind": "ident",
+   "id": "ident_5",
+   "src": "../ever/ident_5.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 21615.7,
+   "dur": 22.6,
+   "kind": "date_greeting",
+   "id": "greet_morning",
+   "src": "seg/greet_morning.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 21660,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 22320,
+   "dur": 78.7,
+   "kind": "banter",
+   "id": "banter_7",
+   "src": "seg/banter_7.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 22500,
+   "dur": 19.7,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_4",
+   "src": "../ever/lead_mahadasha_4.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 22520.7,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 23400,
+   "dur": 5.9,
+   "kind": "half_past",
+   "id": "half_10",
+   "src": "../ever/half_10.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 23460,
+   "dur": 19.3,
+   "kind": "rubric",
+   "id": "word_of_day_0",
+   "src": "../ever/word_of_day_0.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 24000,
+   "dur": 17.5,
+   "kind": "release_lead",
+   "id": "lead_release_4",
+   "src": "../ever/lead_release_4.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 24018.5,
+   "dur": 107.0,
+   "kind": "release",
+   "id": "release_series-2-nakshatras-02-bharani-yaml",
+   "src": "../../rel/series-2-nakshatras-02-bharani-yaml.m4a",
+   "title": "From our channels: Bharani: the star that carries life and death"
+  },
+  {
+   "start": 24600,
+   "dur": 87.4,
+   "kind": "banter",
+   "id": "banter_8",
+   "src": "seg/banter_8.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 25200,
+   "dur": 7.8,
+   "kind": "time_check",
+   "id": "tc_07_B_30",
+   "src": "../ever/tc_07_B_30.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 25208.8,
+   "dur": 5.6,
+   "kind": "ident",
+   "id": "ident_13",
+   "src": "../ever/ident_13.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 25215.4,
+   "dur": 22.6,
+   "kind": "date_greeting",
+   "id": "greet_morning",
+   "src": "seg/greet_morning.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 25260,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 25920,
+   "dur": 15.7,
+   "kind": "rubric",
+   "id": "word_of_day_20",
+   "src": "../ever/word_of_day_20.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 26100,
+   "dur": 20.2,
+   "kind": "tithi_lead",
+   "id": "tithi_lead",
+   "src": "seg/tithi_lead.m4a",
+   "title": "Lunar day"
+  },
+  {
+   "start": 26121.2,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 27000,
+   "dur": 6.8,
+   "kind": "half_past",
+   "id": "half_3",
+   "src": "../ever/half_3.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 27060,
+   "dur": 17.5,
+   "kind": "rubric",
+   "id": "word_of_day_24",
+   "src": "../ever/word_of_day_24.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 28200,
+   "dur": 86.2,
+   "kind": "banter",
+   "id": "banter_3",
+   "src": "seg/banter_3.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 28800,
+   "dur": 6.1,
+   "kind": "time_check",
+   "id": "tc_08_A_32",
+   "src": "../ever/tc_08_A_32.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 28807.1,
+   "dur": 6.0,
+   "kind": "ident",
+   "id": "ident_10",
+   "src": "../ever/ident_10.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 28814.1,
+   "dur": 22.6,
+   "kind": "date_greeting",
+   "id": "greet_morning",
+   "src": "seg/greet_morning.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 28860,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 29520,
+   "dur": 82.4,
+   "kind": "banter",
+   "id": "banter_4",
+   "src": "seg/banter_4.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 29700,
+   "dur": 17.7,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_0",
+   "src": "../ever/lead_mahadasha_0.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 29718.7,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 30600,
+   "dur": 4.7,
+   "kind": "half_past",
+   "id": "half_1",
+   "src": "../ever/half_1.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 30660,
+   "dur": 12.2,
+   "kind": "rubric",
+   "id": "planet_facts_14",
+   "src": "../ever/planet_facts_14.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 31800,
+   "dur": 18.5,
+   "kind": "rubric",
+   "id": "word_of_day_10",
+   "src": "../ever/word_of_day_10.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 32400,
+   "dur": 7.7,
+   "kind": "time_check",
+   "id": "tc_09_B_38",
+   "src": "../ever/tc_09_B_38.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 32408.7,
+   "dur": 5.0,
+   "kind": "ident",
+   "id": "ident_11",
+   "src": "../ever/ident_11.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 32414.7,
+   "dur": 22.6,
+   "kind": "date_greeting",
+   "id": "greet_morning",
+   "src": "seg/greet_morning.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 32460,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 33120,
+   "dur": 122.7,
+   "kind": "banter",
+   "id": "banter_2",
+   "src": "seg/banter_2.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 33300,
+   "dur": 20.7,
+   "kind": "insert_lead",
+   "id": "lead_tithi_4",
+   "src": "../ever/lead_tithi_4.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 33321.7,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 34200,
+   "dur": 5.2,
+   "kind": "half_past",
+   "id": "half_5",
+   "src": "../ever/half_5.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 34260,
+   "dur": 15.2,
+   "kind": "rubric",
+   "id": "word_of_day_2",
+   "src": "../ever/word_of_day_2.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 35400,
+   "dur": 91.7,
+   "kind": "banter",
+   "id": "banter_5",
+   "src": "seg/banter_5.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 36000,
+   "dur": 6.1,
+   "kind": "time_check",
+   "id": "tc_10_A_40",
+   "src": "../ever/tc_10_A_40.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 36007.1,
+   "dur": 4.1,
+   "kind": "ident",
+   "id": "ident_0",
+   "src": "../ever/ident_0.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 36012.2,
+   "dur": 22.6,
+   "kind": "date_greeting",
+   "id": "greet_morning",
+   "src": "seg/greet_morning.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 36060,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 36720,
+   "dur": 9.8,
+   "kind": "rubric",
+   "id": "myth_or_truth_2",
+   "src": "../ever/myth_or_truth_2.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 36900,
+   "dur": 20.1,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_1",
+   "src": "../ever/lead_mahadasha_1.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 36921.1,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 37800,
+   "dur": 7.1,
+   "kind": "half_past",
+   "id": "half_0",
+   "src": "../ever/half_0.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 37860,
+   "dur": 9.2,
+   "kind": "rubric",
+   "id": "myth_or_truth_1",
+   "src": "../ever/myth_or_truth_1.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 39000,
+   "dur": 101.5,
+   "kind": "banter",
+   "id": "banter_1",
+   "src": "seg/banter_1.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 39600,
+   "dur": 7.2,
+   "kind": "time_check",
+   "id": "tc_11_B_47",
+   "src": "../ever/tc_11_B_47.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 39608.2,
+   "dur": 5.0,
+   "kind": "ident",
+   "id": "ident_8",
+   "src": "../ever/ident_8.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 39614.2,
+   "dur": 22.6,
+   "kind": "date_greeting",
+   "id": "greet_morning",
+   "src": "seg/greet_morning.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 39660,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 40320,
+   "dur": 99.3,
+   "kind": "banter",
+   "id": "banter_6",
+   "src": "seg/banter_6.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 40500,
+   "dur": 20.1,
+   "kind": "insert_lead",
+   "id": "lead_tithi_0",
+   "src": "../ever/lead_tithi_0.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 40521.1,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 41400,
+   "dur": 5.1,
+   "kind": "half_past",
+   "id": "half_9",
+   "src": "../ever/half_9.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 41460,
+   "dur": 10.7,
+   "kind": "rubric",
+   "id": "planet_facts_20",
+   "src": "../ever/planet_facts_20.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 42600,
+   "dur": 14.8,
+   "kind": "rubric",
+   "id": "word_of_day_15",
+   "src": "../ever/word_of_day_15.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 43200,
+   "dur": 8.3,
+   "kind": "time_check",
+   "id": "tc_12_A_49",
+   "src": "../ever/tc_12_A_49.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 43209.3,
+   "dur": 6.4,
+   "kind": "ident",
+   "id": "ident_9",
+   "src": "../ever/ident_9.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 43216.7,
+   "dur": 18.0,
+   "kind": "date_greeting",
+   "id": "greet_day",
+   "src": "seg/greet_day.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 43260,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 43920,
+   "dur": 78.7,
+   "kind": "banter",
+   "id": "banter_7",
+   "src": "seg/banter_7.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 44100,
+   "dur": 16.8,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_2",
+   "src": "../ever/lead_mahadasha_2.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 44117.8,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 45000,
+   "dur": 6.5,
+   "kind": "half_past",
+   "id": "half_7",
+   "src": "../ever/half_7.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 45060,
+   "dur": 10.3,
+   "kind": "rubric",
+   "id": "myth_or_truth_5",
+   "src": "../ever/myth_or_truth_5.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 46200,
+   "dur": 87.4,
+   "kind": "banter",
+   "id": "banter_8",
+   "src": "seg/banter_8.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 46800,
+   "dur": 7.1,
+   "kind": "time_check",
+   "id": "tc_13_B_55",
+   "src": "../ever/tc_13_B_55.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 46808.1,
+   "dur": 5.6,
+   "kind": "ident",
+   "id": "ident_2",
+   "src": "../ever/ident_2.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 46814.7,
+   "dur": 18.0,
+   "kind": "date_greeting",
+   "id": "greet_day",
+   "src": "seg/greet_day.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 46860,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 47520,
+   "dur": 8.4,
+   "kind": "rubric",
+   "id": "planet_facts_9",
+   "src": "../ever/planet_facts_9.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 47700,
+   "dur": 15.5,
+   "kind": "insert_lead",
+   "id": "lead_tithi_1",
+   "src": "../ever/lead_tithi_1.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 47716.5,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 48600,
+   "dur": 5.9,
+   "kind": "half_past",
+   "id": "half_11",
+   "src": "../ever/half_11.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 48660,
+   "dur": 14.8,
+   "kind": "rubric",
+   "id": "word_of_day_26",
+   "src": "../ever/word_of_day_26.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 49200,
+   "dur": 17.6,
+   "kind": "release_lead",
+   "id": "lead_release_0",
+   "src": "../ever/lead_release_0.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 49218.6,
+   "dur": 111.9,
+   "kind": "release",
+   "id": "release_series-3-breakdowns-05-sun-saturn-yaml",
+   "src": "../../rel/series-3-breakdowns-05-sun-saturn-yaml.m4a",
+   "title": "From our channels: Sun with Saturn: the father who was never satisfied, and the self-worth it left"
+  },
+  {
+   "start": 49800,
+   "dur": 86.2,
+   "kind": "banter",
+   "id": "banter_3",
+   "src": "seg/banter_3.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 50400,
+   "dur": 6.3,
+   "kind": "time_check",
+   "id": "tc_14_A_56",
+   "src": "../ever/tc_14_A_56.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 50407.3,
+   "dur": 6.0,
+   "kind": "ident",
+   "id": "ident_10",
+   "src": "../ever/ident_10.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 50414.3,
+   "dur": 18.0,
+   "kind": "date_greeting",
+   "id": "greet_day",
+   "src": "seg/greet_day.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 50460,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 51120,
+   "dur": 82.4,
+   "kind": "banter",
+   "id": "banter_4",
+   "src": "seg/banter_4.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 51300,
+   "dur": 18.8,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_3",
+   "src": "../ever/lead_mahadasha_3.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 51319.8,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 52200,
+   "dur": 6.2,
+   "kind": "half_past",
+   "id": "half_2",
+   "src": "../ever/half_2.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 52260,
+   "dur": 9.5,
+   "kind": "rubric",
+   "id": "myth_or_truth_22",
+   "src": "../ever/myth_or_truth_22.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 53400,
+   "dur": 8.1,
+   "kind": "rubric",
+   "id": "myth_or_truth_21",
+   "src": "../ever/myth_or_truth_21.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 54000,
+   "dur": 7.6,
+   "kind": "time_check",
+   "id": "tc_15_B_62",
+   "src": "../ever/tc_15_B_62.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 54008.6,
+   "dur": 5.0,
+   "kind": "ident",
+   "id": "ident_8",
+   "src": "../ever/ident_8.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 54014.6,
+   "dur": 18.0,
+   "kind": "date_greeting",
+   "id": "greet_day",
+   "src": "seg/greet_day.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 54060,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 54720,
+   "dur": 122.7,
+   "kind": "banter",
+   "id": "banter_2",
+   "src": "seg/banter_2.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 54900,
+   "dur": 18.7,
+   "kind": "insert_lead",
+   "id": "lead_tithi_2",
+   "src": "../ever/lead_tithi_2.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 54919.7,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 55800,
+   "dur": 6.0,
+   "kind": "half_past",
+   "id": "half_4",
+   "src": "../ever/half_4.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 55860,
+   "dur": 19.1,
+   "kind": "rubric",
+   "id": "listener_question_10",
+   "src": "../ever/listener_question_10.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 57000,
+   "dur": 91.7,
+   "kind": "banter",
+   "id": "banter_5",
+   "src": "seg/banter_5.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 57600,
+   "dur": 6.4,
+   "kind": "time_check",
+   "id": "tc_16_A_64",
+   "src": "../ever/tc_16_A_64.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 57607.4,
+   "dur": 4.2,
+   "kind": "ident",
+   "id": "ident_1",
+   "src": "../ever/ident_1.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 57612.6,
+   "dur": 18.0,
+   "kind": "date_greeting",
+   "id": "greet_day",
+   "src": "seg/greet_day.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 57660,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 58320,
+   "dur": 9.2,
+   "kind": "rubric",
+   "id": "planet_facts_7",
+   "src": "../ever/planet_facts_7.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 58500,
+   "dur": 19.7,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_4",
+   "src": "../ever/lead_mahadasha_4.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 58520.7,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 59400,
+   "dur": 4.9,
+   "kind": "half_past",
+   "id": "half_6",
+   "src": "../ever/half_6.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 59460,
+   "dur": 10.8,
+   "kind": "rubric",
+   "id": "myth_or_truth_7",
+   "src": "../ever/myth_or_truth_7.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 60600,
+   "dur": 101.5,
+   "kind": "banter",
+   "id": "banter_1",
+   "src": "seg/banter_1.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 61200,
+   "dur": 7.2,
+   "kind": "time_check",
+   "id": "tc_17_B_71",
+   "src": "../ever/tc_17_B_71.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 61208.2,
+   "dur": 6.3,
+   "kind": "ident",
+   "id": "ident_4",
+   "src": "../ever/ident_4.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 61215.5,
+   "dur": 18.0,
+   "kind": "date_greeting",
+   "id": "greet_day",
+   "src": "seg/greet_day.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 61260,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 61920,
+   "dur": 99.3,
+   "kind": "banter",
+   "id": "banter_6",
+   "src": "seg/banter_6.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 62100,
+   "dur": 16.9,
+   "kind": "insert_lead",
+   "id": "lead_tithi_3",
+   "src": "../ever/lead_tithi_3.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 62117.9,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 63000,
+   "dur": 6.8,
+   "kind": "half_past",
+   "id": "half_8",
+   "src": "../ever/half_8.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 63060,
+   "dur": 11.1,
+   "kind": "rubric",
+   "id": "myth_or_truth_8",
+   "src": "../ever/myth_or_truth_8.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 64200,
+   "dur": 16.8,
+   "kind": "rubric",
+   "id": "word_of_day_18",
+   "src": "../ever/word_of_day_18.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 64800,
+   "dur": 6.2,
+   "kind": "time_check",
+   "id": "tc_18_A_72",
+   "src": "../ever/tc_18_A_72.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 64807.2,
+   "dur": 6.3,
+   "kind": "ident",
+   "id": "ident_4",
+   "src": "../ever/ident_4.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 64814.5,
+   "dur": 18.6,
+   "kind": "date_greeting",
+   "id": "greet_evening",
+   "src": "seg/greet_evening.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 64860,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 65520,
+   "dur": 78.7,
+   "kind": "banter",
+   "id": "banter_7",
+   "src": "seg/banter_7.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 65700,
+   "dur": 17.7,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_0",
+   "src": "../ever/lead_mahadasha_0.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 65718.7,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 66600,
+   "dur": 6.0,
+   "kind": "half_past",
+   "id": "half_4",
+   "src": "../ever/half_4.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 66660,
+   "dur": 8.2,
+   "kind": "rubric",
+   "id": "myth_or_truth_14",
+   "src": "../ever/myth_or_truth_14.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 67800,
+   "dur": 87.4,
+   "kind": "banter",
+   "id": "banter_8",
+   "src": "seg/banter_8.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 68400,
+   "dur": 7.1,
+   "kind": "time_check",
+   "id": "tc_19_B_79",
+   "src": "../ever/tc_19_B_79.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 68408.1,
+   "dur": 5.2,
+   "kind": "ident",
+   "id": "ident_12",
+   "src": "../ever/ident_12.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 68414.3,
+   "dur": 18.6,
+   "kind": "date_greeting",
+   "id": "greet_evening",
+   "src": "seg/greet_evening.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 68460,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 69120,
+   "dur": 9.1,
+   "kind": "rubric",
+   "id": "myth_or_truth_18",
+   "src": "../ever/myth_or_truth_18.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 69300,
+   "dur": 20.7,
+   "kind": "insert_lead",
+   "id": "lead_tithi_4",
+   "src": "../ever/lead_tithi_4.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 69321.7,
+   "dur": 27.4,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_3",
+   "src": "seg/insert_tithi_sukla_3.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_3",
+   "durs": {
+    "ar": 37.2,
+    "de": 37.4,
+    "en": 27.4,
+    "es": 34.7,
+    "fr": 37.0,
+    "hi": 37.2,
+    "it": 35.5,
+    "ja": 38.7,
+    "kn": 40.8,
+    "ko": 33.1,
+    "mr": 40.8,
+    "pt": 35.5,
+    "ru": 42.5,
+    "ta": 34.8,
+    "te": 43.3,
+    "zh": 28.4
+   }
+  },
+  {
+   "start": 70200,
+   "dur": 6.0,
+   "kind": "half_past",
+   "id": "half_4",
+   "src": "../ever/half_4.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 70260,
+   "dur": 15.0,
+   "kind": "rubric",
+   "id": "word_of_day_8",
+   "src": "../ever/word_of_day_8.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 71400,
+   "dur": 86.2,
+   "kind": "banter",
+   "id": "banter_3",
+   "src": "seg/banter_3.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 72000,
+   "dur": 8.7,
+   "kind": "time_check",
+   "id": "tc_20_A_81",
+   "src": "../ever/tc_20_A_81.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 72009.7,
+   "dur": 5.6,
+   "kind": "ident",
+   "id": "ident_2",
+   "src": "../ever/ident_2.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 72016.3,
+   "dur": 18.6,
+   "kind": "date_greeting",
+   "id": "greet_evening",
+   "src": "seg/greet_evening.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 72060,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 72720,
+   "dur": 82.4,
+   "kind": "banter",
+   "id": "banter_4",
+   "src": "seg/banter_4.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 72900,
+   "dur": 20.1,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_1",
+   "src": "../ever/lead_mahadasha_1.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 72921.1,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 73800,
+   "dur": 6.8,
+   "kind": "half_past",
+   "id": "half_3",
+   "src": "../ever/half_3.m4a",
+   "title": "Half past",
+   "host": "B"
+  },
+  {
+   "start": 73860,
+   "dur": 13.9,
+   "kind": "rubric",
+   "id": "word_of_day_34",
+   "src": "../ever/word_of_day_34.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 75000,
+   "dur": 8.2,
+   "kind": "rubric",
+   "id": "myth_or_truth_13",
+   "src": "../ever/myth_or_truth_13.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 75600,
+   "dur": 6.9,
+   "kind": "time_check",
+   "id": "tc_21_B_87",
+   "src": "../ever/tc_21_B_87.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 75607.9,
+   "dur": 5.2,
+   "kind": "ident",
+   "id": "ident_12",
+   "src": "../ever/ident_12.m4a",
+   "title": "Station ident",
+   "host": "A"
+  },
+  {
+   "start": 75614.1,
+   "dur": 18.6,
+   "kind": "date_greeting",
+   "id": "greet_evening",
+   "src": "seg/greet_evening.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 75660,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 76320,
+   "dur": 122.7,
+   "kind": "banter",
+   "id": "banter_2",
+   "src": "seg/banter_2.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 76500,
+   "dur": 20.1,
+   "kind": "insert_lead",
+   "id": "lead_tithi_0",
+   "src": "../ever/lead_tithi_0.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 76521.1,
+   "dur": 36.5,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_4",
+   "src": "seg/insert_tithi_sukla_4.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_4",
+   "durs": {
+    "ar": 39.8,
+    "de": 37.0,
+    "en": 36.5,
+    "es": 39.5,
+    "fr": 36.6,
+    "hi": 39.8,
+    "it": 37.4,
+    "ja": 39.9,
+    "kn": 40.8,
+    "ko": 30.5,
+    "mr": 39.5,
+    "pt": 37.7,
+    "ru": 40.1,
+    "ta": 35.4,
+    "te": 39.3,
+    "zh": 30.3
+   }
+  },
+  {
+   "start": 77400,
+   "dur": 4.9,
+   "kind": "half_past",
+   "id": "half_6",
+   "src": "../ever/half_6.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 77460,
+   "dur": 6.9,
+   "kind": "rubric",
+   "id": "planet_facts_12",
+   "src": "../ever/planet_facts_12.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 78600,
+   "dur": 91.7,
+   "kind": "banter",
+   "id": "banter_5",
+   "src": "seg/banter_5.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 79200,
+   "dur": 6.7,
+   "kind": "time_check",
+   "id": "tc_22_A_88",
+   "src": "../ever/tc_22_A_88.m4a",
+   "title": "Time check",
+   "host": "A"
+  },
+  {
+   "start": 79207.7,
+   "dur": 5.0,
+   "kind": "ident",
+   "id": "ident_3",
+   "src": "../ever/ident_3.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 79213.7,
+   "dur": 18.6,
+   "kind": "date_greeting",
+   "id": "greet_evening",
+   "src": "seg/greet_evening.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 79260,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 79920,
+   "dur": 8.2,
+   "kind": "rubric",
+   "id": "planet_facts_2",
+   "src": "../ever/planet_facts_2.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 80100,
+   "dur": 16.8,
+   "kind": "insert_lead",
+   "id": "lead_mahadasha_2",
+   "src": "../ever/lead_mahadasha_2.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 80117.8,
+   "dur": 50.2,
+   "kind": "insert",
+   "id": "insert_mahadasha_Moon",
+   "src": "seg/insert_mahadasha_Moon.m4a",
+   "title": "The Moon period",
+   "cat": "mahadasha_Moon",
+   "durs": {
+    "ar": 56.8,
+    "de": 54.9,
+    "en": 50.2,
+    "es": 51.2,
+    "fr": 53.7,
+    "hi": 53.6,
+    "it": 54.8,
+    "ja": 54.6,
+    "kn": 61.7,
+    "ko": 47.4,
+    "mr": 53.8,
+    "pt": 52.0,
+    "ru": 54.1,
+    "ta": 54.4,
+    "te": 59.5,
+    "zh": 45.8
+   }
+  },
+  {
+   "start": 81000,
+   "dur": 6.0,
+   "kind": "half_past",
+   "id": "half_4",
+   "src": "../ever/half_4.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 81060,
+   "dur": 8.7,
+   "kind": "rubric",
+   "id": "planet_facts_15",
+   "src": "../ever/planet_facts_15.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 82200,
+   "dur": 101.5,
+   "kind": "banter",
+   "id": "banter_1",
+   "src": "seg/banter_1.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 82800,
+   "dur": 7.8,
+   "kind": "time_check",
+   "id": "tc_23_B_94",
+   "src": "../ever/tc_23_B_94.m4a",
+   "title": "Time check",
+   "host": "B"
+  },
+  {
+   "start": 82808.8,
+   "dur": 4.2,
+   "kind": "ident",
+   "id": "ident_1",
+   "src": "../ever/ident_1.m4a",
+   "title": "Station ident",
+   "host": "B"
+  },
+  {
+   "start": 82814.0,
+   "dur": 18.6,
+   "kind": "date_greeting",
+   "id": "greet_evening",
+   "src": "seg/greet_evening.m4a",
+   "title": "Date and greeting"
+  },
+  {
+   "start": 82860,
+   "dur": 88.9,
+   "kind": "sky_news",
+   "id": "sky_news",
+   "src": "seg/sky_news.m4a",
+   "title": "Sky news"
+  },
+  {
+   "start": 83520,
+   "dur": 99.3,
+   "kind": "banter",
+   "id": "banter_6",
+   "src": "seg/banter_6.m4a",
+   "title": "Hosts' talk"
+  },
+  {
+   "start": 83700,
+   "dur": 15.5,
+   "kind": "insert_lead",
+   "id": "lead_tithi_1",
+   "src": "../ever/lead_tithi_1.m4a",
+   "title": "Coming up"
+  },
+  {
+   "start": 83716.5,
+   "dur": 36.5,
+   "kind": "insert",
+   "id": "insert_tithi_sukla_4",
+   "src": "seg/insert_tithi_sukla_4.m4a",
+   "title": "People born on this lunar day",
+   "cat": "tithi_sukla_4",
+   "durs": {
+    "ar": 39.8,
+    "de": 37.0,
+    "en": 36.5,
+    "es": 39.5,
+    "fr": 36.6,
+    "hi": 39.8,
+    "it": 37.4,
+    "ja": 39.9,
+    "kn": 40.8,
+    "ko": 30.5,
+    "mr": 39.5,
+    "pt": 37.7,
+    "ru": 40.1,
+    "ta": 35.4,
+    "te": 39.3,
+    "zh": 30.3
+   }
+  },
+  {
+   "start": 84600,
+   "dur": 6.8,
+   "kind": "half_past",
+   "id": "half_8",
+   "src": "../ever/half_8.m4a",
+   "title": "Half past",
+   "host": "A"
+  },
+  {
+   "start": 84660,
+   "dur": 15.0,
+   "kind": "rubric",
+   "id": "word_of_day_4",
+   "src": "../ever/word_of_day_4.m4a",
+   "title": "Mini-rubric"
+  },
+  {
+   "start": 85800,
+   "dur": 20.6,
+   "kind": "rubric",
+   "id": "listener_question_2",
+   "src": "../ever/listener_question_2.m4a",
+   "title": "Mini-rubric"
+  }
+ ]
+}

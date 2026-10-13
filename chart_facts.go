@@ -476,24 +476,46 @@ type chartFactsRequest struct {
 	At        string `json:"at"`   // optional "YYYY-MM-DD", default today UTC
 }
 
-// chartFactsService holds the site limiter state and the astrolog hooks;
-// tests swap astrolog/sky/now for fakes.
-type chartFactsService struct {
+// chartAccess is the access gate shared by the «Your Chart» endpoints
+// (/api/chart-facts, /api/radio/your-chart), so both behave identically:
+// with an Authorization header the request goes through jwtAuthMiddleware
+// (an invalid token is a 401, never a fallback to the site path) and the app
+// limiters; without one it is a site request — Origin must be astrolytix.com
+// (webChatAllowedOrigins), JSON body, ipLimiter plus per-IP sliding windows
+// (10/hour, 30/day). Each endpoint owns its own windows.
+type chartAccess struct {
+	tag      string // log prefix, e.g. "chart-facts"
+	callType string // api_calls call_type of a served app request
+	model    string // api_calls model of a served app request
+	maxBody  int64
 	mu       sync.Mutex // makes check-all-then-record atomic across windows
 	ipHour   *slidingWindow
 	ipDay    *slidingWindow
+	now      func() time.Time
+}
+
+func newChartAccess(tag, callType, model string, maxBody int64) *chartAccess {
+	return &chartAccess{
+		tag: tag, callType: callType, model: model, maxBody: maxBody,
+		ipHour: newSlidingWindow(chartFactsPerIPHourLimit, time.Hour),
+		ipDay:  newSlidingWindow(chartFactsPerIPDayLimit, 24*time.Hour),
+		now:    time.Now,
+	}
+}
+
+// chartFactsService holds the access gate and the astrolog hooks; tests
+// swap astrolog/sky/now for fakes.
+type chartFactsService struct {
+	*chartAccess
 	astrolog func(args []string) ([]byte, error)
 	sky      func(date time.Time) (map[string]float64, error)
-	now      func() time.Time
 }
 
 func newChartFactsService() *chartFactsService {
 	return &chartFactsService{
-		ipHour:   newSlidingWindow(chartFactsPerIPHourLimit, time.Hour),
-		ipDay:    newSlidingWindow(chartFactsPerIPDayLimit, 24*time.Hour),
-		astrolog: runAstrolog,
-		sky:      siderealLongitudes,
-		now:      time.Now,
+		chartAccess: newChartAccess("chart-facts", "astrolog", "chart_facts", chartFactsMaxBody),
+		astrolog:    runAstrolog,
+		sky:         siderealLongitudes,
 	}
 }
 
@@ -511,18 +533,26 @@ func chartFactsError(w http.ResponseWriter, status int, msg string) {
 	chartFactsJSON(w, status, map[string]string{"error": msg})
 }
 
-// handle serves POST /api/chart-facts. With an Authorization header the
-// request goes through jwtAuthMiddleware (an invalid token is a 401, never a
-// fallback to the site path); without one it is a site request.
+// handle serves POST /api/chart-facts through the shared access gate.
 func (s *chartFactsService) handle(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "" {
-		jwtAuthMiddleware(s.handleApp)(w, r)
-		return
-	}
-	s.handleSite(w, r)
+	var req chartFactsRequest
+	s.chartAccess.handle(w, r, &req, func(w http.ResponseWriter, who string) bool {
+		return s.serve(w, &req, who)
+	})
 }
 
-func (s *chartFactsService) handleApp(w http.ResponseWriter, r *http.Request) {
+// handle decodes the JSON body into req and calls serve once access and
+// limits passed. `who` identifies the caller in logs (device or IP hash);
+// serve returns true when a 200 was written (counted in api_calls for the app).
+func (a *chartAccess) handle(w http.ResponseWriter, r *http.Request, req interface{}, serve func(w http.ResponseWriter, who string) bool) {
+	if r.Header.Get("Authorization") != "" {
+		jwtAuthMiddleware(func(w http.ResponseWriter, r *http.Request) { a.handleApp(w, r, req, serve) })(w, r)
+		return
+	}
+	a.handleSite(w, r, req, serve)
+}
+
+func (a *chartAccess) handleApp(w http.ResponseWriter, r *http.Request, req interface{}, serve func(w http.ResponseWriter, who string) bool) {
 	claims, ok := r.Context().Value("claims").(*JWTClaims)
 	if !ok {
 		chartFactsError(w, http.StatusUnauthorized, "Unauthorized")
@@ -536,21 +566,20 @@ func (s *chartFactsService) handleApp(w http.ResponseWriter, r *http.Request) {
 		chartFactsError(w, http.StatusTooManyRequests, "Rate limit exceeded. Please try again.")
 		return
 	}
-	var req chartFactsRequest
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, chartFactsMaxBody)).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, a.maxBody)).Decode(req); err != nil {
 		chartFactsError(w, http.StatusBadRequest, "Invalid request format")
 		return
 	}
-	if s.serve(w, &req, "device="+claims.DeviceID) {
-		logAPICall(claims.DeviceID, "astrolog", "chart_facts")
+	if serve(w, "device="+claims.DeviceID) {
+		logAPICall(claims.DeviceID, a.callType, a.model)
 	}
 }
 
-func (s *chartFactsService) handleSite(w http.ResponseWriter, r *http.Request) {
+func (a *chartAccess) handleSite(w http.ResponseWriter, r *http.Request, req interface{}, serve func(w http.ResponseWriter, who string) bool) {
 	ip := getClientIP(r)
 	ipHash := webChatIPHash(ip)
 	if !webChatAllowedOrigins[r.Header.Get("Origin")] {
-		log.Printf("chart-facts: reject status=403 reason=origin ip_hash=%s", ipHash)
+		log.Printf("%s: reject status=403 reason=origin ip_hash=%s", a.tag, ipHash)
 		chartFactsError(w, http.StatusForbidden, "origin")
 		return
 	}
@@ -559,13 +588,12 @@ func (s *chartFactsService) handleSite(w http.ResponseWriter, r *http.Request) {
 		chartFactsError(w, http.StatusBadRequest, "Invalid request format")
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, chartFactsMaxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, a.maxBody))
 	if err != nil {
 		chartFactsError(w, http.StatusBadRequest, "Invalid request format")
 		return
 	}
-	var req chartFactsRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	if err := json.Unmarshal(body, req); err != nil {
 		chartFactsError(w, http.StatusBadRequest, "Invalid request format")
 		return
 	}
@@ -573,107 +601,106 @@ func (s *chartFactsService) handleSite(w http.ResponseWriter, r *http.Request) {
 		chartFactsError(w, http.StatusTooManyRequests, "Too many requests from your network. Please wait.")
 		return
 	}
-	if wait := s.allow(s.now(), ip); wait > 0 {
+	if wait := a.allow(a.now(), ip); wait > 0 {
 		secs := int(math.Ceil(wait.Seconds()))
 		if secs < 1 {
 			secs = 1
 		}
-		log.Printf("chart-facts: reject status=429 reason=ip_limit ip_hash=%s retry_after=%d", ipHash, secs)
+		log.Printf("%s: reject status=429 reason=ip_limit ip_hash=%s retry_after=%d", a.tag, ipHash, secs)
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
 		chartFactsJSON(w, http.StatusTooManyRequests, map[string]interface{}{"error": "rate", "retry_after": secs})
 		return
 	}
-	s.serve(w, &req, "ip_hash="+ipHash)
+	serve(w, "ip_hash="+ipHash)
 }
 
 // allow records one site request for ip if both windows have room, else
 // returns the longest wait.
-func (s *chartFactsService) allow(now time.Time, ip string) time.Duration {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	longest := s.ipHour.wait(ip, now)
-	if d := s.ipDay.wait(ip, now); d > longest {
+func (a *chartAccess) allow(now time.Time, ip string) time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	longest := a.ipHour.wait(ip, now)
+	if d := a.ipDay.wait(ip, now); d > longest {
 		longest = d
 	}
 	if longest > 0 {
 		return longest
 	}
-	s.ipHour.add(ip, now)
-	s.ipDay.add(ip, now)
+	a.ipHour.add(ip, now)
+	a.ipDay.add(ip, now)
 	return 0
 }
 
-// serve validates the input, runs astrolog and writes the facts. Returns
-// true when a 200 was written.
+// serve computes the facts and writes them. Returns true when a 200 was
+// written.
 func (s *chartFactsService) serve(w http.ResponseWriter, req *chartFactsRequest, who string) bool {
+	facts, status, msg := s.compute(req, who)
+	if facts == nil {
+		chartFactsError(w, status, msg)
+		return false
+	}
+	chartFactsJSON(w, http.StatusOK, facts)
+	return true
+}
+
+// compute validates the input and runs astrolog. On failure it returns nil
+// with the HTTP status and message to send (shared with the radio builder).
+func (s *chartFactsService) compute(req *chartFactsRequest, who string) (*chartFacts, int, string) {
 	date, err := sanitizeDate(req.Date)
 	if err != nil {
-		chartFactsError(w, http.StatusBadRequest, "Invalid date: "+err.Error())
-		return false
+		return nil, http.StatusBadRequest, "Invalid date: " + err.Error()
 	}
 	timeStr, err := sanitizeTime(req.Time)
 	if err != nil {
-		chartFactsError(w, http.StatusBadRequest, "Invalid time: "+err.Error())
-		return false
+		return nil, http.StatusBadRequest, "Invalid time: " + err.Error()
 	}
 	timezone, err := sanitizeTimezone(req.Timezone)
 	if err != nil {
-		chartFactsError(w, http.StatusBadRequest, "Invalid timezone: "+err.Error())
-		return false
+		return nil, http.StatusBadRequest, "Invalid timezone: " + err.Error()
 	}
 	longitude, err := sanitizeCoordinate(req.Longitude, false)
 	if err != nil {
-		chartFactsError(w, http.StatusBadRequest, "Invalid longitude: "+err.Error())
-		return false
+		return nil, http.StatusBadRequest, "Invalid longitude: " + err.Error()
 	}
 	latitude, err := sanitizeCoordinate(req.Latitude, true)
 	if err != nil {
-		chartFactsError(w, http.StatusBadRequest, "Invalid latitude: "+err.Error())
-		return false
+		return nil, http.StatusBadRequest, "Invalid latitude: " + err.Error()
 	}
 	if req.Lang != "" && !webChatLangRe.MatchString(req.Lang) {
-		chartFactsError(w, http.StatusBadRequest, "Invalid lang")
-		return false
+		return nil, http.StatusBadRequest, "Invalid lang"
 	}
 	birth, err := time.Parse("1 2 2006", date)
 	if err != nil {
-		chartFactsError(w, http.StatusBadRequest, "Invalid date: not a calendar date")
-		return false
+		return nil, http.StatusBadRequest, "Invalid date: not a calendar date"
 	}
 	at := s.now().UTC()
 	at = time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
 	if req.At != "" {
 		at, err = time.Parse("2006-01-02", req.At)
 		if err != nil || at.Year() < 1800 || at.Year() > 2100 {
-			chartFactsError(w, http.StatusBadRequest, "Invalid at: want YYYY-MM-DD")
-			return false
+			return nil, http.StatusBadRequest, "Invalid at: want YYYY-MM-DD"
 		}
 	}
 
 	out, err := s.astrolog(astrologChartArgs(date, timeStr, timezone, longitude, latitude, false))
 	if err != nil {
 		log.Printf("chart-facts: astrolog natal failed %s: %v", who, err)
-		chartFactsError(w, http.StatusBadGateway, "Failed to calculate chart")
-		return false
+		return nil, http.StatusBadGateway, "Failed to calculate chart"
 	}
 	bodies, err := parseNatalChart(string(out))
 	if err != nil {
 		log.Printf("chart-facts: parse natal failed %s: %v", who, err)
-		chartFactsError(w, http.StatusBadGateway, "Failed to calculate chart")
-		return false
+		return nil, http.StatusBadGateway, "Failed to calculate chart"
 	}
 	sky, err := s.sky(at)
 	if err != nil {
 		log.Printf("chart-facts: sky at %s failed %s: %v", at.Format("2006-01-02"), who, err)
-		chartFactsError(w, http.StatusBadGateway, "Failed to calculate chart")
-		return false
+		return nil, http.StatusBadGateway, "Failed to calculate chart"
 	}
 	facts, err := buildChartFacts(bodies, birth, at, sky)
 	if err != nil {
 		log.Printf("chart-facts: build failed %s: %v", who, err)
-		chartFactsError(w, http.StatusBadGateway, "Failed to calculate chart")
-		return false
+		return nil, http.StatusBadGateway, "Failed to calculate chart"
 	}
-	chartFactsJSON(w, http.StatusOK, facts)
-	return true
+	return facts, http.StatusOK, ""
 }
