@@ -17,8 +17,8 @@ package main
 //
 // All positions come from the noon longitudes computeSeoYear already
 // sampled for the ingress scan, so the daily pages cost no extra astrolog
-// runs. Rendered for seoDayLangs only (the languages that bring ~70 % of the
-// calendar's search traffic) to keep the first crawl budget focused.
+// runs. Rendered for seoDayLangs — started as the four languages with most
+// of the calendar's search traffic, every site language since 13.10.2026.
 
 import (
 	"encoding/json"
