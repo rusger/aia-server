@@ -199,8 +199,11 @@ func buildChartFacts(bodies map[string]natalBody, birth, at time.Time, sky map[s
 	}
 	for _, p := range chartFactsPlanetOrder {
 		b := bodies[p]
+		// Nodes are always retrograde by nature; the app (chart_parser.dart) reports them as not
+		// retrograde, and the facts must match the app, so the flag is reserved for the planets.
+		retro := b.speed < 0 && p != "rahu" && p != "ketu"
 		f.Planets = append(f.Planets, chartFactsPlanet{
-			Planet: p, Sign: chartFactsSigns[b.sign], Deg: b.degInSign(), House: b.house, Retro: b.speed < 0,
+			Planet: p, Sign: chartFactsSigns[b.sign], Deg: b.degInSign(), House: b.house, Retro: retro,
 		})
 	}
 	for i, a := range chartFactsPlanetOrder {

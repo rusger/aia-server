@@ -114,7 +114,7 @@ func TestChartFactsFixture(t *testing.T) {
 		"moon":    {Planet: "moon", Sign: "capricorn", Deg: 1.63, House: 7},
 		"mercury": {Planet: "mercury", Sign: "aries", Deg: 14.3, House: 10, Retro: true},
 		"saturn":  {Planet: "saturn", Sign: "capricorn", Deg: 1.52, House: 7, Retro: true},
-		"ketu":    {Planet: "ketu", Sign: "cancer", Deg: 17.62, House: 1, Retro: true},
+		"ketu":    {Planet: "ketu", Sign: "cancer", Deg: 17.62, House: 1, Retro: false}, // nodes: never flagged, as in the app
 	}
 	if len(f.Planets) != 9 {
 		t.Fatalf("planets = %d, want 9", len(f.Planets))
