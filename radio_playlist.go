@@ -54,7 +54,7 @@ const (
 	radioMusicDuck    = 0.15
 	radioMusicXfade   = 8
 	radioNoteGap      = 1.0 // after a yoga name / the language note, before what it announces
-	radioGenreRun     = 3   // at most this many music loops of one genre in a row
+	radioGenreRun     = 3   // at most this many music loops of one genre (or one station) in a row
 	radioMinLoopDur   = 1.0 // shorter loops.json entries are ignored
 	radioCacheMaxKeys = 256 // parsed files kept by mtime; reset beyond this
 )
@@ -90,8 +90,8 @@ var radioSignLord = map[string]string{
 	"sagittarius": "jupiter", "pisces": "jupiter", "capricorn": "saturn", "aquarius": "saturn",
 }
 
-// radioMusicStations: the circle walked when a station has no music or its
-// genre has played radioGenreRun times in a row.
+// radioMusicStations: the circle walked when a station's music cannot play
+// next (see layoutMusic).
 var radioMusicStations = []string{"sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn", "rahu", "ketu"}
 
 // radioHouseTopic: the house holding most planets -> topics/<topic>.
@@ -939,9 +939,12 @@ func radioLoopURL(station, src string) (string, bool) {
 // layoutMusic fills [0, end) with music loops, each played ONCE (dur = the
 // loop length), back to back; the last one may run past the end (the client
 // fades out). A loop comes from the station of the item playing at its
-// start, the station's loops in turn (from a seed offset); when that genre
-// has already played radioGenreRun times in a row, or the station has no
-// music, the next station of radioMusicStations is taken instead.
+// start; a station's loops go round-robin from a seed offset. The next
+// station of radioMusicStations is taken instead when the station has no
+// music, when its next loop already played in the current run of that
+// station (a single music.m4a never plays twice in a row), when the station
+// or the loop's genre has played radioGenreRun times in a row, or when the
+// loop is the one just played.
 func (b *radioBuilder) layoutMusic(pl *radioPlaylist, end float64) {
 	pl.Music = radioMusic{Duck: radioMusicDuck, Xfade: radioMusicXfade, Tracks: []radioMusicTrack{}}
 	if len(pl.Items) == 0 {
@@ -961,7 +964,9 @@ func (b *radioBuilder) layoutMusic(pl *radioPlaylist, end float64) {
 		return loops[i%len(loops)], true
 	}
 	missing := map[string]bool{}
-	lastGenre, run, item := "", 0, 0
+	var lastSrc, lastGenre, lastStation string
+	genreRun, stationRun, item := 0, 0, 0
+	runSrcs := map[string]bool{} // loops played in the current run of lastStation
 	for t := 0.0; t < end; {
 		for item+1 < len(pl.Items) && pl.Items[item+1].Start <= t {
 			item++
@@ -984,27 +989,44 @@ func (b *radioBuilder) layoutMusic(pl *radioPlaylist, end float64) {
 				}
 				continue
 			}
+			if l.Src == lastSrc {
+				continue
+			}
 			if fallback == "" {
 				fallback = s
 			}
-			if l.Genre != lastGenre || run < radioGenreRun {
-				chosen = s
-				break
+			if s == lastStation && (stationRun >= radioGenreRun || runSrcs[l.Src]) {
+				continue
 			}
+			if l.Genre == lastGenre && genreRun >= radioGenreRun {
+				continue
+			}
+			chosen = s
+			break
 		}
-		if chosen == "" { // every station plays the same genre: nothing else to switch to
+		if chosen == "" { // nothing satisfies every rule: any other loop beats a repeat
 			chosen = fallback
 		}
 		if chosen == "" {
-			return // no music anywhere
+			if lastSrc == "" {
+				return // no music anywhere
+			}
+			chosen = lastStation // the only loop there is
 		}
 		l, _ := peek(chosen)
 		cursor[chosen]++
 		if l.Genre == lastGenre {
-			run++
+			genreRun++
 		} else {
-			lastGenre, run = l.Genre, 1
+			lastGenre, genreRun = l.Genre, 1
 		}
+		if chosen == lastStation {
+			stationRun++
+		} else {
+			lastStation, stationRun, runSrcs = chosen, 1, map[string]bool{}
+		}
+		runSrcs[l.Src] = true
+		lastSrc = l.Src
 		pl.Music.Tracks = append(pl.Music.Tracks, radioMusicTrack{From: radioRound(t), Src: l.Src, Dur: l.Dur,
 			Station: chosen, Genre: l.Genre})
 		t += l.Dur

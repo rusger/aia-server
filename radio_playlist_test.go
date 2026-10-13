@@ -87,7 +87,8 @@ func radioStationAt(pl *radioPlaylist, sec float64) string {
 }
 
 // radioCheckMusic: loops back to back from 0 through the end of the speech,
-// each one played once, never more than radioGenreRun of a genre in a row.
+// each one played once: never the same src twice in a row, no src twice in
+// one run of a station, at most radioGenreRun of a genre or a station in a row.
 func radioCheckMusic(t *testing.T, pl *radioPlaylist) {
 	t.Helper()
 	last := pl.Items[len(pl.Items)-1]
@@ -96,14 +97,30 @@ func radioCheckMusic(t *testing.T, pl *radioPlaylist) {
 	if len(tr) == 0 || tr[0].From != 0 {
 		t.Fatalf("music must start at 0: %+v", tr)
 	}
-	run := 0
+	run, stRun := 0, 0
+	runSrcs := map[string]bool{}
 	for i, m := range tr {
 		if m.Dur <= 0 || m.From >= end || m.Genre == "" {
 			t.Errorf("track %d = %+v (end %.1f)", i, m, end)
 		}
+		if i == 0 || m.Station != tr[i-1].Station {
+			stRun, runSrcs = 1, map[string]bool{}
+		} else {
+			stRun++
+		}
+		if runSrcs[m.Src] {
+			t.Errorf("track %d: %s again in the same %s run", i, m.Src, m.Station)
+		}
+		runSrcs[m.Src] = true
+		if stRun > radioGenreRun {
+			t.Errorf("track %d: %d loops of station %s in a row", i, stRun, m.Station)
+		}
 		if i == 0 {
 			run = 1
 			continue
+		}
+		if m.Src == tr[i-1].Src {
+			t.Errorf("track %d: %s twice in a row", i, m.Src)
 		}
 		if p := tr[i-1]; math.Abs(m.From-(p.From+p.Dur)) > 0.11 {
 			t.Errorf("track %d from %.1f, want %.1f (previous plays once)", i, m.From, p.From+p.Dur)
@@ -288,22 +305,17 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	}
 
 	// Music without loops.json: each station's music.m4a (genre = station),
-	// played once, from the station of the item playing at the loop start —
-	// unless that genre has already played radioGenreRun times in a row.
+	// played once; a single loop never repeats, so the stations alternate.
 	radioCheckMusic(t, pl)
 	for i, m := range pl.Music.Tracks {
 		if m.Src != "/radio/"+m.Station+"/ever/music.m4a" || m.Dur != 112 || m.Genre != m.Station {
 			t.Errorf("music track = %+v", m)
 		}
-		want := radioStationAt(pl, m.From)
-		if m.Station == want {
-			continue
+		if i > 0 && m.Station == pl.Music.Tracks[i-1].Station {
+			t.Errorf("music track %d: %s twice in a row", i, m.Station)
 		}
-		forced := i >= radioGenreRun
-		for k := 1; forced && k <= radioGenreRun; k++ {
-			forced = pl.Music.Tracks[i-k].Genre == want
-		}
-		if !forced {
+		// Either the station of the item playing, or (it just played) a later one of the circle.
+		if want := radioStationAt(pl, m.From); m.Station != want && (i == 0 || pl.Music.Tracks[i-1].Station != want) {
 			t.Errorf("music track %d at %.1f: station %s, want %s", i, m.From, m.Station, want)
 		}
 	}
@@ -658,9 +670,10 @@ func TestRadioMusicLoops(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Mars (the station of the day) has only metal; the Moon two genres and an
-	// entry escaping ever/ that must be ignored.
+	// Mars (the station of the day) and Mercury play metal; the Moon two
+	// genres and an entry escaping ever/ that must be ignored.
 	write("mars", `[{"src":"metal-1.m4a","dur":30,"genre":"metal"},{"src":"metal-2.m4a","dur":35,"genre":"metal"}]`)
+	write("mercury", `[{"src":"metal-3.m4a","dur":25,"genre":"metal"}]`)
 	write("moon", `[{"src":"ambient.m4a","dur":40,"genre":"ambient"},{"src":"../../lib/x.m4a","dur":20,"genre":"x"},`+
 		`{"src":"piano.m4a","dur":45,"genre":"piano"}]`)
 	pl := radioBuild(t, dir, fixtureFacts(t), radioDay("2026-10-13"), "en", nil, nil)
@@ -668,11 +681,12 @@ func TestRadioMusicLoops(t *testing.T) {
 	radioCheckMusic(t, pl)
 
 	loopDur := map[string]float64{"/radio/mars/ever/metal-1.m4a": 30, "/radio/mars/ever/metal-2.m4a": 35,
-		"/radio/moon/ever/ambient.m4a": 40, "/radio/moon/ever/piano.m4a": 45}
-	switched, lastMars, lastMoon := 0, "", ""
+		"/radio/mercury/ever/metal-3.m4a": 25, "/radio/moon/ever/ambient.m4a": 40, "/radio/moon/ever/piano.m4a": 45}
+	lastBy := map[string]string{}
+	metalRun, maxMetal := 0, 0
 	for i, m := range pl.Music.Tracks {
 		switch m.Station {
-		case "mars", "moon":
+		case "mars", "moon", "mercury":
 			if loopDur[m.Src] != m.Dur {
 				t.Errorf("track %d = %+v: not a loop of loops.json", i, m)
 			}
@@ -681,32 +695,25 @@ func TestRadioMusicLoops(t *testing.T) {
 				t.Errorf("track %d = %+v: want the station's music.m4a", i, m)
 			}
 		}
-		// Inside a station the loops take turns.
-		if m.Station == "mars" {
-			if m.Src == lastMars {
-				t.Errorf("track %d: mars repeats %s", i, m.Src)
+		// Round-robin inside a station: a two-loop station never picks the same loop twice running.
+		if m.Station == "mars" || m.Station == "moon" {
+			if lastBy[m.Station] == m.Src {
+				t.Errorf("track %d: %s repeats %s", i, m.Station, m.Src)
 			}
-			lastMars = m.Src
+			lastBy[m.Station] = m.Src
 		}
-		if m.Station == "moon" {
-			if m.Src == lastMoon {
-				t.Errorf("track %d: moon repeats %s", i, m.Src)
-			}
-			lastMoon = m.Src
+		if m.Genre == "metal" {
+			metalRun++
+		} else {
+			metalRun = 0
 		}
-		if m.Station != radioStationAt(pl, m.From) {
-			switched++
+		if metalRun > maxMetal {
+			maxMetal = metalRun
 		}
 	}
-	// Three metal loops in a row hand over to the next station of the circle.
-	if switched == 0 {
-		t.Error("the genre rule never switched station")
-	}
-	for i := 0; i+radioGenreRun < len(pl.Music.Tracks); i++ {
-		if pl.Music.Tracks[i].Genre == "metal" && pl.Music.Tracks[i+1].Genre == "metal" && pl.Music.Tracks[i+2].Genre == "metal" &&
-			pl.Music.Tracks[i+3].Station != "mercury" && radioStationAt(pl, pl.Music.Tracks[i+3].From) == "mars" {
-			t.Errorf("after three metal loops: %+v, want mercury (next after mars)", pl.Music.Tracks[i+3])
-		}
+	// mars, mars, mercury = three metal loops, then the genre rule hands over.
+	if maxMetal != radioGenreRun {
+		t.Errorf("longest metal run = %d, want %d", maxMetal, radioGenreRun)
 	}
 	b, err := json.Marshal(pl.Music.Tracks[0])
 	if err != nil {
