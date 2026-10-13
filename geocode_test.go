@@ -11,11 +11,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
+var geocodeLastUpstreamQuery string // what the fake upstream received last
+
 func geocodeTestUpstream(t *testing.T, status int, body string, delay time.Duration) (*httptest.Server, *int32) {
 	t.Helper()
 	var calls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
+		geocodeLastUpstreamQuery = r.URL.RawQuery
 		if r.Header.Get("User-Agent") != geocodeUserAgent {
 			t.Errorf("User-Agent %q", r.Header.Get("User-Agent"))
 		}
@@ -53,6 +56,9 @@ func TestGeocodeSearchProxiesAndCaches(t *testing.T) {
 	}
 	if rec.Header().Get("Content-Type") != "application/json; charset=utf-8" {
 		t.Errorf("content type %q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(geocodeLastUpstreamQuery, "limit=10") || !strings.Contains(geocodeLastUpstreamQuery, "accept-language=zh") {
+		t.Errorf("limit=50 must be clamped to 10 and the language forwarded, upstream got %q", geocodeLastUpstreamQuery)
 	}
 	rec = do("上海")
 	if rec.Code != 200 || rec.Header().Get("X-Geocode-Cache") != "hit" {
