@@ -9755,6 +9755,10 @@ func main() {
     // Analytics endpoints (public - no JWT required for event tracking)
     router.HandleFunc("/api/analytics/event", trackAnalyticsEvent).Methods("POST")
     router.HandleFunc("/api/analytics/events", trackAnalyticsEvents).Methods("POST")
+    // City search for the birth place (geocode.go): public — onboarding runs
+    // before login — proxied so it works where openstreetmap.org does not.
+    router.HandleFunc("/api/geocode/search", geocodeSearchHandler).Methods("GET")
+    router.HandleFunc("/api/geocode/reverse", geocodeReverseHandler).Methods("GET")
 
     // Apple App Store Server Notifications V2 (public — authenticated by Apple's
     // JWS signature, verified against the pinned Apple Root CA, not by JWT)
