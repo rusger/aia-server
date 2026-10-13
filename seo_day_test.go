@@ -163,9 +163,9 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 16 hubs + 16×8 year pages + 4 langs × (92 days 10-01..12-31: the sign-facts
+	// 16 hubs + 16×8 year pages + day langs × (92 days 10-01..12-31: the sign-facts
 	// window Oct..Jan reaches past today+60, Jan 2027 has no data + 3 months + today) + 16 json + root + sitemap
-	if want := 16 + 128 + 4*(92+3+1) + 16 + 2; n != want {
+	if want := 16 + 128 + len(seoDayLangs)*(92+3+1) + 16 + 2; n != want {
 		t.Fatalf("%d files, want %d", n, want)
 	}
 	page, err := os.ReadFile(filepath.Join(out, "ru", "2026", "10", "12.html"))
@@ -196,8 +196,13 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	for _, m := range hreflang {
 		got[m[1]] = true
 	}
-	if len(got) != len(seoDayLangs)+1 || !got["x-default"] || got["de"] {
+	if len(got) != len(seoDayLangs)+1 || !got["x-default"] {
 		t.Errorf("day page hreflang set = %v, want seoDayLangs + x-default", got)
+	}
+	for _, l := range seoDayLangs {
+		if !got[l] {
+			t.Errorf("day page hreflang lacks %s", l)
+		}
 	}
 	// First and last rendered days have no dangling neighbour link.
 	first, _ := os.ReadFile(filepath.Join(out, "en", "2026", "10", "01.html"))
@@ -210,8 +215,10 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "en", "2027", "01", "01.html")); err == nil {
 		t.Error("no data for 2027 → no page")
 	}
-	if _, err := os.Stat(filepath.Join(out, "de", "2026", "10", "12.html")); err == nil {
-		t.Error("day pages are rendered for seoDayLangs only")
+	for _, l := range seoDayLangs {
+		if _, err := os.Stat(filepath.Join(out, l, "2026", "10", "12.html")); err != nil {
+			t.Errorf("day page missing for %s", l)
+		}
 	}
 	// Today page is its own canonical and links the dated page; the hub links today.
 	today, _ := os.ReadFile(filepath.Join(out, "en", "today", "index.html"))
@@ -224,9 +231,11 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	if !strings.Contains(string(hub), `href="https://astrolytix.com/astro/en/today/"`) || !strings.Contains(string(hub), `href="https://astrolytix.com/astro/en/2026/10/"`) {
 		t.Error("language hub must link today and the current month")
 	}
-	deHub, _ := os.ReadFile(filepath.Join(out, "de", "index.html"))
-	if strings.Contains(string(deHub), "/today/") {
-		t.Error("languages without day pages must not link them")
+	for _, l := range seoLangs {
+		hub, _ := os.ReadFile(filepath.Join(out, l, "index.html"))
+		if hasLang(seoDayLangs, l) != strings.Contains(string(hub), "/today/") {
+			t.Errorf("%s hub links today = %v, want %v", l, !hasLang(seoDayLangs, l), hasLang(seoDayLangs, l))
+		}
 	}
 	// Year pages keep their 'other years' line and full hreflang set.
 	yr, _ := os.ReadFile(filepath.Join(out, "en", "2026", "transits.html"))

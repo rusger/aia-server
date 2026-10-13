@@ -30,7 +30,9 @@ import (
 	"time"
 )
 
-var seoDayLangs = []string{"en", "zh", "ru", "es"}
+// Started as en/zh/ru/es (70 % of the calendar's search traffic) to spare
+// the crawl budget; owner 13.10.2026: every site language.
+var seoDayLangs = seoLangs
 
 // First day that gets a page; nothing before the launch is rendered, and
 // pages already written are never deleted (an indexed URL must keep living).

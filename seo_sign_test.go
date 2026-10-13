@@ -56,8 +56,8 @@ func TestComputeSignFacts(t *testing.T) {
 	if f.Names["ru"].Sign != "Весы" || f.Names["ru"].Signs["Aries"] != "Овен" || f.Names["ru"].Planets["Jupiter"] != "Юпитер" || f.Names["en"].Month != "October" {
 		t.Errorf("names: %+v", f.Names["ru"])
 	}
-	if _, ok := f.Names["de"]; ok {
-		t.Error("names only for seoDayLangs")
+	if len(f.Names) != len(seoDayLangs) {
+		t.Errorf("names for %d languages, want %d (seoDayLangs)", len(f.Names), len(seoDayLangs))
 	}
 }
 
