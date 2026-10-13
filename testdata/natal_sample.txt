@@ -1,0 +1,24 @@
+Astrolog 7.80 chart for Tue May 15, 1990 10:30am (ST Zone 2E)  13:24E 52:31N
+Body  Locat. Ret. Lati. Rul.      House  Rul. Veloc.    Whole Houses
+
+Sun :  0Tau31   - 0:00' (-) [11th house] [d] +0.964  -  House cusp  1:  0Can00
+Moon:  1Cap38   - 1:17' (d) [ 7th house] [-] +12.32  -  House cusp  2:  0Leo00
+Merc: 14Ari18 R - 2:29' (-) [10th house] [-] -0.131  -  House cusp  3:  0Vir00
+Venu: 18Pis55   - 1:47' (X) [ 9th house] [-] +1.140  -  House cusp  4:  0Lib00
+Mars: 24Aqu29   - 1:43' (-) [ 8th house] [R] +0.742  -  House cusp  5:  0Sco00
+Jupi: 15Gem47   + 0:08' (d) [12th house] [R] +0.188  -  House cusp  6:  0Sag00
+Satu:  1Cap31 R + 0:09' (R) [ 7th house] [X] -0.016  -  House cusp  7:  0Cap00
+Chir:  0Ari00   + 0:00' (-) [10th house] [f] +0.000  -  House cusp  8:  0Aqu00
+Cere:  0Ari00   + 0:00' (-) [10th house] [-] +0.000  -  House cusp  9:  0Pis00
+Pall:  0Ari00   + 0:00' (-) [10th house] [X] +0.000  -  House cusp 10:  0Ari00
+Juno:  0Ari00   + 0:00' (d) [10th house] [-] +0.000  -  House cusp 11:  0Tau00
+Vest:  0Ari00   + 0:00' (-) [10th house] [-] +0.000  -  House cusp 12:  0Gem00
+Nort: 17Cap37 R + 0:00' (-) [ 7th house] [-] -0.052
+Lili: 27Lib44   - 5:03' (-) [ 4th house] [-] +0.111     Car Fix Mut TOT   +:11
+Fort: 14Pis32   + 0:00' (R) [ 9th house] [X] +264.1  Fir  6   0   1   7   -: 8
+Vert:  1Sag07   + 0:00' (-) [ 6th house] [f] +320.6  Ear  3   1   0   4   M:15
+East: 18Gem53   + 0:00' (-) [12th house] [-] +334.1  Air  1   1   2   4   N: 2
+Asce: 13Can25   + 0:00'     [ 1st house]     +252.7  Wat  1   0   3   4   A: 9
+Midh: 21Pis10   + 0:00'     [ 9th house]     +389.3  TOT 11   2   6  19   D: 8
+                                                                          <:10
+SwissEph file 'seas_18.se1' not found in PATH '.;:./;:~/astrolog/'
