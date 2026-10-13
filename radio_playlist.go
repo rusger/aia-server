@@ -253,6 +253,7 @@ type radioItem struct {
 	Src    string             `json:"src"`
 	Cat    string             `json:"cat,omitempty"`
 	Durs   map[string]float64 `json:"durs,omitempty"`
+	Srcs   map[string]string  `json:"srcs,omitempty"` // per-language audio URL (catalog inserts; the site/app prefer it)
 	Rubric string             `json:"rubric"`
 
 	span    float64 // time on the timeline (a catalog insert in the listener's language may be longer than en)
@@ -387,15 +388,20 @@ func (b *radioBuilder) catItem(slug, title, rubric, station string) (radioItem, 
 		return radioItem{}, false
 	}
 	durs := map[string]float64{}
+	srcs := map[string]string{} // 13.10.2026: /radio/cat/<lang>/<slug>.m4a exists only for the few slugs the live
+	// stations happened to encode (no yogas); the TTS cache has every voice, so hand out those URLs per language
 	for l, e := range langs {
 		durs[l] = e.Dur
+		if radioCatKeyRe.MatchString(e.Key) {
+			srcs[l] = "/api/radio/cat/" + e.Key
+		}
 	}
 	span := en.Dur
 	if d, ok := langs[b.in.lang]; ok && d.Dur > span {
 		span = d.Dur
 	}
 	return radioItem{Dur: en.Dur, span: span, Kind: "insert", ID: "insert_" + slug, Title: title,
-		Src: "/api/radio/cat/" + en.Key, Cat: slug, Durs: durs, Rubric: rubric, station: station}, true
+		Src: "/api/radio/cat/" + en.Key, Cat: slug, Durs: durs, Srcs: srcs, Rubric: rubric, station: station}, true
 }
 
 // add appends a rubric: its lead (when rubric != "") and the topic items.

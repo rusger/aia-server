@@ -182,7 +182,9 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	tithi := radioByRubric(pl, rubTithi)[1]
 	if tithi.Kind != "insert" || tithi.Cat != "tithi_sukla_9" ||
 		tithi.Src != "/api/radio/cat/2c12529fd7f091c882ab646b099def116a1d6b1b" || tithi.Dur != 29.16 ||
-		tithi.Durs["ru"] != 30.12 || len(tithi.Durs) != 16 {
+		tithi.Durs["ru"] != 30.12 || len(tithi.Durs) != 16 ||
+		len(tithi.Srcs) != 16 || tithi.Srcs["ru"] == "" || tithi.Srcs["ru"] == tithi.Src ||
+		!strings.HasPrefix(tithi.Srcs["ru"], "/api/radio/cat/") {
 		t.Errorf("tithi insert = %+v", tithi)
 	}
 	// Station sources are absolute under the station day folder.
