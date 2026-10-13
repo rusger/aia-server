@@ -162,9 +162,10 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubTithi, "insert_tithi_sukla_9")
 	check(rubLagna, "signs/04-cancer")
 	check(rubMonth, "month/2026-10-moon/capricorn", "month/2026-10-sun/taurus", "month/2026-10-lagna/cancer")
-	// Lens: one per ref, the later valid_until (q4) wins over the current one.
-	check(rubTransits, "transit-lens-q4/lagna/04-cancer", "transit-lens-q4/sun/02-taurus",
-		"transit-lens-q4/moon/10-capricorn", "transit-combo/10-saturn-for-capricorn-moon",
+	// Lens: one per ref, the one expiring soonest wins — on 13.10 the current
+	// lens (valid to 30.10), not q4; q4 takes over from 2026-11-01 (tested below).
+	check(rubTransits, "transit-lens/lagna/04-cancer", "transit-lens/sun/02-taurus",
+		"transit-lens/moon/10-capricorn", "transit-combo/10-saturn-for-capricorn-moon",
 		"graha-watch/01-saturn", "graha-watch/02-jupiter", "graha-watch/03-rahu-ketu")
 	check(rubDasha, "insert_mahadasha_Rahu", "dashas/08-rahu")
 	check(rubYogas, "insert_yoga_Sasha Yoga", "insert_yoga_Adhi Yoga")

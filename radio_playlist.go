@@ -552,8 +552,9 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 		b.add(rubMonth, items)
 	}
 
-	// 5. Transits: one lens per ref (current and q4 never both — the later
-	// valid_until wins), Saturn combo for the Moon sign, every graha-watch.
+	// 5. Transits: one lens per ref (current and q4 never both — the one
+	// expiring SOONEST wins: the current quarter's text until it runs out,
+	// then the next quarter's), Saturn combo for the Moon sign, every graha-watch.
 	{
 		var items []radioItem
 		for _, ref := range []string{"lagna", "sun", "moon"} {
@@ -561,7 +562,7 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 			for _, t := range b.find(func(t *radioLibTrack) bool {
 				return t.Tags.Transit == "lens" && t.Tags.Ref == ref && t.Tags.Sign == refSign[ref]
 			}) {
-				if best == nil || (best.ValidUntil != nil && (t.ValidUntil == nil || *t.ValidUntil > *best.ValidUntil)) {
+				if best == nil || (t.ValidUntil != nil && (best.ValidUntil == nil || *t.ValidUntil < *best.ValidUntil)) {
 					best = t
 				}
 			}
