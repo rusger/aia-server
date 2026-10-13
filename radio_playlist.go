@@ -90,8 +90,8 @@ var radioSignLord = map[string]string{
 	"sagittarius": "jupiter", "pisces": "jupiter", "capricorn": "saturn", "aquarius": "saturn",
 }
 
-// radioMusicStations: the circle walked when a station's music cannot play
-// next (see layoutMusic).
+// radioMusicStations: the stations whose loops make up the music deck (see
+// musicDeck).
 var radioMusicStations = []string{"sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn", "rahu", "ketu"}
 
 // radioHouseTopic: the house holding most planets -> topics/<topic>.
@@ -406,13 +406,17 @@ func (b *radioBuilder) find(pred func(t *radioLibTrack) bool) []*radioLibTrack {
 	return out
 }
 
-// catItem is a catalog insert: src is the en audio, durs every language.
+// catItem is a catalog insert: src is the en audio (the listener's language
+// when the slug has no en voice), durs every language.
 func (b *radioBuilder) catItem(slug, title, rubric, station string) (radioItem, bool) {
 	langs, ok := b.in.cat.slugs[slug]
 	if !ok {
 		return radioItem{}, false
 	}
 	en, ok := langs["en"]
+	if !ok {
+		en, ok = langs[b.in.lang]
+	}
 	if !ok || !radioCatKeyRe.MatchString(en.Key) {
 		return radioItem{}, false
 	}
@@ -433,15 +437,30 @@ func (b *radioBuilder) catItem(slug, title, rubric, station string) (radioItem, 
 		Src: "/api/radio/cat/" + en.Key, Cat: slug, Durs: durs, Srcs: srcs, Rubric: rubric, station: station}, true
 }
 
-// yogaName returns the active `yoga-name/*` track announcing yoga y.
-func (b *radioBuilder) yogaName(y string) *radioLibTrack {
+// yogaName announces yoga y before its insert: the catalog slug
+// yoganame_<y> when it is voiced in the listener's language, else the
+// active English `yoga-name/*` library track.
+func (b *radioBuilder) yogaName(y, station string) (radioItem, bool) {
+	slug := "yoganame_" + y
+	if e, ok := b.in.cat.slugs[slug][b.in.lang]; ok && radioCatKeyRe.MatchString(e.Key) {
+		if it, ok := b.catItem(slug, y, rubYogas, station); ok {
+			it.pause = radioNoteGap
+			return it, true
+		}
+	}
 	for i := range b.in.lib.Tracks {
 		t := &b.in.lib.Tracks[i]
 		if t.Tags.You == "yoga_name" && t.Tags.Yoga == y && b.active(t) {
-			return t
+			it, ok := b.libItem(t, "yoga_name", rubYogas, station)
+			if it.Title == "" {
+				it.Title = y
+			}
+			it.pause = radioNoteGap
+			return it, ok
 		}
 	}
-	return nil
+	log.Printf("radio-you: no yoga-name track for %q (%s)", y, b.in.lang)
+	return radioItem{}, false
 }
 
 // langNote is the «what follows is in your language» line, played after the
@@ -689,13 +708,7 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 			}
 			seen[y] = true
 			if it, ok := b.catItem("yoga_"+y, y, rubYogas, day); ok {
-				if nt := b.yogaName(y); nt == nil {
-					log.Printf("radio-you: no yoga-name track for %q", y)
-				} else if ni, ok := b.libItem(nt, "yoga_name", rubYogas, day); ok {
-					if ni.Title == "" {
-						ni.Title = y
-					}
-					ni.pause = radioNoteGap
+				if ni, ok := b.yogaName(y, day); ok {
 					items = append(items, ni)
 				}
 				items = append(items, it)
@@ -936,33 +949,68 @@ func radioLoopURL(station, src string) (string, bool) {
 	return u, strings.HasPrefix(u, base)
 }
 
+// radioDeckLoop is one loop of the music deck.
+type radioDeckLoop struct {
+	radioLoop
+	station string
+	round   int // the loop's place among its station's loops in this pass
+}
+
+// musicDeck is one pass of the deck: every loop of every station of
+// radioMusicStations exactly once, in a seeded order. A station's loops are
+// shuffled (once for all passes, so they take turns) and dealt into rounds
+// (round k = the k-th loop of each station that has one), and the stations
+// are shuffled inside each round anew every pass, so all stations with music
+// sound before any of them plays its second loop.
+func (b *radioBuilder) musicDeck(pass int) []radioDeckLoop {
+	shuffle := func(n int, salt string) []int {
+		p := make([]int, n)
+		for i := range p {
+			p[i] = i
+		}
+		for i := n - 1; i > 0; i-- {
+			j := b.pick(i+1, fmt.Sprintf("%s/%d", salt, i))
+			p[i], p[j] = p[j], p[i]
+		}
+		return p
+	}
+	var rounds [][]radioDeckLoop
+	for _, st := range radioMusicStations {
+		loops := b.stationLoops(st)
+		for k, i := range shuffle(len(loops), "deck/"+st) { // the same in every pass: a station's loops take turns
+			if k == len(rounds) {
+				rounds = append(rounds, nil)
+			}
+			rounds[k] = append(rounds[k], radioDeckLoop{radioLoop: loops[i], station: st, round: k})
+		}
+	}
+	var deck []radioDeckLoop
+	for k, r := range rounds {
+		for _, i := range shuffle(len(r), fmt.Sprintf("deck/%d/round/%d", pass, k)) {
+			deck = append(deck, r[i])
+		}
+	}
+	return deck
+}
+
 // layoutMusic fills [0, end) with music loops, each played ONCE (dur = the
 // loop length), back to back; the last one may run past the end (the client
-// fades out). A loop comes from the station of the item playing at its
-// start; a station's loops go round-robin from a seed offset. The next
-// station of radioMusicStations is taken instead when the station has no
-// music, when its next loop already played in the current run of that
-// station (a single music.m4a never plays twice in a row), when the station
-// or the loop's genre has played radioGenreRun times in a row, or when the
-// loop is the one just played.
+// fades out). The loops come from the deck (musicDeck): a loop plays once per
+// pass and the next pass starts only when every loop has played. Among the
+// loops not yet played in the pass, the earliest round goes first; inside
+// it the station of the item playing at the loop's start goes first, then
+// deck order. A candidate is skipped when it is the loop just played, when
+// it already played in the current run of its station, or when its station
+// or its genre has played radioGenreRun times in a row (all of this holds
+// across the seam of two passes too); when every unplayed loop breaks a run
+// rule, the first one that is not the loop just played is taken.
 func (b *radioBuilder) layoutMusic(pl *radioPlaylist, end float64) {
 	pl.Music = radioMusic{Duck: radioMusicDuck, Xfade: radioMusicXfade, Tracks: []radioMusicTrack{}}
 	if len(pl.Items) == 0 {
 		return
 	}
-	cursor := map[string]int{}
-	peek := func(st string) (radioLoop, bool) {
-		loops := b.stationLoops(st)
-		if len(loops) == 0 {
-			return radioLoop{}, false
-		}
-		i, ok := cursor[st]
-		if !ok {
-			i = b.pick(len(loops), "loops/"+st)
-			cursor[st] = i
-		}
-		return loops[i%len(loops)], true
-	}
+	pass := 0
+	deck := b.musicDeck(pass)
 	missing := map[string]bool{}
 	var lastSrc, lastGenre, lastStation string
 	genreRun, stationRun, item := 0, 0, 0
@@ -972,63 +1020,68 @@ func (b *radioBuilder) layoutMusic(pl *radioPlaylist, end float64) {
 			item++
 		}
 		st := pl.Items[item].station
-		order := []string{st}
-		for i, s := range radioMusicStations {
-			if s == st {
-				order = append(append(order, radioMusicStations[i+1:]...), radioMusicStations[:i]...)
-				break
-			}
+		if len(b.stationLoops(st)) == 0 && !missing[st] {
+			missing[st] = true
+			pl.missingMusic = append(pl.missingMusic, st)
 		}
-		chosen, fallback := "", ""
-		for _, s := range order {
-			l, ok := peek(s)
-			if !ok {
-				if s == st && !missing[st] {
-					missing[st] = true
-					pl.missingMusic = append(pl.missingMusic, st)
-				}
-				continue
+		if len(deck) == 0 && lastSrc == "" {
+			return // no music anywhere
+		}
+		if len(deck) == 0 {
+			pass++
+			deck = b.musicDeck(pass)
+		}
+		order := make([]int, len(deck))
+		for i := range order {
+			order[i] = i
+		}
+		sort.SliceStable(order, func(x, y int) bool {
+			a, c := deck[order[x]], deck[order[y]]
+			if a.round != c.round {
+				return a.round < c.round
 			}
+			return a.station == st && c.station != st
+		})
+		chosen, fallback := -1, -1
+		for _, i := range order {
+			l := deck[i]
 			if l.Src == lastSrc {
 				continue
 			}
-			if fallback == "" {
-				fallback = s
+			if fallback < 0 {
+				fallback = i
 			}
-			if s == lastStation && (stationRun >= radioGenreRun || runSrcs[l.Src]) {
+			if l.station == lastStation && (stationRun >= radioGenreRun || runSrcs[l.Src]) {
 				continue
 			}
 			if l.Genre == lastGenre && genreRun >= radioGenreRun {
 				continue
 			}
-			chosen = s
+			chosen = i
 			break
 		}
-		if chosen == "" { // nothing satisfies every rule: any other loop beats a repeat
+		if chosen < 0 {
 			chosen = fallback
 		}
-		if chosen == "" {
-			if lastSrc == "" {
-				return // no music anywhere
-			}
-			chosen = lastStation // the only loop there is
+		if chosen < 0 {
+			chosen = 0 // the only loop there is
 		}
-		l, _ := peek(chosen)
-		cursor[chosen]++
+		l := deck[chosen]
+		deck = append(deck[:chosen:chosen], deck[chosen+1:]...)
 		if l.Genre == lastGenre {
 			genreRun++
 		} else {
 			lastGenre, genreRun = l.Genre, 1
 		}
-		if chosen == lastStation {
+		if l.station == lastStation {
 			stationRun++
 		} else {
-			lastStation, stationRun, runSrcs = chosen, 1, map[string]bool{}
+			lastStation, stationRun, runSrcs = l.station, 1, map[string]bool{}
 		}
 		runSrcs[l.Src] = true
 		lastSrc = l.Src
 		pl.Music.Tracks = append(pl.Music.Tracks, radioMusicTrack{From: radioRound(t), Src: l.Src, Dur: l.Dur,
-			Station: chosen, Genre: l.Genre})
+			Station: l.station, Genre: l.Genre})
 		t += l.Dur
 	}
 }

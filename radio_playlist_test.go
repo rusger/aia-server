@@ -139,6 +139,22 @@ func radioCheckMusic(t *testing.T, pl *radioPlaylist) {
 	}
 }
 
+// radioCheckDeck: the tracks are passes of n loops (the whole deck), every
+// loop exactly once per pass.
+func radioCheckDeck(t *testing.T, pl *radioPlaylist, n int) {
+	t.Helper()
+	tr := pl.Music.Tracks
+	for p := 0; p < len(tr); p += n {
+		seen := map[string]bool{}
+		for i := p; i < p+n && i < len(tr); i++ {
+			if seen[tr[i].Src] {
+				t.Errorf("track %d: %s twice in deck pass %d", i, tr[i].Src, p/n)
+			}
+			seen[tr[i].Src] = true
+		}
+	}
+}
+
 // radioNoteIDs: radioIDs with the lang_note variants folded to "lang_note".
 func radioNoteIDs(items []radioItem) []string {
 	out := radioIDs(items)
@@ -305,19 +321,17 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	}
 
 	// Music without loops.json: each station's music.m4a (genre = station),
-	// played once; a single loop never repeats, so the stations alternate.
+	// played once; the deck plays all nine stations before any repeats,
+	// the rubric's station (Mars, the station of the day) first.
 	radioCheckMusic(t, pl)
-	for i, m := range pl.Music.Tracks {
+	radioCheckDeck(t, pl, 9)
+	for _, m := range pl.Music.Tracks {
 		if m.Src != "/radio/"+m.Station+"/ever/music.m4a" || m.Dur != 112 || m.Genre != m.Station {
 			t.Errorf("music track = %+v", m)
 		}
-		if i > 0 && m.Station == pl.Music.Tracks[i-1].Station {
-			t.Errorf("music track %d: %s twice in a row", i, m.Station)
-		}
-		// Either the station of the item playing, or (it just played) a later one of the circle.
-		if want := radioStationAt(pl, m.From); m.Station != want && (i == 0 || pl.Music.Tracks[i-1].Station != want) {
-			t.Errorf("music track %d at %.1f: station %s, want %s", i, m.From, m.Station, want)
-		}
+	}
+	if len(pl.Music.Tracks) < 18 {
+		t.Fatalf("want two deck passes, got %d tracks", len(pl.Music.Tracks))
 	}
 	if pl.Music.Tracks[0].Station != "mars" {
 		t.Errorf("first loop = %+v", pl.Music.Tracks[0])
@@ -680,10 +694,22 @@ func TestRadioMusicLoops(t *testing.T) {
 	t.Logf("music:\n%s", radioCompact(pl))
 	radioCheckMusic(t, pl)
 
+	// The deck: 11 loops (mars 2, moon 2, seven music.m4a), each once per
+	// pass; the first round has one loop of every station.
+	radioCheckDeck(t, pl, 11)
+	if len(pl.Music.Tracks) < 22 {
+		t.Fatalf("want two deck passes, got %d tracks", len(pl.Music.Tracks))
+	}
+	first := map[string]bool{}
+	for _, m := range pl.Music.Tracks[:9] {
+		first[m.Station] = true
+	}
+	if len(first) != 9 {
+		t.Errorf("first 9 loops cover stations %v, want all 9", first)
+	}
 	loopDur := map[string]float64{"/radio/mars/ever/metal-1.m4a": 30, "/radio/mars/ever/metal-2.m4a": 35,
 		"/radio/mercury/ever/metal-3.m4a": 25, "/radio/moon/ever/ambient.m4a": 40, "/radio/moon/ever/piano.m4a": 45}
 	lastBy := map[string]string{}
-	metalRun, maxMetal := 0, 0
 	for i, m := range pl.Music.Tracks {
 		switch m.Station {
 		case "mars", "moon", "mercury":
@@ -695,25 +721,13 @@ func TestRadioMusicLoops(t *testing.T) {
 				t.Errorf("track %d = %+v: want the station's music.m4a", i, m)
 			}
 		}
-		// Round-robin inside a station: a two-loop station never picks the same loop twice running.
+		// A station's loops take turns, across deck passes too.
 		if m.Station == "mars" || m.Station == "moon" {
 			if lastBy[m.Station] == m.Src {
 				t.Errorf("track %d: %s repeats %s", i, m.Station, m.Src)
 			}
 			lastBy[m.Station] = m.Src
 		}
-		if m.Genre == "metal" {
-			metalRun++
-		} else {
-			metalRun = 0
-		}
-		if metalRun > maxMetal {
-			maxMetal = metalRun
-		}
-	}
-	// mars, mars, mercury = three metal loops, then the genre rule hands over.
-	if maxMetal != radioGenreRun {
-		t.Errorf("longest metal run = %d, want %d", maxMetal, radioGenreRun)
 	}
 	b, err := json.Marshal(pl.Music.Tracks[0])
 	if err != nil {
@@ -721,5 +735,103 @@ func TestRadioMusicLoops(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"genre":"metal"`) {
 		t.Errorf("track json = %s", b)
+	}
+}
+
+// TestRadioMusicDeckSeam: small decks, many seeds — a pass never opens with
+// the loop that closed the previous one, and the run rules hold across the
+// seam (radioCheckMusic) while every loop plays once per pass.
+func TestRadioMusicDeckSeam(t *testing.T) {
+	dir := radioTestDir(t) // no schedules: only loops.json has music
+	write := func(st, body string) {
+		t.Helper()
+		p := filepath.Join(dir, st, "ever", "loops.json")
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("mars", `[{"src":"m1.m4a","dur":20,"genre":"metal"},{"src":"m2.m4a","dur":20,"genre":"metal"}]`)
+	write("venus", `[{"src":"v1.m4a","dur":20,"genre":"lounge"}]`)
+	for _, sign := range chartFactsSigns {
+		g := *fixtureFacts(t)
+		g.Lagna.Sign = sign
+		pl := radioBuild(t, dir, &g, radioDay("2026-10-13"), "en", nil, nil)
+		radioCheckMusic(t, pl)
+		radioCheckDeck(t, pl, 3)
+		if len(pl.Music.Tracks) < 9 {
+			t.Fatalf("%s: want several passes, got %d tracks", sign, len(pl.Music.Tracks))
+		}
+	}
+	// One loop in all: it is all there is, so it plays on.
+	write("venus", `[]`)
+	write("mars", `[{"src":"m1.m4a","dur":200,"genre":"metal"}]`)
+	pl := radioBuild(t, dir, fixtureFacts(t), radioDay("2026-10-13"), "en", nil, nil)
+	if len(pl.Music.Tracks) < 2 {
+		t.Fatalf("single loop: %+v", pl.Music.Tracks)
+	}
+	for _, m := range pl.Music.Tracks {
+		if m.Src != "/radio/mars/ever/m1.m4a" {
+			t.Errorf("single loop: %+v", m)
+		}
+	}
+}
+
+// TestRadioYogaNameLocalized: yoganame_<Name> voiced in the listener's
+// language announces the yoga from the catalog; otherwise the English
+// yoga-name library track does.
+func TestRadioYogaNameLocalized(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13")
+	idx := filepath.Join(dir, "cat", "index.json")
+	b, err := os.ReadFile(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cat map[string]map[string]radioCatEntry
+	if err := json.Unmarshal(b, &cat); err != nil {
+		t.Fatal(err)
+	}
+	ruKey := strings.Repeat("ab", 20)
+	cat["yoganame_Sasha Yoga"] = map[string]radioCatEntry{"ru": {Key: ruKey, Dur: 1.8}}
+	if b, err = json.Marshal(cat); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(idx, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := fixtureFacts(t)
+
+	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "ru", nil, nil)
+	got := radioNoteIDs(radioByRubric(pl, rubYogas))[1:]
+	want := []string{"lang_note", "insert_yoganame_Sasha Yoga", "insert_yoga_Sasha Yoga", "yoga-name/adhi-yoga", "insert_yoga_Adhi Yoga"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ru yogas = %v\nwant %v", got, want)
+	}
+	items := radioByRubric(pl, rubYogas)
+	n, ins := items[2], items[3]
+	if n.Kind != "insert" || n.Title != "Sasha Yoga" || n.Rubric != rubYogas || n.Cat != "yoganame_Sasha Yoga" ||
+		n.Src != "/api/radio/cat/"+ruKey || n.Srcs["ru"] != "/api/radio/cat/"+ruKey || n.Durs["ru"] != 1.8 {
+		t.Errorf("localized yoga name = %+v", n)
+	}
+	if d := ins.Start - (n.Start + n.span); math.Abs(d-radioNoteGap) > 0.11 {
+		t.Errorf("gap after the yoga name = %.2f, want %.0f", d, radioNoteGap)
+	}
+	if a := items[4]; a.Kind != "yoga_name" || a.Src != "/radio/lib/yoga-name-adhi-yoga.m4a" {
+		t.Errorf("Adhi Yoga name = %+v", a)
+	}
+
+	// No German voice for the name: the English library track.
+	for _, lang := range []string{"de", "en"} {
+		pl = radioBuild(t, dir, f, radioDay("2026-10-13"), lang, nil, nil)
+		got = radioNoteIDs(radioByRubric(pl, rubYogas))[1:]
+		want = []string{"yoga-name/sasha-yoga", "insert_yoga_Sasha Yoga", "yoga-name/adhi-yoga", "insert_yoga_Adhi Yoga"}
+		if lang != "en" {
+			want = append([]string{"lang_note"}, want...)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s yogas = %v\nwant %v", lang, got, want)
+		}
 	}
 }
