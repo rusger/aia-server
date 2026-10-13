@@ -13,8 +13,9 @@ package main
 // Nothing is recorded for the wave: the playlist is assembled from files
 // already on this box under RADIO_DIR (default /var/www/html/radio):
 // lib/index.json (the Kokoro library of spec readings), cat/index.json (the
-// app's 16-language catalog, audio in TTS_CACHE_DIR/<sha1>.mp3) and the
-// station-of-the-day schedule.json (sky news, yesterday's releases, music).
+// app's 16-language catalog, audio in TTS_CACHE_DIR/<sha1>.mp3), the
+// station-of-the-day schedule.json (sky news, yesterday's releases, music) and
+// <station>/ever/loops.json (the music loops, each played once).
 // The answer has the item fields of a station schedule.json, so engine.js and
 // the app play it without a new player.
 //
@@ -52,6 +53,9 @@ const (
 	radioEventWindow  = 14   // days ahead for the «event of the week»
 	radioMusicDuck    = 0.15
 	radioMusicXfade   = 8
+	radioNoteGap      = 1.0 // after a yoga name / the language note, before what it announces
+	radioGenreRun     = 3   // at most this many music loops of one genre in a row
+	radioMinLoopDur   = 1.0 // shorter loops.json entries are ignored
 	radioCacheMaxKeys = 256 // parsed files kept by mtime; reset beyond this
 )
 
@@ -85,6 +89,10 @@ var radioSignLord = map[string]string{
 	"gemini": "mercury", "virgo": "mercury", "cancer": "moon", "leo": "sun",
 	"sagittarius": "jupiter", "pisces": "jupiter", "capricorn": "saturn", "aquarius": "saturn",
 }
+
+// radioMusicStations: the circle walked when a station has no music or its
+// genre has played radioGenreRun times in a row.
+var radioMusicStations = []string{"sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn", "rahu", "ketu"}
 
 // radioHouseTopic: the house holding most planets -> topics/<topic>.
 var radioHouseTopic = map[int]string{
@@ -122,6 +130,7 @@ type radioLibTags struct {
 	Transit   string   `json:"transit"`
 	You       string   `json:"you"`
 	Rubric    string   `json:"rubric"`
+	Yoga      string   `json:"yoga"` // yoga-name/<slug>: the name as in the catalog slug yoga_<Name>
 }
 
 type radioLibTrack struct {
@@ -165,6 +174,21 @@ type radioSchedule struct {
 		Dur float64 `json:"dur"`
 	} `json:"music"`
 	Items []radioScheduleItem `json:"items"`
+}
+
+// radioLoop is one entry of <station>/ever/loops.json; src is relative to ever/.
+type radioLoop struct {
+	Src   string  `json:"src"`
+	Dur   float64 `json:"dur"`
+	Genre string  `json:"genre"`
+}
+
+func parseRadioLoops(b []byte) (interface{}, error) {
+	var loops []radioLoop
+	if err := json.Unmarshal(b, &loops); err != nil {
+		return nil, err
+	}
+	return loops, nil
 }
 
 func parseRadioLib(b []byte) (interface{}, error) {
@@ -258,6 +282,7 @@ type radioItem struct {
 
 	span    float64 // time on the timeline (a catalog insert in the listener's language may be longer than en)
 	station string  // music under this item
+	pause   float64 // > 0: silence before the next item of the rubric (instead of the lead/speech gap)
 }
 
 type radioMusicTrack struct {
@@ -265,6 +290,7 @@ type radioMusicTrack struct {
 	Src     string  `json:"src"`
 	Dur     float64 `json:"dur"`
 	Station string  `json:"station"`
+	Genre   string  `json:"genre"`
 }
 
 type radioMusic struct {
@@ -309,6 +335,7 @@ type radioInputs struct {
 	lib        *radioLib
 	cat        *radioCat
 	schedule   func(station string) *radioSchedule // nil when the station has no schedule for `at`
+	loops      func(station string) []radioLoop    // <station>/ever/loops.json; nil when absent
 }
 
 // radioBuilder accumulates rubric groups.
@@ -317,7 +344,8 @@ type radioBuilder struct {
 	atStr  string
 	seed   [20]byte
 	groups [][]radioItem
-	day    string // station of the day
+	day    string                 // station of the day
+	music  map[string][]radioLoop // stationLoops cache
 }
 
 func (b *radioBuilder) active(t *radioLibTrack) bool {
@@ -344,9 +372,10 @@ func (b *radioBuilder) libItem(t *radioLibTrack, kind, rubric, station string) (
 
 // radioDefaultTitles: titles of untitled library lines, worded as the
 // stations' schedule.json items (English, like the rest of the wave).
-var radioDefaultTitles = map[string]string{"ident": "Your Chart", "lead": "Coming up", "closing": "Your Chart"}
+var radioDefaultTitles = map[string]string{"ident": "Your Chart", "lead": "Coming up", "closing": "Your Chart",
+	"lang_note": "Your Chart"}
 
-// you returns one active `you/*` track (ident, closing or the lead of a rubric).
+// you returns one active `you/*` track (ident, closing, lang_note or the lead of a rubric).
 func (b *radioBuilder) you(role, rubric string) *radioLibTrack {
 	var cands []*radioLibTrack
 	for i := range b.in.lib.Tracks {
@@ -404,11 +433,51 @@ func (b *radioBuilder) catItem(slug, title, rubric, station string) (radioItem, 
 		Src: "/api/radio/cat/" + en.Key, Cat: slug, Durs: durs, Srcs: srcs, Rubric: rubric, station: station}, true
 }
 
-// add appends a rubric: its lead (when rubric != "") and the topic items.
-// Nothing is added when there is nothing to play.
+// yogaName returns the active `yoga-name/*` track announcing yoga y.
+func (b *radioBuilder) yogaName(y string) *radioLibTrack {
+	for i := range b.in.lib.Tracks {
+		t := &b.in.lib.Tracks[i]
+		if t.Tags.You == "yoga_name" && t.Tags.Yoga == y && b.active(t) {
+			return t
+		}
+	}
+	return nil
+}
+
+// langNote is the «what follows is in your language» line, played after the
+// lead of a rubric that has a catalog insert voiced in the listener's
+// language (never for en).
+func (b *radioBuilder) langNote(rubric string, topics []radioItem) (radioItem, bool) {
+	if b.in.lang == "en" {
+		return radioItem{}, false
+	}
+	localized := false
+	for _, it := range topics {
+		if _, ok := it.Durs[b.in.lang]; ok && it.Kind == "insert" {
+			localized = true
+			break
+		}
+	}
+	if !localized {
+		return radioItem{}, false
+	}
+	t := b.you("lang_note", rubric)
+	if t == nil {
+		return radioItem{}, false
+	}
+	it, ok := b.libItem(t, "lang_note", rubric, topics[0].station)
+	it.pause = radioNoteGap
+	return it, ok
+}
+
+// add appends a rubric: its lead (when rubric != ""), the language note and
+// the topic items. Nothing is added when there is nothing to play.
 func (b *radioBuilder) add(rubric string, topics []radioItem) {
 	if len(topics) == 0 {
 		return
+	}
+	if note, ok := b.langNote(rubric, topics); ok {
+		topics = append([]radioItem{note}, topics...)
 	}
 	lead := b.you("lead", rubric)
 	if lead == nil {
@@ -615,11 +684,20 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 		var items []radioItem
 		seen := map[string]bool{}
 		for _, y := range append(append([]string{}, f.Yogas...), in.extraYogas...) {
-			if len(items) >= radioYogasPlayed || seen[y] {
+			if len(pl.FactsUsed.Yogas) >= radioYogasPlayed || seen[y] {
 				continue
 			}
 			seen[y] = true
 			if it, ok := b.catItem("yoga_"+y, y, rubYogas, day); ok {
+				if nt := b.yogaName(y); nt == nil {
+					log.Printf("radio-you: no yoga-name track for %q", y)
+				} else if ni, ok := b.libItem(nt, "yoga_name", rubYogas, day); ok {
+					if ni.Title == "" {
+						ni.Title = y
+					}
+					ni.pause = radioNoteGap
+					items = append(items, ni)
+				}
 				items = append(items, it)
 				pl.FactsUsed.Yogas = append(pl.FactsUsed.Yogas, y)
 			}
@@ -788,44 +866,148 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 	return pl
 }
 
-// layout sets start times (10 s between speech, 2 s after a lead) and the
-// music bed: one track per run of the same station, from its first speech.
+// layout sets start times (10 s between speech, 2 s after a lead, 1 s after
+// a yoga name or the language note) and lays the music bed.
 func (b *radioBuilder) layout(pl *radioPlaylist) {
-	round := func(x float64) float64 { return math.Round(x*10) / 10 }
 	pl.Items = []radioItem{}
-	pl.Music = radioMusic{Duck: radioMusicDuck, Xfade: radioMusicXfade, Tracks: []radioMusicTrack{}}
 	t := 0.0
 	for gi, g := range b.groups {
 		for i, it := range g {
 			if gi > 0 || i > 0 {
-				if i > 0 && g[i-1].Kind == "lead" {
+				switch {
+				case i > 0 && g[i-1].pause > 0:
+					t += g[i-1].pause
+				case i > 0 && g[i-1].Kind == "lead":
 					t += radioLeadGap
-				} else {
+				default:
 					t += radioSpeechGap
 				}
 			}
-			it.Start = round(t)
+			it.Start = radioRound(t)
 			t += it.span
 			pl.Items = append(pl.Items, it)
 		}
 	}
-	last := ""
-	missing := map[string]bool{}
-	for _, it := range pl.Items {
-		if it.station == last {
-			continue
-		}
-		last = it.station
-		s := b.in.schedule(it.station)
-		if s == nil || s.Music.Dur <= 0 {
-			if !missing[it.station] {
-				missing[it.station] = true
-				pl.missingMusic = append(pl.missingMusic, it.station)
+	b.layoutMusic(pl, t)
+}
+
+func radioRound(x float64) float64 { return math.Round(x*10) / 10 }
+
+// stationLoops: the station's ever/loops.json, else its music.m4a from the
+// day's schedule.json (genre = the station id); nil when it has no music.
+func (b *radioBuilder) stationLoops(station string) []radioLoop {
+	if l, ok := b.music[station]; ok {
+		return l
+	}
+	var out []radioLoop
+	if b.in.loops != nil {
+		for _, l := range b.in.loops(station) {
+			u, ok := radioLoopURL(station, l.Src)
+			if !ok || l.Dur < radioMinLoopDur {
+				log.Printf("radio-you: %s/ever/loops.json: bad entry %+v", station, l)
+				continue
 			}
-			continue
+			if l.Genre == "" {
+				l.Genre = station
+			}
+			l.Src = u
+			out = append(out, l)
 		}
-		pl.Music.Tracks = append(pl.Music.Tracks, radioMusicTrack{From: it.Start,
-			Src: "/radio/" + it.station + "/ever/music.m4a", Dur: s.Music.Dur, Station: it.station})
+	}
+	if len(out) == 0 {
+		if s := b.in.schedule(station); s != nil && s.Music.Dur >= radioMinLoopDur {
+			out = []radioLoop{{Src: "/radio/" + station + "/ever/music.m4a", Dur: s.Music.Dur, Genre: station}}
+		}
+	}
+	if b.music == nil {
+		b.music = map[string][]radioLoop{}
+	}
+	b.music[station] = out
+	return out
+}
+
+// radioLoopURL resolves a loops.json src (relative to ever/) to /radio/<st>/ever/<src>.
+func radioLoopURL(station, src string) (string, bool) {
+	if src == "" || strings.HasPrefix(src, "/") || strings.Contains(src, "://") || strings.Contains(src, "\\") {
+		return "", false
+	}
+	base := "/radio/" + station + "/ever/"
+	u := path.Join(base, src)
+	return u, strings.HasPrefix(u, base)
+}
+
+// layoutMusic fills [0, end) with music loops, each played ONCE (dur = the
+// loop length), back to back; the last one may run past the end (the client
+// fades out). A loop comes from the station of the item playing at its
+// start, the station's loops in turn (from a seed offset); when that genre
+// has already played radioGenreRun times in a row, or the station has no
+// music, the next station of radioMusicStations is taken instead.
+func (b *radioBuilder) layoutMusic(pl *radioPlaylist, end float64) {
+	pl.Music = radioMusic{Duck: radioMusicDuck, Xfade: radioMusicXfade, Tracks: []radioMusicTrack{}}
+	if len(pl.Items) == 0 {
+		return
+	}
+	cursor := map[string]int{}
+	peek := func(st string) (radioLoop, bool) {
+		loops := b.stationLoops(st)
+		if len(loops) == 0 {
+			return radioLoop{}, false
+		}
+		i, ok := cursor[st]
+		if !ok {
+			i = b.pick(len(loops), "loops/"+st)
+			cursor[st] = i
+		}
+		return loops[i%len(loops)], true
+	}
+	missing := map[string]bool{}
+	lastGenre, run, item := "", 0, 0
+	for t := 0.0; t < end; {
+		for item+1 < len(pl.Items) && pl.Items[item+1].Start <= t {
+			item++
+		}
+		st := pl.Items[item].station
+		order := []string{st}
+		for i, s := range radioMusicStations {
+			if s == st {
+				order = append(append(order, radioMusicStations[i+1:]...), radioMusicStations[:i]...)
+				break
+			}
+		}
+		chosen, fallback := "", ""
+		for _, s := range order {
+			l, ok := peek(s)
+			if !ok {
+				if s == st && !missing[st] {
+					missing[st] = true
+					pl.missingMusic = append(pl.missingMusic, st)
+				}
+				continue
+			}
+			if fallback == "" {
+				fallback = s
+			}
+			if l.Genre != lastGenre || run < radioGenreRun {
+				chosen = s
+				break
+			}
+		}
+		if chosen == "" { // every station plays the same genre: nothing else to switch to
+			chosen = fallback
+		}
+		if chosen == "" {
+			return // no music anywhere
+		}
+		l, _ := peek(chosen)
+		cursor[chosen]++
+		if l.Genre == lastGenre {
+			run++
+		} else {
+			lastGenre, run = l.Genre, 1
+		}
+		pl.Music.Tracks = append(pl.Music.Tracks, radioMusicTrack{From: radioRound(t), Src: l.Src, Dur: l.Dur,
+			Station: chosen, Genre: l.Genre})
+		t += l.Dur
 	}
 }
 
@@ -1018,8 +1200,19 @@ func (s *radioService) serve(w http.ResponseWriter, req *radioYourChartRequest, 
 		return sc
 	}
 
+	loops := func(station string) []radioLoop {
+		v, err := s.cache.load(filepath.Join(dir, station, "ever", "loops.json"), parseRadioLoops)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				log.Printf("radio-you: loops %s unavailable: %v", station, err)
+			}
+			return nil
+		}
+		return v.([]radioLoop)
+	}
+
 	pl := buildRadioPlaylist(radioInputs{facts: facts, extraYogas: req.Yogas, birth: birth, lang: lang, at: at,
-		lib: libV.(*radioLib), cat: catV.(*radioCat), schedule: schedule})
+		lib: libV.(*radioLib), cat: catV.(*radioCat), schedule: schedule, loops: loops})
 	if len(pl.missingMusic) > 0 {
 		log.Printf("radio-you: no music bed for stations %v on %s %s", pl.missingMusic, day, who)
 	}

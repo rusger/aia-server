@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -65,7 +66,71 @@ func radioBuild(t *testing.T, dir string, f *chartFacts, at time.Time, lang stri
 				return nil
 			}
 			return v.(*radioSchedule)
+		}, loops: func(st string) []radioLoop {
+			v, err := c.load(filepath.Join(dir, st, "ever", "loops.json"), parseRadioLoops)
+			if err != nil {
+				return nil
+			}
+			return v.([]radioLoop)
 		}})
+}
+
+// radioStationAt: the station of the item playing at sec (the last one started).
+func radioStationAt(pl *radioPlaylist, sec float64) string {
+	st := ""
+	for _, it := range pl.Items {
+		if it.Start <= sec+0.05 {
+			st = it.station
+		}
+	}
+	return st
+}
+
+// radioCheckMusic: loops back to back from 0 through the end of the speech,
+// each one played once, never more than radioGenreRun of a genre in a row.
+func radioCheckMusic(t *testing.T, pl *radioPlaylist) {
+	t.Helper()
+	last := pl.Items[len(pl.Items)-1]
+	end := last.Start + last.span
+	tr := pl.Music.Tracks
+	if len(tr) == 0 || tr[0].From != 0 {
+		t.Fatalf("music must start at 0: %+v", tr)
+	}
+	run := 0
+	for i, m := range tr {
+		if m.Dur <= 0 || m.From >= end || m.Genre == "" {
+			t.Errorf("track %d = %+v (end %.1f)", i, m, end)
+		}
+		if i == 0 {
+			run = 1
+			continue
+		}
+		if p := tr[i-1]; math.Abs(m.From-(p.From+p.Dur)) > 0.11 {
+			t.Errorf("track %d from %.1f, want %.1f (previous plays once)", i, m.From, p.From+p.Dur)
+		}
+		if m.Genre == tr[i-1].Genre {
+			run++
+		} else {
+			run = 1
+		}
+		if run > radioGenreRun {
+			t.Errorf("track %d: %d loops of %s in a row", i, run, m.Genre)
+		}
+	}
+	if l := tr[len(tr)-1]; l.From+l.Dur < end-0.11 {
+		t.Errorf("music ends at %.1f before the speech (%.1f)", l.From+l.Dur, end)
+	}
+}
+
+// radioNoteIDs: radioIDs with the lang_note variants folded to "lang_note".
+func radioNoteIDs(items []radioItem) []string {
+	out := radioIDs(items)
+	for i, id := range out {
+		if strings.HasPrefix(id, "you/lang_note/") {
+			out[i] = "lang_note"
+		}
+	}
+	return out
 }
 
 var radioFixtureBirth = time.Date(1990, 5, 15, 0, 0, 0, 0, time.UTC)
@@ -116,7 +181,7 @@ func radioCompact(pl *radioPlaylist) string {
 		fmt.Fprintf(&sb, "%7.1f %-8s %-12s %-6.1f %s | %s\n", it.Start, it.Kind, it.Rubric, it.Dur, it.Title, ref)
 	}
 	for _, m := range pl.Music.Tracks {
-		fmt.Fprintf(&sb, "music from %7.1f %-8s %s (%.0f s)\n", m.From, m.Station, m.Src, m.Dur)
+		fmt.Fprintf(&sb, "music from %7.1f %-8s %-8s %s (%.0f s)\n", m.From, m.Station, m.Genre, m.Src, m.Dur)
 	}
 	return sb.String()
 }
@@ -154,12 +219,13 @@ func TestRadioPlaylistFixture(t *testing.T) {
 
 	check := func(rubric string, want ...string) {
 		t.Helper()
-		if got := radioIDs(radioByRubric(pl, rubric))[1:]; !reflect.DeepEqual(got, want) {
+		if got := radioNoteIDs(radioByRubric(pl, rubric))[1:]; !reflect.DeepEqual(got, want) {
 			t.Errorf("%s = %v\nwant %v", rubric, got, want)
 		}
 	}
 	check(rubSkyToday, "sky_news")
-	check(rubTithi, "insert_tithi_sukla_9")
+	// ru: the rubrics with a catalog insert announce the language after the lead.
+	check(rubTithi, "lang_note", "insert_tithi_sukla_9")
 	check(rubLagna, "signs/04-cancer")
 	check(rubMonth, "month/2026-10-moon/capricorn", "month/2026-10-sun/taurus", "month/2026-10-lagna/cancer")
 	// Lens: one per ref, the one expiring soonest wins — on 13.10 the current
@@ -167,8 +233,9 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubTransits, "transit-lens/lagna/04-cancer", "transit-lens/sun/02-taurus",
 		"transit-lens/moon/10-capricorn", "transit-combo/10-saturn-for-capricorn-moon",
 		"graha-watch/01-saturn", "graha-watch/02-jupiter", "graha-watch/03-rahu-ketu")
-	check(rubDasha, "insert_mahadasha_Rahu", "dashas/08-rahu")
-	check(rubYogas, "insert_yoga_Sasha Yoga", "insert_yoga_Adhi Yoga")
+	check(rubDasha, "lang_note", "insert_mahadasha_Rahu", "dashas/08-rahu")
+	// Every yoga is named before its insert.
+	check(rubYogas, "lang_note", "yoga-name/sasha-yoga", "insert_yoga_Sasha Yoga", "yoga-name/adhi-yoga", "insert_yoga_Adhi Yoga")
 	// Moon, Saturn and Rahu stand in the 7th: saturn-7th, houses/07, grahas/<maha>.
 	check(rubPlanetHouse, "breakdowns/26-saturn-7th", "houses/07-seventh-house", "grahas/08-rahu")
 	check(rubConjunction, "breakdowns/02-moon-saturn", "breakdowns/03-moon-rahu-afflicted", "breakdowns/23-saturn-rahu")
@@ -179,7 +246,14 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubEvent, "events/retrograde-start_2026-10-24")
 
 	// Catalog insert: en src/dur, every language in durs; timeline uses the longer ru.
-	tithi := radioByRubric(pl, rubTithi)[1]
+	if n := radioByRubric(pl, rubTithi)[1]; n.Kind != "lang_note" || !strings.HasPrefix(n.Src, "/radio/lib/you-lang-note-") ||
+		n.Title != "Your Chart" || n.station != "moon" {
+		t.Errorf("lang note = %+v", n)
+	}
+	if n := radioByRubric(pl, rubYogas)[2]; n.Kind != "yoga_name" || n.Title != "Sasha Yoga" || n.Src != "/radio/lib/yoga-name-sasha-yoga.m4a" {
+		t.Errorf("yoga name = %+v", n)
+	}
+	tithi := radioByRubric(pl, rubTithi)[2]
 	if tithi.Kind != "insert" || tithi.Cat != "tithi_sukla_9" ||
 		tithi.Src != "/api/radio/cat/2c12529fd7f091c882ab646b099def116a1d6b1b" || tithi.Dur != 29.16 ||
 		tithi.Durs["ru"] != 30.12 || len(tithi.Durs) != 16 ||
@@ -198,11 +272,14 @@ func TestRadioPlaylistFixture(t *testing.T) {
 		t.Errorf("lib src = %s", s)
 	}
 
-	// Gaps: 2 s after a lead, 10 s otherwise; the timeline uses the item span.
+	// Gaps: 1 s after a yoga name / the language note, 2 s after a lead,
+	// 10 s otherwise; the timeline uses the item span.
 	for i := 1; i < len(pl.Items); i++ {
 		prev, cur := pl.Items[i-1], pl.Items[i]
 		gap := radioSpeechGap
-		if prev.Kind == "lead" && prev.Rubric == cur.Rubric {
+		if (prev.Kind == "yoga_name" || prev.Kind == "lang_note") && prev.Rubric == cur.Rubric {
+			gap = radioNoteGap
+		} else if prev.Kind == "lead" && prev.Rubric == cur.Rubric {
 			gap = radioLeadGap
 		}
 		if d := cur.Start - (prev.Start + prev.span); d < gap-0.11 || d > gap+0.11 {
@@ -210,31 +287,28 @@ func TestRadioPlaylistFixture(t *testing.T) {
 		}
 	}
 
-	// Music: station per rubric, consecutive runs merged.
-	var stations []string
-	for _, m := range pl.Music.Tracks {
-		stations = append(stations, m.Station)
-		if m.Src != "/radio/"+m.Station+"/ever/music.m4a" || m.Dur != 112 {
+	// Music without loops.json: each station's music.m4a (genre = station),
+	// played once, from the station of the item playing at the loop start —
+	// unless that genre has already played radioGenreRun times in a row.
+	radioCheckMusic(t, pl)
+	for i, m := range pl.Music.Tracks {
+		if m.Src != "/radio/"+m.Station+"/ever/music.m4a" || m.Dur != 112 || m.Genre != m.Station {
 			t.Errorf("music track = %+v", m)
 		}
-	}
-	// ident+sky (mars) → tithi + lagna (moon: Cancer's lord) → month/transits (mars) →
-	// dasha (rahu) → yogas (mars) → saturn-7th (saturn) → houses/07 (moon, first in the 7th) →
-	// grahas/rahu (rahu) → moon-saturn, moon-rahu (moon) → saturn-rahu (saturn) → rest (mars).
-	wantSt := []string{"mars", "moon", "mars", "rahu", "mars", "saturn", "moon", "rahu", "moon", "saturn", "mars"}
-	if !reflect.DeepEqual(stations, wantSt) {
-		t.Errorf("music stations = %v\nwant %v", stations, wantSt)
-	}
-	for _, m := range pl.Music.Tracks {
-		found := false
-		for _, it := range pl.Items {
-			if it.Start == m.From && it.station == m.Station {
-				found = true
-			}
+		want := radioStationAt(pl, m.From)
+		if m.Station == want {
+			continue
 		}
-		if !found {
-			t.Errorf("music from %.1f (%s) is not the start of a speech item", m.From, m.Station)
+		forced := i >= radioGenreRun
+		for k := 1; forced && k <= radioGenreRun; k++ {
+			forced = pl.Music.Tracks[i-k].Genre == want
 		}
+		if !forced {
+			t.Errorf("music track %d at %.1f: station %s, want %s", i, m.From, m.Station, want)
+		}
+	}
+	if pl.Music.Tracks[0].Station != "mars" {
+		t.Errorf("first loop = %+v", pl.Music.Tracks[0])
 	}
 	if pl.Music.Duck != 0.15 || pl.Music.Xfade != 8 {
 		t.Errorf("music = %+v", pl.Music)
@@ -291,9 +365,10 @@ func TestRadioPlaylistYogasCap(t *testing.T) {
 	f := fixtureFacts(t) // server: Sasha Yoga, Adhi Yoga
 	extra := []string{"Adhi Yoga", "No Such Yoga", "Gaja Kesari Yoga", "Hamsa Yoga", "Malavya Yoga", "Ruchaka Yoga", "Bhadra Yoga"}
 	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "en", nil, extra)
+	// en: no language note; a yoga without a yoga-name track plays without it.
 	got := radioIDs(radioByRubric(pl, rubYogas))[1:]
-	want := []string{"insert_yoga_Sasha Yoga", "insert_yoga_Adhi Yoga", "insert_yoga_Gaja Kesari Yoga",
-		"insert_yoga_Hamsa Yoga", "insert_yoga_Malavya Yoga"}
+	want := []string{"yoga-name/sasha-yoga", "insert_yoga_Sasha Yoga", "yoga-name/adhi-yoga", "insert_yoga_Adhi Yoga",
+		"insert_yoga_Gaja Kesari Yoga", "insert_yoga_Hamsa Yoga", "insert_yoga_Malavya Yoga"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("yogas = %v\nwant %v", got, want)
 	}
@@ -521,5 +596,123 @@ func TestRadioCatRoute(t *testing.T) {
 	}
 	if w := getRadioCat(s, other, ""); w.Code != http.StatusOK || w.Body.String() != "secret" {
 		t.Errorf("after index update: status %d body %q", w.Code, w.Body)
+	}
+}
+
+func TestRadioLangNote(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13")
+	f := fixtureFacts(t)
+	notes := func(pl *radioPlaylist) []string {
+		var out []string
+		for _, it := range pl.Items {
+			if it.Kind == "lang_note" {
+				out = append(out, it.Rubric)
+			}
+		}
+		return out
+	}
+	if got := notes(radioBuild(t, dir, f, radioDay("2026-10-13"), "en", nil, nil)); len(got) != 0 {
+		t.Errorf("en: lang notes in %v", got)
+	}
+	if got := notes(radioBuild(t, dir, f, radioDay("2026-10-13"), "de", nil, nil)); !reflect.DeepEqual(got,
+		[]string{rubTithi, rubDasha, rubYogas}) {
+		t.Errorf("de: lang notes in %v", got)
+	}
+
+	// The tithi insert is not voiced in German: no note there.
+	idx := filepath.Join(dir, "cat", "index.json")
+	b, err := os.ReadFile(idx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cat map[string]map[string]radioCatEntry
+	if err := json.Unmarshal(b, &cat); err != nil {
+		t.Fatal(err)
+	}
+	delete(cat["tithi_sukla_9"], "de")
+	if b, err = json.Marshal(cat); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(idx, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "de", nil, nil)
+	if got := notes(pl); !reflect.DeepEqual(got, []string{rubDasha, rubYogas}) {
+		t.Errorf("de without tithi/de: lang notes in %v", got)
+	}
+	// The note follows the lead.
+	if items := radioByRubric(pl, rubDasha); items[0].Kind != "lead" || items[1].Kind != "lang_note" {
+		t.Errorf("dasha = %v", radioIDs(items))
+	}
+}
+
+func TestRadioMusicLoops(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13")
+	write := func(st, body string) {
+		t.Helper()
+		p := filepath.Join(dir, st, "ever", "loops.json")
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Mars (the station of the day) has only metal; the Moon two genres and an
+	// entry escaping ever/ that must be ignored.
+	write("mars", `[{"src":"metal-1.m4a","dur":30,"genre":"metal"},{"src":"metal-2.m4a","dur":35,"genre":"metal"}]`)
+	write("moon", `[{"src":"ambient.m4a","dur":40,"genre":"ambient"},{"src":"../../lib/x.m4a","dur":20,"genre":"x"},`+
+		`{"src":"piano.m4a","dur":45,"genre":"piano"}]`)
+	pl := radioBuild(t, dir, fixtureFacts(t), radioDay("2026-10-13"), "en", nil, nil)
+	t.Logf("music:\n%s", radioCompact(pl))
+	radioCheckMusic(t, pl)
+
+	loopDur := map[string]float64{"/radio/mars/ever/metal-1.m4a": 30, "/radio/mars/ever/metal-2.m4a": 35,
+		"/radio/moon/ever/ambient.m4a": 40, "/radio/moon/ever/piano.m4a": 45}
+	switched, lastMars, lastMoon := 0, "", ""
+	for i, m := range pl.Music.Tracks {
+		switch m.Station {
+		case "mars", "moon":
+			if loopDur[m.Src] != m.Dur {
+				t.Errorf("track %d = %+v: not a loop of loops.json", i, m)
+			}
+		default:
+			if m.Src != "/radio/"+m.Station+"/ever/music.m4a" || m.Genre != m.Station {
+				t.Errorf("track %d = %+v: want the station's music.m4a", i, m)
+			}
+		}
+		// Inside a station the loops take turns.
+		if m.Station == "mars" {
+			if m.Src == lastMars {
+				t.Errorf("track %d: mars repeats %s", i, m.Src)
+			}
+			lastMars = m.Src
+		}
+		if m.Station == "moon" {
+			if m.Src == lastMoon {
+				t.Errorf("track %d: moon repeats %s", i, m.Src)
+			}
+			lastMoon = m.Src
+		}
+		if m.Station != radioStationAt(pl, m.From) {
+			switched++
+		}
+	}
+	// Three metal loops in a row hand over to the next station of the circle.
+	if switched == 0 {
+		t.Error("the genre rule never switched station")
+	}
+	for i := 0; i+radioGenreRun < len(pl.Music.Tracks); i++ {
+		if pl.Music.Tracks[i].Genre == "metal" && pl.Music.Tracks[i+1].Genre == "metal" && pl.Music.Tracks[i+2].Genre == "metal" &&
+			pl.Music.Tracks[i+3].Station != "mercury" && radioStationAt(pl, pl.Music.Tracks[i+3].From) == "mars" {
+			t.Errorf("after three metal loops: %+v, want mercury (next after mars)", pl.Music.Tracks[i+3])
+		}
+	}
+	b, err := json.Marshal(pl.Music.Tracks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"genre":"metal"`) {
+		t.Errorf("track json = %s", b)
 	}
 }

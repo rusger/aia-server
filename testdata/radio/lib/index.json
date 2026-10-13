@@ -6311,6 +6311,71 @@
    "voice": "af_heart+am_michael",
    "dur": 28,
    "text_hash": "0cb3e624dbb4"
+  },
+  {
+   "key": "yoga-name/adhi-yoga",
+   "file": "yoga-name-adhi-yoga.m4a",
+   "title": "",
+   "tags": {
+    "you": "yoga_name",
+    "yoga": "Adhi Yoga"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 3,
+   "text_hash": "fixture"
+  },
+  {
+   "key": "yoga-name/sasha-yoga",
+   "file": "yoga-name-sasha-yoga.m4a",
+   "title": "",
+   "tags": {
+    "you": "yoga_name",
+    "yoga": "Sasha Yoga"
+   },
+   "valid_until": null,
+   "voice": "af_heart",
+   "dur": 3,
+   "text_hash": "fixture"
+  },
+  {
+   "key": "you/lang_note/0",
+   "file": "you-lang-note-0.m4a",
+   "title": "",
+   "tags": {
+    "you": "lang_note",
+    "rubric": "lang_note"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 6,
+   "text_hash": "fixture"
+  },
+  {
+   "key": "you/lang_note/1",
+   "file": "you-lang-note-1.m4a",
+   "title": "",
+   "tags": {
+    "you": "lang_note",
+    "rubric": "lang_note"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 6,
+   "text_hash": "fixture"
+  },
+  {
+   "key": "you/lang_note/2",
+   "file": "you-lang-note-2.m4a",
+   "title": "",
+   "tags": {
+    "you": "lang_note",
+    "rubric": "lang_note"
+   },
+   "valid_until": null,
+   "voice": "af_heart+am_michael",
+   "dur": 6,
+   "text_hash": "fixture"
   }
  ],
  "skipped": []
