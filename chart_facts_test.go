@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -329,6 +330,8 @@ func newTestChartFacts(t *testing.T) (*chartFactsService, *fakeClock, *[][]strin
 	var calls [][]string
 	s := newChartFactsService()
 	s.now = clk.now
+	// No yoga CLI by default: the Go subset answers (yogas_source "go").
+	s.yogaCLI = filepath.Join(t.TempDir(), "no_yoga_cli")
 	s.astrolog = func(args []string) ([]byte, error) {
 		calls = append(calls, args)
 		return []byte(fixture), nil
@@ -447,5 +450,115 @@ func TestChartFactsUpstreamFailure(t *testing.T) {
 	s.astrolog = func([]string) ([]byte, error) { return []byte("garbage\n"), nil }
 	if w := postChartFacts(s, "198.51.100.9", "https://astrolytix.com", "", chartFactsFixtureBody); w.Code != http.StatusBadGateway {
 		t.Fatalf("unparseable astrolog output: status %d, want 502", w.Code)
+	}
+}
+
+// --- yoga CLI -----------------------------------------------------------------
+
+// fakeYogaCLI writes an executable shell script standing in for ./yoga_cli.
+// The script saves its stdin to <dir>/stdin.json, then runs body.
+func fakeYogaCLI(t *testing.T, body string) (path, stdinFile string) {
+	t.Helper()
+	dir := t.TempDir()
+	path = filepath.Join(dir, "yoga_cli")
+	stdinFile = filepath.Join(dir, "stdin.json")
+	script := "#!/bin/sh\ncat > '" + stdinFile + "'\n" + body + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path, stdinFile
+}
+
+func postFixtureFacts(t *testing.T, s *chartFactsService) chartFacts {
+	t.Helper()
+	w := postChartFacts(s, "198.51.100.20", "https://astrolytix.com", "", chartFactsFixtureBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", w.Code, w.Body)
+	}
+	var f chartFacts
+	if err := json.Unmarshal(w.Body.Bytes(), &f); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestChartFactsYogaCLISuccess(t *testing.T) {
+	s, _, _ := newTestChartFacts(t)
+	out := `{"yogas":[` +
+		`{"name":"Sasha Yoga","type":"benefic","intensity":"Strong","planets":[{"name":"Saturn","sign":"Capricorn","house":7}]},` +
+		`{"name":"Amala Yoga","type":"benefic","intensity":"Mild","planets":[]},` +
+		`{"name":"Sasha Yoga","type":"benefic","intensity":"Strong","planets":[]},` +
+		`{"name":"Kemadruma Yoga","type":"malefic","intensity":"Moderate","planets":[{"name":"Moon","sign":"Capricorn","house":7,"role":"isolated"}]}]}`
+	var stdinFile string
+	s.yogaCLI, stdinFile = fakeYogaCLI(t, "printf '%s' '"+out+"'")
+
+	f := postFixtureFacts(t, s)
+	if f.YogasSource != "dart" {
+		t.Errorf("yogas_source = %q, want dart", f.YogasSource)
+	}
+	if want := []string{"Sasha Yoga", "Amala Yoga"}; !reflect.DeepEqual(f.Yogas, want) {
+		t.Errorf("yogas = %v, want %v (benefic only, CLI order, de-duplicated)", f.Yogas, want)
+	}
+
+	raw, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in struct {
+		Chart string                 `json:"chart"`
+		Birth map[string]interface{} `json:"birth"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		t.Fatalf("CLI stdin is not JSON: %v\n%s", err, raw)
+	}
+	if in.Chart != loadNatalFixture(t) {
+		t.Errorf("CLI chart is not the raw astrolog text")
+	}
+	wantBirth := map[string]interface{}{"date": "1990-05-15", "time": "10:30", "timezone": 2.0, "latitude": 52.52, "longitude": 13.4}
+	if !reflect.DeepEqual(in.Birth, wantBirth) {
+		t.Errorf("CLI birth = %v, want %v", in.Birth, wantBirth)
+	}
+}
+
+func TestChartFactsYogaCLIEmptyIsDart(t *testing.T) {
+	s, _, _ := newTestChartFacts(t)
+	s.yogaCLI, _ = fakeYogaCLI(t, `printf '{"yogas":[{"name":"Kemadruma Yoga","type":"malefic","intensity":"Mild","planets":[]}]}'`)
+	f := postFixtureFacts(t, s)
+	if f.YogasSource != "dart" || f.Yogas == nil || len(f.Yogas) != 0 {
+		t.Errorf("no benefic yogas: source %q yogas %v, want dart and []", f.YogasSource, f.Yogas)
+	}
+}
+
+func TestChartFactsYogaCLIFallback(t *testing.T) {
+	goYogas := []string{"Sasha Yoga", "Adhi Yoga"} // fixture's Go subset
+	cases := []struct {
+		name string
+		body string // "" = no binary at all
+	}{
+		{"missing binary", ""},
+		{"exit 1", "echo 'calculation failed' >&2; exit 1"},
+		{"exit 2", "echo 'bad input' >&2; exit 2"},
+		{"timeout", "sleep 5; printf '{\"yogas\":[]}'"},
+		{"malformed JSON", "printf '{\"yogas\":[{\"name\":'"},
+		{"no yogas key", "printf '{}'"},
+		{"unknown type", `printf '{"yogas":[{"name":"X Yoga","type":"neutral"}]}'`},
+		{"empty name", `printf '{"yogas":[{"name":" ","type":"benefic"}]}'`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, _, _ := newTestChartFacts(t)
+			if c.body != "" {
+				s.yogaCLI, _ = fakeYogaCLI(t, c.body)
+			}
+			s.yogaCLITimeout = 300 * time.Millisecond
+			start := time.Now()
+			f := postFixtureFacts(t, s)
+			if el := time.Since(start); el > 3*time.Second {
+				t.Errorf("request took %s, the CLI timeout was not enforced", el)
+			}
+			if f.YogasSource != "go" || !reflect.DeepEqual(f.Yogas, goYogas) {
+				t.Errorf("source %q yogas %v, want go %v", f.YogasSource, f.Yogas, goYogas)
+			}
+		})
 	}
 }

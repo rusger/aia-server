@@ -3,6 +3,8 @@ astrolog-api
 astrolog_api
 astrolog_server
 admin_cli
+yoga_cli
+yoga_cli.new
 *.exe
 
 # Local certs
