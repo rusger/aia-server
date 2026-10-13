@@ -2004,6 +2004,32 @@ func runAstrolog(args []string) ([]byte, error) {
 	return nil, lastErr
 }
 
+// astrologChartArgs builds the astrolog arguments of a birth chart from
+// already-sanitized inputs. Shared by /api/astrolog and /api/chart-facts so
+// both always compute the same chart (Lahiri -s 0.883208, whole signs -c 14).
+// Astrolog expects timezone and longitude with inverted signs. The parse
+// errors are ignored on purpose: sanitizeTimezone/sanitizeCoordinate already
+// parsed the same strings successfully.
+func astrologChartArgs(date, timeStr, timezone, longitude, latitude string, navamsha bool) []string {
+    dateParts := strings.Split(date, " ")
+    tzFloat, _ := strconv.ParseFloat(timezone, 64)
+    lonFloat, _ := strconv.ParseFloat(longitude, 64)
+    args := []string{
+        "-qa",
+        dateParts[0], dateParts[1], dateParts[2],
+        timeStr,
+        fmt.Sprintf("%g", -tzFloat),
+        fmt.Sprintf("%g", -lonFloat),
+        latitude,
+    }
+    if navamsha {
+        // Navamsha divisional chart parameters
+        return append(args, "-s", "0.883208", "-R", "8", "9", "10", "-9", "-c", "14", "-C", "-RC", "22", "31")
+    }
+    // Natal chart parameters (default)
+    return append(args, "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31")
+}
+
 func calculateChart(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
 
@@ -2101,31 +2127,11 @@ func calculateChart(w http.ResponseWriter, r *http.Request) {
     }
 
     // Build command
-    dateParts := strings.Split(date, " ")
-    // Invert timezone and longitude for Astrolog
-    tzFloat, _ := strconv.ParseFloat(timezone, 64)
-    lonFloat, _ := strconv.ParseFloat(longitude, 64)
-    invertedTz := -tzFloat
-    invertedLon := -lonFloat
-    
-    // Base arguments
-    args := []string{
-        "-qa",
-        dateParts[0], dateParts[1], dateParts[2],
-        timeStr,
-        fmt.Sprintf("%g", invertedTz),
-        fmt.Sprintf("%g", invertedLon),
-        latitude,
-    }
-    
-    // Add chart-specific parameters
-    if req.ChartType == "navamsha" {
-        // Navamsha divisional chart parameters
-        args = append(args, "-s", "0.883208", "-R", "8", "9", "10", "-9", "-c", "14", "-C", "-RC", "22", "31")
+    navamsha := req.ChartType == "navamsha"
+    args := astrologChartArgs(date, timeStr, timezone, longitude, latitude, navamsha)
+    if navamsha {
         log.Printf("Calculating Navamsha chart")
     } else {
-        // Natal chart parameters (default)
-        args = append(args, "-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31")
         log.Printf("Calculating Natal chart")
     }
     
@@ -9830,6 +9836,10 @@ func main() {
     // visitors have no account; origin check + limits live in the handlers.
     router.HandleFunc("/api/chat/message", webChat.handleMessage).Methods("POST")
     router.HandleFunc("/api/chat/history", webChat.handleHistory).Methods("GET")
+    // Natal chart facts for the «Your Chart» radio (see chart_facts.go).
+    // Bearer JWT from the app goes through jwtAuthMiddleware inside the
+    // handler; without Authorization only astrolytix.com origins, IP-limited.
+    router.HandleFunc("/api/chart-facts", chartFactsSvc.handle).Methods("POST")
 
     // Bot endpoints (BOT_API_SECRET required - no 2FA)
     router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
@@ -9897,6 +9907,7 @@ func main() {
     log.Println("  [ADMIN]     GET  /api/admin/finance-stats - Monthly net revenue vs token spend (admin only)")
     log.Println("  [PROTECTED] GET  /api/voice/status, POST /api/voice/ticket, POST /api/voice/usage - live voice call (Realtime client secret + metering)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
+    log.Println("  [MIXED]     POST /api/chart-facts - Natal chart facts (JWT, or astrolytix.com origin + IP limits)")
     log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
