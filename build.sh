@@ -50,6 +50,33 @@ chmod +x astrolog_api
 echo "✓ API server built: ./astrolog_api"
 echo ""
 
+# Yoga CLI: the app's yoga detector (my_first_app tool/yoga_cli.dart) compiled
+# to ./yoga_cli, so /api/chart-facts finds yogas with the same code as the app.
+# Never aborts the API build: without the binary (or with a failed compile)
+# chart-facts falls back to its Go subset (yogas_source "go").
+echo "🔨 Building yoga CLI..."
+APP_DIR="$HOME/aia/my_first_app"
+DART="$HOME/flutter/bin/dart"
+FLUTTER="$HOME/flutter/bin/flutter"
+if [ ! -d "$APP_DIR" ] || [ ! -x "$DART" ] || [ ! -x "$FLUTTER" ]; then
+    echo "⚠️  WARNING: $APP_DIR or $DART / $FLUTTER missing — yoga CLI not built; chart-facts uses the Go yoga subset"
+else
+    YOGA_OUT="$(pwd)/yoga_cli"
+    if ! git -C "$APP_DIR" pull --ff-only; then
+        echo "⚠️  WARNING: git pull in $APP_DIR failed — compiling the checkout as it is"
+    fi
+    if ! (cd "$APP_DIR" && "$FLUTTER" pub get); then
+        echo "⚠️  WARNING: flutter pub get failed in $APP_DIR — yoga CLI not rebuilt (previous ./yoga_cli, if any, kept)"
+    elif (cd "$APP_DIR" && "$DART" compile exe tool/yoga_cli.dart -o "$YOGA_OUT.new"); then
+        mv -f "$YOGA_OUT.new" "$YOGA_OUT"
+        echo "✓ Yoga CLI built: ./yoga_cli"
+    else
+        rm -f "$YOGA_OUT.new"
+        echo "⚠️  WARNING: dart compile of tool/yoga_cli.dart FAILED — yoga CLI not rebuilt (previous ./yoga_cli, if any, kept)"
+    fi
+fi
+echo ""
+
 # Build the admin CLI
 echo "🔨 Building Admin CLI..."
 go build -o admin_cli admin_cli.go
@@ -64,6 +91,7 @@ echo ""
 echo "Executables created:"
 echo "  - ./astrolog_api (API Server)"
 echo "  - ./admin_cli (Admin Management Tool)"
+echo "  - ./yoga_cli (yoga detector for /api/chart-facts, if built above)"
 echo ""
 echo "📋 Next Steps:"
 echo ""

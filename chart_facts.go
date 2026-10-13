@@ -10,8 +10,9 @@ package main
 // returns structured facts instead of the raw text, so the site and the
 // playlist builder do not need the Dart parser:
 // lagna, planets by sign/house, conjunctions, Moon nakshatra, Vimshottari
-// maha/antar dasha, Sade Sati and today's tithi at `at`, and a deterministic
-// subset of benefic yogas. The rules are ports of the app code
+// maha/antar dasha, Sade Sati and today's tithi at `at`, and the benefic
+// yogas — from the app's own detector (./yoga_cli, yogas_source "dart"), or,
+// when that fails, from a deterministic Go subset (yogas_source "go"). The rules are ports of the app code
 // (my_first_app/lib/services: chart_parser, mahadasa_service,
 // sade_sati_service, yoga_calculator) — keep them in step.
 //
@@ -21,13 +22,18 @@ package main
 // windows apply (10/hour, 30/day) on top of ipLimiter. No name or e-mail.
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	"mime"
 	"net/http"
+	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -180,6 +186,7 @@ type chartFacts struct {
 	SadeSati     chartFactsSadeSati `json:"sade_sati"`
 	TithiToday   chartFactsTithi    `json:"tithi_today"`
 	Yogas        []string           `json:"yogas"`
+	YogasSource  string             `json:"yogas_source"` // "dart" (the app's detector via yoga_cli) | "go" (fallback subset)
 	At           string             `json:"at"`
 }
 
@@ -239,6 +246,7 @@ func buildChartFacts(bodies map[string]natalBody, birth, at time.Time, sky map[s
 	}
 
 	f.Yogas = chartFactsYogas(bodies)
+	f.YogasSource = yogasSourceGo
 	return f, nil
 }
 
@@ -463,6 +471,149 @@ exchange:
 }
 
 // ---------------------------------------------------------------------------
+// Yogas via the app's detector (my_first_app tool/yoga_cli.dart, compiled by
+// build.sh to ./yoga_cli). chartFactsYogas above is the fallback when the
+// binary is missing or fails.
+// ---------------------------------------------------------------------------
+
+const (
+	yogasSourceDart = "dart"
+	yogasSourceGo   = "go"
+
+	yogaCLITimeout = 10 * time.Second
+	// yogaCLIMaxOutput bounds what we read from the CLI (a chart has a few
+	// dozen yogas at most; anything larger is treated as broken output).
+	yogaCLIMaxOutput = 1 << 20
+)
+
+// yogaCLISem caps concurrent yoga_cli processes, like astrologSem for
+// ./astrolog: a request burst must not fork an unbounded number of them.
+var yogaCLISem = make(chan struct{}, 2)
+
+type yogaCLIBirth struct {
+	Date      string  `json:"date"` // YYYY-MM-DD
+	Time      string  `json:"time"` // HH:MM, local
+	Timezone  float64 `json:"timezone"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+type yogaCLIInput struct {
+	Chart string       `json:"chart"`
+	Birth yogaCLIBirth `json:"birth"`
+}
+
+type yogaCLIOutput struct {
+	Yogas *[]struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"yogas"`
+}
+
+// limitedBuffer keeps at most max bytes and records that more was written.
+type limitedBuffer struct {
+	bytes.Buffer
+	max      int
+	overflow bool
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if room := b.max - b.Len(); len(p) > room {
+		if room > 0 {
+			b.Buffer.Write(p[:room])
+		}
+		b.overflow = true
+		return len(p), nil
+	}
+	return b.Buffer.Write(p)
+}
+
+// runYogaCLI runs the yoga CLI at path with input on stdin and returns the
+// benefic yoga names in CLI order, de-duplicated. Any failure (no binary,
+// non-zero exit, timeout incl. waiting for a slot, malformed output) is an
+// error; the caller falls back to the Go subset.
+func runYogaCLI(path string, timeout time.Duration, input []byte) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	select {
+	case yogaCLISem <- struct{}{}:
+		defer func() { <-yogaCLISem }()
+	case <-ctx.Done():
+		return nil, fmt.Errorf("waiting for a yoga_cli slot: %w", ctx.Err())
+	}
+
+	cmd := exec.CommandContext(ctx, path)
+	cmd.Stdin = bytes.NewReader(input)
+	stdout := &limitedBuffer{max: yogaCLIMaxOutput}
+	stderr := &limitedBuffer{max: 2048}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	// A killed process may leave children holding the pipes; do not wait
+	// for them past the timeout.
+	cmd.WaitDelay = time.Second
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, fmt.Errorf("timed out after %s", timeout)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w (stderr: %q)", err, strings.TrimSpace(stderr.String()))
+	}
+	if stdout.overflow {
+		return nil, fmt.Errorf("output exceeds %d bytes", yogaCLIMaxOutput)
+	}
+	var out yogaCLIOutput
+	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
+		return nil, fmt.Errorf("bad JSON output: %w", err)
+	}
+	if out.Yogas == nil {
+		return nil, errors.New(`bad JSON output: no "yogas" array`)
+	}
+	names := []string{}
+	seen := map[string]bool{}
+	for i, y := range *out.Yogas {
+		name := strings.TrimSpace(y.Name)
+		if name == "" {
+			return nil, fmt.Errorf("bad JSON output: yogas[%d] has no name", i)
+		}
+		switch y.Type {
+		case "benefic":
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		case "malefic":
+		default:
+			return nil, fmt.Errorf("bad JSON output: yogas[%d] (%s) has type %q", i, name, y.Type)
+		}
+	}
+	return names, nil
+}
+
+// yogaCLIRequest builds the CLI stdin from the raw natal astrolog text and
+// the sanitized birth data (date "M D YYYY", time "H:MM", numeric strings).
+func yogaCLIRequest(chart string, birth time.Time, timeStr, timezone, latitude, longitude string) ([]byte, error) {
+	var hh, mm int
+	if _, err := fmt.Sscanf(timeStr, "%d:%d", &hh, &mm); err != nil {
+		return nil, fmt.Errorf("time %q: %w", timeStr, err)
+	}
+	tz, err := strconv.ParseFloat(timezone, 64)
+	if err != nil {
+		return nil, fmt.Errorf("timezone: %w", err)
+	}
+	lat, err := strconv.ParseFloat(latitude, 64)
+	if err != nil {
+		return nil, fmt.Errorf("latitude: %w", err)
+	}
+	lon, err := strconv.ParseFloat(longitude, 64)
+	if err != nil {
+		return nil, fmt.Errorf("longitude: %w", err)
+	}
+	return json.Marshal(yogaCLIInput{Chart: chart, Birth: yogaCLIBirth{
+		Date: birth.Format("2006-01-02"), Time: fmt.Sprintf("%02d:%02d", hh, mm),
+		Timezone: tz, Latitude: lat, Longitude: lon,
+	}})
+}
+
+// ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
 
@@ -504,18 +655,26 @@ func newChartAccess(tag, callType, model string, maxBody int64) *chartAccess {
 }
 
 // chartFactsService holds the access gate and the astrolog hooks; tests
-// swap astrolog/sky/now for fakes.
+// swap astrolog/sky/now for fakes and point yogaCLI at a fake script.
 type chartFactsService struct {
 	*chartAccess
-	astrolog func(args []string) ([]byte, error)
-	sky      func(date time.Time) (map[string]float64, error)
+	astrolog       func(args []string) ([]byte, error)
+	sky            func(date time.Time) (map[string]float64, error)
+	yogaCLI        string // path of the yoga CLI (env YOGA_CLI, default ./yoga_cli)
+	yogaCLITimeout time.Duration
 }
 
 func newChartFactsService() *chartFactsService {
+	cli := os.Getenv("YOGA_CLI")
+	if cli == "" {
+		cli = "./yoga_cli"
+	}
 	return &chartFactsService{
-		chartAccess: newChartAccess("chart-facts", "astrolog", "chart_facts", chartFactsMaxBody),
-		astrolog:    runAstrolog,
-		sky:         siderealLongitudes,
+		chartAccess:    newChartAccess("chart-facts", "astrolog", "chart_facts", chartFactsMaxBody),
+		astrolog:       runAstrolog,
+		sky:            siderealLongitudes,
+		yogaCLI:        cli,
+		yogaCLITimeout: yogaCLITimeout,
 	}
 }
 
@@ -702,5 +861,19 @@ func (s *chartFactsService) compute(req *chartFactsRequest, who string) (*chartF
 		log.Printf("chart-facts: build failed %s: %v", who, err)
 		return nil, http.StatusBadGateway, "Failed to calculate chart"
 	}
+	// The app's detector replaces the Go subset when it works; any failure
+	// keeps the subset (yogas_source "go") and is logged.
+	input, err := yogaCLIRequest(string(out), birth, timeStr, timezone, latitude, longitude)
+	if err != nil {
+		log.Printf("chart-facts: yoga_cli input failed %s, using Go yogas: %v", who, err)
+		return facts, http.StatusOK, ""
+	}
+	names, err := runYogaCLI(s.yogaCLI, s.yogaCLITimeout, input)
+	if err != nil {
+		log.Printf("chart-facts: yoga_cli %s failed %s, using Go yogas: %v", s.yogaCLI, who, err)
+		return facts, http.StatusOK, ""
+	}
+	facts.Yogas = names
+	facts.YogasSource = yogasSourceDart
 	return facts, http.StatusOK, ""
 }
