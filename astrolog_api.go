@@ -9840,6 +9840,11 @@ func main() {
     // Bearer JWT from the app goes through jwtAuthMiddleware inside the
     // handler; without Authorization only astrolytix.com origins, IP-limited.
     router.HandleFunc("/api/chart-facts", chartFactsSvc.handle).Methods("POST")
+    // «Your Chart» radio playlist (see radio_playlist.go): same access as
+    // /api/chart-facts. Catalog inserts are public, served from the TTS
+    // cache only for sha1 keys listed in RADIO_DIR/cat/index.json.
+    router.HandleFunc("/api/radio/your-chart", radioSvc.handle).Methods("POST")
+    router.HandleFunc("/api/radio/cat/{sha1}", radioSvc.handleCat).Methods("GET", "HEAD")
 
     // Bot endpoints (BOT_API_SECRET required - no 2FA)
     router.HandleFunc("/api/bot/check-email", botCheckEmail).Methods("GET")
@@ -9908,6 +9913,8 @@ func main() {
     log.Println("  [PROTECTED] GET  /api/voice/status, POST /api/voice/ticket, POST /api/voice/usage - live voice call (Realtime client secret + metering)")
     log.Println("  [PROTECTED] POST /api/astrolog - Calculate chart (JWT required)")
     log.Println("  [MIXED]     POST /api/chart-facts - Natal chart facts (JWT, or astrolytix.com origin + IP limits)")
+    log.Println("  [MIXED]     POST /api/radio/your-chart - «Your Chart» radio playlist (JWT, or astrolytix.com origin + IP limits)")
+    log.Println("  [PUBLIC]    GET  /api/radio/cat/{sha1} - Radio catalog insert audio (keys from cat/index.json only)")
     log.Println("  [PROTECTED] POST /api/transit-year - Batch transit data for year (JWT required)")
     log.Println("  [PROTECTED] POST /api/chatgpt - ChatGPT proxy (JWT required)")
     log.Println("  [PROTECTED] GET  /api/user/info - Get user info (JWT required)")
