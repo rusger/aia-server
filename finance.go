@@ -296,6 +296,10 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 		// report. Calibrated 24.09.2026 on the server: 9 sentences ≈ 520 chars
 		// → 35–47 s ≈ $0.010 at the list price ($0.015/min) → ≈ $19 per 1M chars.
 		return float64(promptToks) / 1e6 * 19.0
+	case strings.Contains(model, "transcribe"):
+		// Radio calls (radio_call.go) log the clip's MILLISECONDS of audio as prompt tokens;
+		// gpt-4o-mini-transcribe list price ≈ $0.003 per audio minute (estimate, not reconciled yet).
+		return float64(promptToks) / 60000.0 * 0.003
 	case strings.Contains(model, "gpt-4.1-nano"):
 		return regF*0.10 + cacF*0.025 + outF*0.40
 	case strings.Contains(model, "gpt-4.1-mini"):
