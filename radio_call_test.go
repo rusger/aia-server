@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -81,6 +83,8 @@ func setupRadioCall(t *testing.T, f *radioFake) (*mux.Router, string) {
 	radioCallPhoneFn = func(in, out string) (float64, error) { return 7.5, os.WriteFile(out, []byte("m4a"), 0o644) }
 	radioCallDurFn = func(path string) (float64, error) { return 4.0, nil }
 	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) { return []byte("mp3"), nil }
+	radioCallKokoroFn = func(text, out string) error { return os.WriteFile(out, []byte("wav"), 0o644) }
+	radioWorkerSeen.Store(time.Now().UnixNano()) // Мак на связи, если тест не скажет иначе
 
 	r := mux.NewRouter()
 	withUser := func(h http.HandlerFunc) http.HandlerFunc {
@@ -445,5 +449,60 @@ func TestRadioCallReplyFallbackWhenMacLate(t *testing.T) {
 	segs := doc["segments"].([]interface{})
 	if src := segs[len(segs)-1].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_fb.mp3" {
 		t.Fatalf("reply from the server TTS, got %v", src)
+	}
+}
+
+func TestRadioCallMacOfflineFallsBackFast(t *testing.T) {
+	for _, v := range []*atomic.Int64{&radioMacGrace, &radioMacAlive} {
+		old := v.Load()
+		t.Cleanup(func() { v.Store(old) })
+	}
+	radioMacGrace.Store(int64(50 * time.Millisecond))
+	radioMacAlive.Store(int64(20 * time.Millisecond))
+	radioWorkerSeen.Store(time.Now().Add(-time.Hour).UnixNano()) // Мак давно не выходил на связь
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna", "About Venus?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
+	})
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	t0 := time.Now()
+	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner) // ждёт интро: Мак офлайн → резерв за ~grace, не 45 с
+	if el := time.Since(t0); el > 2*time.Second {
+		t.Fatalf("offline Mac must not hold the call for the full wait: %s", el)
+	}
+	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" })
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,intro_line,onair,caller,answer_en" {
+		t.Fatalf("server voices intro and reply: %s", got)
+	}
+}
+
+func TestRadioCallOpenAIDownKokoroOnServer(t *testing.T) {
+	old := radioAnswerWait.Load()
+	radioAnswerWait.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { radioAnswerWait.Store(old) })
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna", "About Venus?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
+	})
+	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) { return nil, errors.New("insufficient_quota") }
+	var said string
+	radioCallKokoroFn = func(text, out string) error { said = text; return os.WriteFile(out, []byte("wav"), 0o644) }
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	radioWorker(t, r, "intro_line")
+	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
+	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" })
+	doc := radioNow(t, root)
+	segs := doc["segments"].([]interface{})
+	if src := segs[len(segs)-1].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_kokoro.wav" {
+		t.Fatalf("OpenAI down → Kokoro on the server, got %v", src)
+	}
+	if !strings.Contains(said, "Thank you for calling") {
+		t.Fatalf("Kokoro got the reply text: %q", said)
 	}
 }

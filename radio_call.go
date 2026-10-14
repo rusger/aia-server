@@ -202,6 +202,25 @@ var radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) {
 	return ttsFetch(ttsModel, ttsVoiceFor(gender, lang), ttsInstructions, text)
 }
 
+// radioCallKokoroFn: the free last-resort voice — Kokoro on this box (tools/kokoro_say.py, RADIO_KOKORO_DIR with the
+// venv and the model). One voice, niced, one thread: the 9 Liquidsoap stations on 2 cores come first.
+var radioCallKokoroFn = func(text, out string) error {
+	dir := os.Getenv("RADIO_KOKORO_DIR")
+	if dir == "" {
+		return errors.New("RADIO_KOKORO_DIR not set")
+	}
+	script := envDefault("RADIO_KOKORO_SCRIPT", "tools/kokoro_say.py")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "nice", "-n", "19", filepath.Join(dir, "venv", "bin", "python"), script, dir,
+		envDefault("RADIO_KOKORO_VOICE", "af_heart"), out)
+	cmd.Stdin = strings.NewReader(text)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("kokoro: %v %s", err, truncateForLog(string(b), 300))
+	}
+	return nil
+}
+
 var radioCallNow = time.Now
 
 // ---------------------------------------------------------------------------
@@ -755,22 +774,64 @@ func init() {
 
 // radioFallbackSeg voices a host line on the server (OpenAI TTS, one shared file) when the Mac is late — the listener
 // must never lose the intro or the reply (owner 14.10.2026). Called WITHOUT the line lock.
+// Tiers (owner 14.10.2026): the Mac with the 9 station voices → OpenAI TTS, one voice (fast) → Kokoro on this
+// box, one voice (free: no OpenAI balance, outage).
 func radioFallbackSeg(c *radioCall, kind, text string) (radioSegment, error) {
+	dir := filepath.Join(radioRoot(), "call", c.ID)
+	_ = os.MkdirAll(dir, 0o755)
+	name := kind + "_fb.mp3"
 	data, err := radioCallLocalTTSFn(text, "en", "f")
-	logAPICallWithTokens(c.DeviceID, "radio_call_tts", ttsModel, len([]rune(text)), 0, 0, 0)
+	if err == nil {
+		logAPICallWithTokens(c.DeviceID, "radio_call_tts", ttsModel, len([]rune(text)), 0, 0, 0)
+		err = os.WriteFile(filepath.Join(dir, name), data, 0o644)
+	}
+	if err != nil {
+		log.Printf("⚠️ radio call %s: %s via OpenAI failed (%v) — Kokoro on the server", c.ID, kind, err)
+		name = kind + "_kokoro.wav"
+		if err = radioCallKokoroFn(text, filepath.Join(dir, name)); err != nil {
+			return radioSegment{}, err
+		}
+	}
+	d, err := radioCallDurFn(filepath.Join(dir, name))
 	if err != nil {
 		return radioSegment{}, err
 	}
-	p := filepath.Join(radioRoot(), "call", c.ID, kind+"_fb.mp3")
-	_ = os.MkdirAll(filepath.Dir(p), 0o755)
-	if err := os.WriteFile(p, data, 0o644); err != nil {
-		return radioSegment{}, err
+	return radioSegment{Src: "call/" + c.ID + "/" + name, Dur: math.Round(d*100) / 100, Kind: kind}, nil
+}
+
+// radioMacGrace: the Mac worker must PICK UP a job this fast, else it is offline and the server voices the line
+// at once instead of waiting the full radioIntroWait/radioAnswerWait (owner 14.10.2026: «Мак недоступен 5 секунд»).
+// A Mac that polled within radioMacAlive is busy with the previous line, not offline — then the full wait applies.
+var radioMacGrace, radioMacAlive, radioWorkerSeen atomic.Int64
+
+func init() {
+	radioMacGrace.Store(int64(5 * time.Second))
+	radioMacAlive.Store(int64(30 * time.Second))
+}
+
+// radioWaitJob waits for the Mac: done → true; not taken within radioMacGrace or not done within max → false.
+func radioWaitJob(j *radioJob, max time.Duration) bool {
+	grace := time.After(time.Duration(radioMacGrace.Load()))
+	limit := time.After(max)
+	for {
+		select {
+		case <-j.Done:
+			radioLine.Lock()
+			ok := j.Durs != nil
+			radioLine.Unlock()
+			return ok
+		case <-limit:
+			return false
+		case <-grace:
+			radioLine.Lock()
+			taken := j.Taken
+			radioLine.Unlock()
+			seen := time.Since(time.Unix(0, radioWorkerSeen.Load()))
+			if !taken && seen > time.Duration(radioMacAlive.Load()) {
+				return false // Мак офлайн: задание не взято, на связь не выходил
+			}
+		}
 	}
-	d, err := radioCallDurFn(p)
-	if err != nil {
-		return radioSegment{}, err
-	}
-	return radioSegment{Src: "call/" + c.ID + "/" + kind + "_fb.mp3", Dur: math.Round(d*100) / 100, Kind: kind}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -850,10 +911,8 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 	// The intro line («With us on the line is <name>…») must go first: wait for the Mac (unlocked), up to radioIntroWait.
 	if j := c.introJob; j != nil && !c.introAired {
 		radioLine.Unlock()
-		select {
-		case <-j.Done:
-		case <-time.After(time.Duration(radioIntroWait.Load())):
-			log.Printf("⚠️ radio call %s: intro line not voiced in time — server TTS", c.ID)
+		if !radioWaitJob(j, time.Duration(radioIntroWait.Load())) {
+			log.Printf("⚠️ radio call %s: the Mac did not voice the intro (offline or late) — server TTS", c.ID)
 		}
 		radioLine.Lock()
 		if radioLine.call != c {
@@ -942,10 +1001,7 @@ func radioAnswer(c *radioCall, question, chart, lang, name string) {
 	j = radioQueueJob(c, "answer_en", []map[string]string{{"host": "A", "text": en}})
 	radioLine.Unlock()
 
-	select {
-	case <-j.Done:
-	case <-time.After(time.Duration(radioAnswerWait.Load())):
-	}
+	radioWaitJob(j, time.Duration(radioAnswerWait.Load()))
 	radioLine.Lock()
 	if radioLine.call != c {
 		radioLine.Unlock()
@@ -1043,6 +1099,8 @@ func radioCallJobsHandler(w http.ResponseWriter, r *http.Request) {
 		voiceError(w, http.StatusForbidden, "forbidden")
 		return
 	}
+	radioWorkerSeen.Store(radioCallNow().UnixNano())
+	defer func() { radioWorkerSeen.Store(radioCallNow().UnixNano()) }()
 	wait, _ := strconv.Atoi(r.URL.Query().Get("wait"))
 	if wait < 0 || wait > 25 {
 		wait = 25
