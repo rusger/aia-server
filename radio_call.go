@@ -263,6 +263,7 @@ type radioCall struct {
 	// «<имя> на линии…»: задание Маку и признак, что реплика уже в эфире (её ждёт «вы в эфире», владелец 14.10.2026)
 	introJob   *radioJob
 	introAired bool
+	introText  string
 }
 
 type radioJob struct {
@@ -717,7 +718,7 @@ func radioCallIntroHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	line := fmt.Sprintf("With us on the line is %s, who wants to ask about %s.", who, strings.TrimSuffix(c.TopicEN, "."))
 	j := radioQueueJob(c, "intro_line", []map[string]string{{"host": "A", "text": line}})
-	c.introJob = j
+	c.introJob, c.introText = j, line
 	go radioAwaitIntroLine(c, j)
 	radioJSON(w, 200, map[string]interface{}{"success": true, "ok": true, "name": c.Name})
 }
@@ -742,8 +743,35 @@ func radioAppendIntro(c *radioCall, j *radioJob) {
 	radioAppend(c, radioSegment{Src: "call/" + c.ID + "/{ch}/intro_line.m4a", Durs: j.Durs, Kind: "intro_line"})
 }
 
-// radioIntroWait: how long the question waits for the intro line (the listener must hear who is calling first).
-var radioIntroWait = 45 * time.Second
+// radioIntroWait: how long the question waits for the intro line (the listener must hear who is calling first);
+// radioAnswerWait: how long the reply waits for the station voices. Late Mac → the server voices it itself.
+// (atomic: tests shorten them while goroutines of earlier calls may still be waiting)
+var radioIntroWait, radioAnswerWait atomic.Int64
+
+func init() {
+	radioIntroWait.Store(int64(45 * time.Second))
+	radioAnswerWait.Store(int64(45 * time.Second))
+}
+
+// radioFallbackSeg voices a host line on the server (OpenAI TTS, one shared file) when the Mac is late — the listener
+// must never lose the intro or the reply (owner 14.10.2026). Called WITHOUT the line lock.
+func radioFallbackSeg(c *radioCall, kind, text string) (radioSegment, error) {
+	data, err := radioCallLocalTTSFn(text, "en", "f")
+	logAPICallWithTokens(c.DeviceID, "radio_call_tts", ttsModel, len([]rune(text)), 0, 0, 0)
+	if err != nil {
+		return radioSegment{}, err
+	}
+	p := filepath.Join(radioRoot(), "call", c.ID, kind+"_fb.mp3")
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, data, 0o644); err != nil {
+		return radioSegment{}, err
+	}
+	d, err := radioCallDurFn(p)
+	if err != nil {
+		return radioSegment{}, err
+	}
+	return radioSegment{Src: "call/" + c.ID + "/" + kind + "_fb.mp3", Dur: math.Round(d*100) / 100, Kind: kind}, nil
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/radio/call/{id}/question
@@ -824,14 +852,31 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 		radioLine.Unlock()
 		select {
 		case <-j.Done:
-		case <-time.After(radioIntroWait):
-			log.Printf("⚠️ radio call %s: intro line not voiced in %s — on air without it", c.ID, radioIntroWait)
+		case <-time.After(time.Duration(radioIntroWait.Load())):
+			log.Printf("⚠️ radio call %s: intro line not voiced in time — server TTS", c.ID)
 		}
 		radioLine.Lock()
 		if radioLine.call != c {
 			radioLine.Unlock()
 			voiceError(w, http.StatusGone, "call ended")
 			return
+		}
+		if j.Durs == nil && !c.introAired { // Мак не успел — представление озвучивает сервер, без него нельзя
+			c.introAired = true // опоздавший файл Мака уже не нужен
+			text := c.introText
+			radioLine.Unlock()
+			seg, ferr := radioFallbackSeg(c, "intro_line", text)
+			radioLine.Lock()
+			if radioLine.call != c {
+				radioLine.Unlock()
+				voiceError(w, http.StatusGone, "call ended")
+				return
+			}
+			if ferr == nil {
+				radioAppend(c, seg)
+			} else {
+				log.Printf("⚠️ radio call %s: intro fallback TTS: %v", c.ID, ferr)
+			}
 		}
 		radioAppendIntro(c, j)
 	}
@@ -899,18 +944,31 @@ func radioAnswer(c *radioCall, question, chart, lang, name string) {
 
 	select {
 	case <-j.Done:
-	case <-time.After(radioCallJobTimeout + 30*time.Second):
+	case <-time.After(time.Duration(radioAnswerWait.Load())):
 	}
 	radioLine.Lock()
-	defer radioLine.Unlock()
 	if radioLine.call != c {
+		radioLine.Unlock()
 		return
 	}
 	if j.Durs != nil {
 		radioAppend(c, radioSegment{Src: "call/" + c.ID + "/{ch}/answer_en.m4a", Durs: j.Durs, Kind: "answer_en"})
-	} else {
-		log.Printf("⚠️ radio call %s: the Mac did not voice the reply in time", c.ID)
+	} else { // Мак опоздал — ответ озвучивает сервер: ответ слушателю не теряется никогда
+		log.Printf("⚠️ radio call %s: the Mac did not voice the reply in time — server TTS", c.ID)
+		radioLine.Unlock()
+		seg, ferr := radioFallbackSeg(c, "answer_en", en)
+		radioLine.Lock()
+		if radioLine.call != c {
+			radioLine.Unlock()
+			return
+		}
+		if ferr == nil {
+			radioAppend(c, seg)
+		} else {
+			log.Printf("⚠️ radio call %s: reply fallback TTS: %v", c.ID, ferr)
+		}
 	}
+	defer radioLine.Unlock()
 	if !voiceAllowed(c.Email) {
 		ensureVoiceSchema()
 		micro := int64(math.Round(radioCallMinutes * voiceMinuteUSD * 1e6))
