@@ -622,10 +622,10 @@ func radioScreen(ctx context.Context, c *radioCall, stage string, audio []byte, 
 		os.Remove(tmp)
 	}
 	text, err := radioCallTranscribeFn(ctx, audio, fname, c.Lang)
-	logAPICallWithTokens(c.DeviceID, "radio_call_transcribe", radioCallTranscribe, ms, 0, ms, 0)
 	if err != nil {
 		return "", radioCheck{}, err
 	}
+	logAPICallWithTokens(c.DeviceID, "radio_call_transcribe", radioCallTranscribe, ms, 0, ms, 0)
 	if len([]rune(text)) < 3 {
 		return text, radioCheck{OK: false, Reason: "empty"}, nil
 	}
@@ -853,10 +853,12 @@ func radioAnswer(c *radioCall, question, chart, lang, name string) {
 	}
 	if local != nil {
 		p := filepath.Join(radioRoot(), "call", c.ID, "answer_local.mp3")
-		if werr := os.WriteFile(p, local, 0o644); werr == nil {
-			if d, derr := radioCallDurFn(p); derr == nil {
-				radioAppend(c, radioSegment{Src: "call/" + c.ID + "/answer_local.mp3", Dur: math.Round(d*100) / 100, Kind: "answer_local"})
-			}
+		if werr := os.WriteFile(p, local, 0o644); werr != nil {
+			log.Printf("⚠️ radio call %s: local reply not written: %v", c.ID, werr)
+		} else if d, derr := radioCallDurFn(p); derr != nil {
+			log.Printf("⚠️ radio call %s: local reply duration: %v — not on air", c.ID, derr)
+		} else {
+			radioAppend(c, radioSegment{Src: "call/" + c.ID + "/answer_local.mp3", Dur: math.Round(d*100) / 100, Kind: "answer_local"})
 		}
 	}
 	en := ans.AnswerEN

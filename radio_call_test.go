@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -341,5 +342,35 @@ func TestRadioCallAccessAndWorkerToken(t *testing.T) {
 func TestRadioCallTranscribeCost(t *testing.T) {
 	if c := financeTokenCostUSD(radioCallTranscribe, 60000, 0, 0, false); c < 0.00299 || c > 0.00301 {
 		t.Fatalf("a minute of audio = %.5f, want 0.003", c)
+	}
+}
+
+func TestRadioCallDailyLimitForPublicCallers(t *testing.T) {
+	r, _ := setupRadioCall(t, &radioFake{})
+	t.Setenv("RADIO_CALL_PUBLIC", "1")
+	const u = "listener@example.com"
+	if err := voiceGrant(u, 1.0); err != nil {
+		t.Fatal(err)
+	}
+	radioDo(t, r, "POST", "/api/radio/call/consent", u, `{"version":"`+radioCallConsentVersion+`"}`)
+	for i := 0; i < radioCallDailyLimit; i++ {
+		db.Exec(`INSERT INTO radio_calls (id, email, state) VALUES (?, ?, 'aired')`, "old"+strconv.Itoa(i), u)
+	}
+	if code, out := radioDo(t, r, "POST", "/api/radio/call/start", u, `{}`); code != 403 || out["error"] != "daily_limit" {
+		t.Fatalf("third call today: %d %v", code, out)
+	}
+	db.Exec(`DELETE FROM radio_calls WHERE email = ?`, u)
+	if code, out := radioDo(t, r, "POST", "/api/radio/call/start", u, `{}`); code != 200 {
+		t.Fatalf("public caller with minutes: %d %v", code, out)
+	}
+}
+
+func TestRadioCallNoMinutesForPublicCallers(t *testing.T) {
+	r, _ := setupRadioCall(t, &radioFake{})
+	t.Setenv("RADIO_CALL_PUBLIC", "1")
+	const u = "broke@example.com"
+	radioDo(t, r, "POST", "/api/radio/call/consent", u, `{"version":"`+radioCallConsentVersion+`"}`)
+	if code, out := radioDo(t, r, "POST", "/api/radio/call/start", u, `{}`); code != 403 || out["error"] != "no_minutes" {
+		t.Fatalf("no balance: %d %v", code, out)
 	}
 }
