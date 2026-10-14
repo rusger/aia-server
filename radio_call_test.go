@@ -374,3 +374,47 @@ func TestRadioCallNoMinutesForPublicCallers(t *testing.T) {
 		t.Fatalf("no balance: %d %v", code, out)
 	}
 }
+
+func TestRadioCallIntroLineBeforeOnAir(t *testing.T) {
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna, about Venus", "What does Venus in Pisces mean?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus in Pisces", Language: "en"}, {OK: true, Language: "en"}},
+	})
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	done := make(chan map[string]interface{}, 1)
+	go func() { _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); done <- o }()
+	time.Sleep(100 * time.Millisecond)
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce" {
+		t.Fatalf("the caller must wait for the intro line, on air: %s", got)
+	}
+	radioWorker(t, r, "intro_line") // Мак озвучил интро позже, чем пришёл вопрос
+	if o := <-done; o["ok"] != true {
+		t.Fatalf("question %v", o)
+	}
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,intro_line,onair,caller" {
+		t.Fatalf("order on air: %s", got)
+	}
+}
+
+func TestRadioCallIntroLineTimeoutGoesOnWithout(t *testing.T) {
+	old := radioIntroWait
+	radioIntroWait = 50 * time.Millisecond
+	t.Cleanup(func() { radioIntroWait = old })
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna", "About Venus?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
+	})
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	if _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); o["ok"] != true {
+		t.Fatalf("question %v", o)
+	}
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,onair,caller" {
+		t.Fatalf("Mac silent → on air without the intro line: %s", got)
+	}
+}

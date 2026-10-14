@@ -260,6 +260,9 @@ type radioCall struct {
 	Touched  time.Time
 	Live     bool // now.json state "live" (feeders fill the waits)
 	jobs     map[string]*radioJob
+	// «<имя> на линии…»: задание Маку и признак, что реплика уже в эфире (её ждёт «вы в эфире», владелец 14.10.2026)
+	introJob   *radioJob
+	introAired bool
 }
 
 type radioJob struct {
@@ -712,13 +715,14 @@ func radioCallIntroHandler(w http.ResponseWriter, r *http.Request) {
 	if c.Name != "" {
 		who = c.Name
 	}
-	line := fmt.Sprintf("%s is on the line, and wants to ask about %s.", who, strings.TrimSuffix(c.TopicEN, "."))
+	line := fmt.Sprintf("With us on the line is %s, who wants to ask about %s.", who, strings.TrimSuffix(c.TopicEN, "."))
 	j := radioQueueJob(c, "intro_line", []map[string]string{{"host": "A", "text": line}})
+	c.introJob = j
 	go radioAwaitIntroLine(c, j)
 	radioJSON(w, 200, map[string]interface{}{"success": true, "ok": true, "name": c.Name})
 }
 
-// radioAwaitIntroLine appends the voiced «<name> is on the line…» if it arrives before the caller goes on air.
+// radioAwaitIntroLine appends the voiced «With us on the line is <name>…» as soon as the Mac delivers it.
 func radioAwaitIntroLine(c *radioCall, j *radioJob) {
 	select {
 	case <-j.Done:
@@ -726,11 +730,20 @@ func radioAwaitIntroLine(c *radioCall, j *radioJob) {
 	}
 	radioLine.Lock()
 	defer radioLine.Unlock()
-	if radioLine.call != c || j.Durs == nil || c.Aired || c.State == "answering" {
-		return // late or failed — the holds already covered the wait
+	radioAppendIntro(c, j)
+}
+
+// radioAppendIntro puts the intro line on air once (line locked); never after the caller is on air.
+func radioAppendIntro(c *radioCall, j *radioJob) {
+	if radioLine.call != c || j == nil || j.Durs == nil || c.introAired || c.Aired {
+		return
 	}
+	c.introAired = true
 	radioAppend(c, radioSegment{Src: "call/" + c.ID + "/{ch}/intro_line.m4a", Durs: j.Durs, Kind: "intro_line"})
 }
+
+// radioIntroWait: how long the question waits for the intro line (the listener must hear who is calling first).
+var radioIntroWait = 45 * time.Second
 
 // ---------------------------------------------------------------------------
 // POST /api/radio/call/{id}/question
@@ -805,6 +818,22 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 		radioLine.Unlock()
 		radioJSON(w, 200, map[string]interface{}{"success": true, "ok": false, "reason": chk.Reason})
 		return
+	}
+	// The intro line («With us on the line is <name>…») must go first: wait for the Mac (unlocked), up to radioIntroWait.
+	if j := c.introJob; j != nil && !c.introAired {
+		radioLine.Unlock()
+		select {
+		case <-j.Done:
+		case <-time.After(radioIntroWait):
+			log.Printf("⚠️ radio call %s: intro line not voiced in %s — on air without it", c.ID, radioIntroWait)
+		}
+		radioLine.Lock()
+		if radioLine.call != c {
+			radioLine.Unlock()
+			voiceError(w, http.StatusGone, "call ended")
+			return
+		}
+		radioAppendIntro(c, j)
 	}
 	// On air now: «yes, yes, we hear you» + the caller's voice; while the reply is voiced — thinking phrases.
 	radioAppendCue(c, "onair")
