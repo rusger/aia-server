@@ -399,10 +399,10 @@ func TestRadioCallIntroLineBeforeOnAir(t *testing.T) {
 	}
 }
 
-func TestRadioCallIntroLineTimeoutGoesOnWithout(t *testing.T) {
-	old := radioIntroWait
-	radioIntroWait = 50 * time.Millisecond
-	t.Cleanup(func() { radioIntroWait = old })
+func TestRadioCallIntroLineFallbackWhenMacLate(t *testing.T) {
+	old := radioIntroWait.Load()
+	radioIntroWait.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { radioIntroWait.Store(old) })
 	r, root := setupRadioCall(t, &radioFake{
 		transcripts: []string{"I'm Anna", "About Venus?"},
 		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
@@ -414,7 +414,36 @@ func TestRadioCallIntroLineTimeoutGoesOnWithout(t *testing.T) {
 	if _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); o["ok"] != true {
 		t.Fatalf("question %v", o)
 	}
-	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,onair,caller" {
-		t.Fatalf("Mac silent → on air without the intro line: %s", got)
+	doc := radioNow(t, root)
+	if got := strings.Join(radioKinds(doc), ","); got != "announce,intro_line,onair,caller" {
+		t.Fatalf("Mac silent → the server voices the intro itself: %s", got)
+	}
+	if src := doc["segments"].([]interface{})[1].(map[string]interface{})["src"]; src != "call/"+id+"/intro_line_fb.mp3" {
+		t.Fatalf("intro from the server TTS, got %v", src)
+	}
+}
+
+func TestRadioCallReplyFallbackWhenMacLate(t *testing.T) {
+	old := radioAnswerWait.Load()
+	radioAnswerWait.Store(int64(50 * time.Millisecond))
+	t.Cleanup(func() { radioAnswerWait.Store(old) })
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna, about Venus", "What does Venus in Pisces mean?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
+	})
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	radioWorker(t, r, "intro_line")
+	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
+	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" }) // Мак молчит на ответе
+	doc := radioNow(t, root)
+	if got := strings.Join(radioKinds(doc), ","); got != "announce,intro_line,onair,caller,answer_en" {
+		t.Fatalf("the reply must not be lost: %s", got)
+	}
+	segs := doc["segments"].([]interface{})
+	if src := segs[len(segs)-1].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_fb.mp3" {
+		t.Fatalf("reply from the server TTS, got %v", src)
 	}
 }
