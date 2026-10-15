@@ -9790,6 +9790,7 @@ func main() {
     router.HandleFunc("/api/voice/ticket", jwtAuthMiddleware(voiceTicketHandler)).Methods("POST")
     router.HandleFunc("/api/voice/usage", jwtAuthMiddleware(voiceUsageHandler)).Methods("POST")
     router.HandleFunc("/api/voice/purchase", jwtAuthMiddleware(voicePurchaseHandler)).Methods("POST") // minute packs (consumables)
+    router.HandleFunc("/api/app/latest", appLatestHandler).Methods("GET") // latest released app version (app_latest.go)
     // listener calls on Astrolytix Radio (radio_call.go, owner 14.10.2026)
     router.HandleFunc("/api/radio/call/status", jwtAuthMiddleware(radioCallStatusHandler)).Methods("GET")
     router.HandleFunc("/api/radio/call/consent", jwtAuthMiddleware(radioCallConsentHandler)).Methods("POST")
