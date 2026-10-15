@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -92,6 +93,7 @@ func setupRadioCall(t *testing.T, f *radioFake) (*mux.Router, string) {
 	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
 		return 9.25, os.WriteFile(out, []byte("mix"), 0o644)
 	}
+	radioCallInterpJoinFn = func(parts []string, out string) error { return os.WriteFile(out, []byte("joined"), 0o644) }
 
 	r := mux.NewRouter()
 	withUser := func(h http.HandlerFunc) http.HandlerFunc {
@@ -608,10 +610,28 @@ func radioCallerSeg(t *testing.T, root string) map[string]interface{} {
 }
 
 func TestRadioInterpOpenAI(t *testing.T) {
-	r, root := setupRadioCall(t, radioRuFake("What does Saturn over my Moon mean?"))
+	r, root := setupRadioCall(t, radioRuFake("My name is Olga. What does Saturn over my Moon mean?"))
 	t.Setenv("RADIO_INTERP", "openai")
-	var said, mixCaller, mixInterp string
-	radioCallInterpTTSFn = func(text string) ([]byte, error) { said = text; return []byte("mp3"), nil }
+	var mu sync.Mutex
+	said := map[string]bool{}
+	var mixCaller, mixInterp string
+	var joined []string
+	radioCallInterpTTSFn = func(text string) ([]byte, error) {
+		mu.Lock()
+		said[text] = true
+		mu.Unlock()
+		return []byte("mp3:" + text), nil
+	}
+	radioCallInterpJoinFn = func(parts []string, out string) error {
+		for _, p := range parts {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			joined = append(joined, string(b))
+		}
+		return os.WriteFile(out, []byte("joined"), 0o644)
+	}
 	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
 		mixCaller, mixInterp = caller, interp
 		return 9.25, os.WriteFile(out, []byte("mix"), 0o644)
@@ -620,12 +640,18 @@ func TestRadioInterpOpenAI(t *testing.T) {
 	if code, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); code != 200 || o["ok"] != true {
 		t.Fatalf("question %d %v", code, o)
 	}
-	if said != "What does Saturn over my Moon mean?" {
-		t.Fatalf("interpreter text %q", said)
+	if len(said) != 2 || !said["My name is Olga."] || !said["What does Saturn over my Moon mean?"] {
+		t.Fatalf("one OpenAI call per sentence, got %v", said)
+	}
+	if strings.Join(joined, "|") != "mp3:My name is Olga.|mp3:What does Saturn over my Moon mean?" {
+		t.Fatalf("join must get the sentences in order, got %v", joined)
 	}
 	dir := filepath.Join(root, "call", id)
-	if mixCaller != filepath.Join(dir, "caller.m4a") || mixInterp != filepath.Join(dir, "interp.mp3") {
+	if mixCaller != filepath.Join(dir, "caller.m4a") || mixInterp != filepath.Join(dir, "interp_tts.m4a") {
 		t.Fatalf("mix inputs %s + %s", mixCaller, mixInterp)
+	}
+	if parts, _ := filepath.Glob(filepath.Join(dir, "interp_0*.mp3")); len(parts) != 0 {
+		t.Fatalf("sentence parts must be removed after the join: %v", parts)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "caller.m4a")); string(b) != "mix" {
 		t.Fatalf("caller.m4a must be the mix, got %q", b)
@@ -688,7 +714,7 @@ func radioWorkerInterp(t *testing.T, r *mux.Router) map[string]interface{} {
 }
 
 func TestRadioInterpMac(t *testing.T) {
-	r, root := setupRadioCall(t, radioRuFake("What does Saturn over my Moon mean?"))
+	r, root := setupRadioCall(t, radioRuFake("My name is Olga. What does Saturn over my Moon mean?"))
 	t.Setenv("RADIO_INTERP", "mac")
 	radioCallInterpTTSFn = func(text string) ([]byte, error) {
 		t.Error("OpenAI must not be used when the Mac answers")
@@ -704,9 +730,15 @@ func TestRadioInterpMac(t *testing.T) {
 	go func() { _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); done <- o }()
 	job := radioWorkerInterp(t, r)
 	lines := job["lines"].([]interface{})
-	l0 := lines[0].(map[string]interface{})
-	if len(lines) != 1 || l0["voice"] != "am_michael" || l0["speed"] != "1.08" || l0["text"] != "What does Saturn over my Moon mean?" {
-		t.Fatalf("interp job lines %v", lines)
+	want := []string{"My name is Olga.", "What does Saturn over my Moon mean?"}
+	if len(lines) != len(want) {
+		t.Fatalf("interp job: one line per sentence, got %v", lines)
+	}
+	for i, l := range lines {
+		m := l.(map[string]interface{})
+		if m["voice"] != "am_michael" || m["speed"] != "1.25" || m["text"] != want[i] {
+			t.Fatalf("interp job line %d = %v", i, m)
+		}
 	}
 	if o := <-done; o["ok"] != true {
 		t.Fatalf("question %v", o)
@@ -738,7 +770,7 @@ func TestRadioInterpMacSilentFallsBackToOpenAI(t *testing.T) {
 	if _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); o["ok"] != true {
 		t.Fatalf("question %v", o)
 	}
-	if mixInterp != filepath.Join(root, "call", id, "interp.mp3") {
+	if mixInterp != filepath.Join(root, "call", id, "interp_tts.m4a") {
 		t.Fatalf("Mac silent → OpenAI interpreter, got %s", mixInterp)
 	}
 	radioLine.Lock()
@@ -754,6 +786,7 @@ func TestRadioInterpFailuresAirTheOriginal(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		tts     error
+		join    error
 		mix     error
 		mode    string
 		textEN  string
@@ -761,6 +794,8 @@ func TestRadioInterpFailuresAirTheOriginal(t *testing.T) {
 	}{
 		{name: "tts down", mode: "openai", textEN: "Q?", tts: errors.New("quota")},
 		{name: "mix fails", mode: "openai", textEN: "Q?", mix: errors.New("ffmpeg"), mixUsed: true},
+		{name: "join fails", mode: "openai", textEN: "One. Two?", join: errors.New("ffmpeg")},
+		{name: "one sentence of two fails", mode: "openai", textEN: "One. Two?", tts: errors.New("quota")},
 		{name: "off", mode: "", textEN: "Q?"},
 		{name: "unknown mode = off", mode: "whisper", textEN: "Q?"},
 		{name: "no translation", mode: "openai", textEN: ""},
@@ -768,7 +803,19 @@ func TestRadioInterpFailuresAirTheOriginal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r, root := setupRadioCall(t, radioRuFake(tc.textEN))
 			t.Setenv("RADIO_INTERP", tc.mode)
-			radioCallInterpTTSFn = func(text string) ([]byte, error) { return []byte("mp3"), tc.tts }
+			radioCallInterpTTSFn = func(text string) ([]byte, error) {
+				if text == "Two?" || text == "Q?" {
+					return []byte("mp3"), tc.tts
+				}
+				return []byte("mp3"), nil
+			}
+			radioCallInterpJoinFn = func(parts []string, out string) error {
+				if tc.join != nil {
+					os.WriteFile(out, []byte("half"), 0o644)
+					return tc.join
+				}
+				return os.WriteFile(out, []byte("joined"), 0o644)
+			}
 			used := false
 			radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
 				used = true
@@ -789,8 +836,10 @@ func TestRadioInterpFailuresAirTheOriginal(t *testing.T) {
 			if b, _ := os.ReadFile(filepath.Join(dir, "caller.m4a")); string(b) != "m4a" {
 				t.Fatalf("original phone clip expected, got %q", b)
 			}
-			if _, err := os.Stat(filepath.Join(dir, "caller_interp.m4a")); !os.IsNotExist(err) {
-				t.Fatal("a failed mix must not leave files behind")
+			for _, f := range []string{"caller_interp.m4a", "interp_tts.m4a", "interp_01.mp3", "interp_02.mp3"} {
+				if _, err := os.Stat(filepath.Join(dir, f)); !os.IsNotExist(err) && (f != "interp_tts.m4a" || tc.join != nil) {
+					t.Fatalf("a failure must not leave %s behind", f)
+				}
 			}
 			if seg := radioCallerSeg(t, root); seg["dur"] != 7.5 {
 				t.Fatalf("caller segment %v", seg)

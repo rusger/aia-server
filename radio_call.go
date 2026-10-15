@@ -41,6 +41,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/gorilla/mux"
 )
@@ -828,12 +829,22 @@ const radioInterpInstructions = "Professional simultaneous interpreter in a boot
 	"broadcast on TV. Calm, even, neutral, slightly quick and compact, first person, no emotion of your own, clear diction, " +
 	"steady pace with tiny natural pauses as if following the speaker."
 
-// radioInterpFilter: the caller at full level for 1.3 s, ducked to 0.15 within 0.5 s; the interpreter on top from 1.3 s
-// (numbers validated by ear — keep them).
-const radioInterpFilter = "[0:a]volume='if(lt(t,1.3),1,if(lt(t,1.8),1-(t-1.3)/0.5*0.85,0.15))':eval=frame[orig];" +
-	"[1:a]aresample=48000,highpass=f=120,lowpass=f=9000,acompressor=threshold=-18dB:ratio=3:attack=5:release=80," +
-	"loudnorm=I=-17:TP=-2,adelay=1300|1300,pan=stereo|c0=c0|c1=c0[int];" +
-	"[orig][int]amix=inputs=2:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5"
+// Mix v5 (contract §A2, owner-approved 15.10.2026 — keep these numbers): the interpreter starts 1.0 s after the caller;
+// the caller is ×1.4 and ducks to 0.75 of that only while the interpreter speaks (0.15 s linear ramps), so in the
+// 1.3 s pauses between the interpreter's sentences the caller is heard at full level. NO loudnorm on the sum: a
+// one-pass loudnorm there acts as an AGC and erased the caller's level (owner complaint).
+const (
+	radioInterpDelay     = 1.0  // s, the interpreter after the caller
+	radioInterpCallerWin = 1.4  // caller gain in the windows
+	radioInterpCallerLow = 0.75 // fraction of the window gain while the interpreter speaks
+	radioInterpRamp      = 0.15 // s, ramp down before / up after each interpreter interval
+	radioInterpGap       = 1.3  // s of silence between the interpreter's sentences (Mac and OpenAI alike)
+	radioInterpMergeGap  = 0.5  // s, shorter pauses inside the interpreter's speech are not windows
+	radioInterpMaxWords  = 25   // a longer sentence is split at a comma
+)
+
+const radioInterpChain = "aresample=48000,highpass=f=120,lowpass=f=9000," +
+	"acompressor=threshold=-18dB:ratio=3:attack=5:release=80,loudnorm=I=-19:TP=-2,adelay=1000|1000,pan=stereo|c0=c0|c1=c0"
 
 func radioInterpMode() string {
 	switch m := strings.ToLower(strings.TrimSpace(os.Getenv("RADIO_INTERP"))); m {
@@ -844,25 +855,331 @@ func radioInterpMode() string {
 	}
 }
 
-// radioCallInterpTTSFn: the interpreter's voice via OpenAI (gpt-4o-mini-tts, «ash»).
+// --- sentences ---
+
+// radioAbbrevNever: a period after these never ends a sentence (titles, «e.g.»).
+var radioAbbrevNever = map[string]bool{
+	"mr": true, "mrs": true, "ms": true, "dr": true, "prof": true, "sr": true, "jr": true, "st": true, "mt": true,
+	"vs": true, "e.g": true, "i.e": true, "cf": true, "approx": true, "fig": true, "no": true, "nos": true,
+	"vol": true, "ch": true, "pp": true, "dept": true, "gen": true, "col": true, "capt": true, "lt": true, "rev": true,
+}
+
+// radioSentencesEN splits an English translation into sentences: «.», «?», «!» (with closing quotes/brackets) followed
+// by a space end a sentence; abbreviations (Mr., e.g., initials), decimals (12.5) and a period followed by a lower-case
+// word do not. A sentence longer than radioInterpMaxWords words is split at its most central comma.
+func radioSentencesEN(text string) []string {
+	rs := []rune(strings.TrimSpace(text))
+	var out []string
+	last := 0
+	emit := func(end int) {
+		if s := strings.TrimSpace(string(rs[last:end])); s != "" {
+			out = append(out, radioSplitLong(s)...)
+		}
+		last = end
+	}
+	isClose := func(r rune) bool { return strings.ContainsRune(`"')]»”’`, r) }
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		if r != '.' && r != '?' && r != '!' {
+			continue
+		}
+		j := i
+		hasStrong := false
+		for j < len(rs) && strings.ContainsRune(".?!…", rs[j]) {
+			if rs[j] != '.' {
+				hasStrong = true
+			}
+			j++
+		}
+		for j < len(rs) && isClose(rs[j]) {
+			j++
+		}
+		if j < len(rs) && !unicode.IsSpace(rs[j]) {
+			i = j - 1 // «12.5», «e.g» inside, «?!x» — not a boundary
+			continue
+		}
+		if j >= len(rs) {
+			break
+		}
+		if !hasStrong && !radioPeriodEnds(rs, i, j) {
+			i = j - 1
+			continue
+		}
+		emit(j)
+		i = j - 1
+	}
+	emit(len(rs))
+	return out
+}
+
+// radioPeriodEnds: does the period run rs[i:j] (followed by a space) end a sentence?
+func radioPeriodEnds(rs []rune, i, j int) bool {
+	k := i
+	for k > 0 && (unicode.IsLetter(rs[k-1]) || rs[k-1] == '.') {
+		k--
+	}
+	word := strings.ToLower(strings.TrimRight(string(rs[k:i]), "."))
+	n := j
+	for n < len(rs) && (unicode.IsSpace(rs[n]) || strings.ContainsRune(`"'(«“‘`, rs[n])) {
+		n++
+	}
+	if n < len(rs) && unicode.IsLower(rs[n]) {
+		return false // «etc. and», an unknown abbreviation
+	}
+	if radioAbbrevNever[word] {
+		return false
+	}
+	if l := []rune(word); len(l) == 1 && unicode.IsLetter(l[0]) && i+1 == j {
+		return false // an initial: «J. R. Tolkien»
+	}
+	return true
+}
+
+// radioSplitLong splits a sentence longer than radioInterpMaxWords words at the comma closest to its middle
+// (both halves ≥ 4 words), recursively; a long sentence without a usable comma stays whole.
+func radioSplitLong(s string) []string {
+	w := strings.Fields(s)
+	if len(w) <= radioInterpMaxWords {
+		return []string{s}
+	}
+	best := -1
+	for k := 3; k < len(w)-4; k++ { // split after word k
+		if strings.HasSuffix(w[k], ",") {
+			if best < 0 || math.Abs(float64(k+1)-float64(len(w))/2) < math.Abs(float64(best+1)-float64(len(w))/2) {
+				best = k
+			}
+		}
+	}
+	if best < 0 {
+		return []string{s}
+	}
+	return append(radioSplitLong(strings.Join(w[:best+1], " ")), radioSplitLong(strings.Join(w[best+1:], " "))...)
+}
+
+// --- speech intervals and the mix ---
+
+var (
+	radioSilStartRe = regexp.MustCompile(`silence_start: (-?[0-9.]+)`)
+	radioSilEndRe   = regexp.MustCompile(`silence_end: (-?[0-9.]+)`)
+	radioFFTimeRe   = regexp.MustCompile(`time=(\d+):(\d+):([0-9.]+)`)
+	radioFFDurRe    = regexp.MustCompile(`Duration: (\d+):(\d+):([0-9.]+)`)
+)
+
+// radioInterpSpeech: the interpreter file's speech intervals (seconds from its start) — the complement of
+// silencedetect(noise=-35dB, d=0.25), pauses shorter than radioInterpMergeGap merged.
+func radioInterpSpeech(path string) ([][2]float64, error) {
+	b, err := exec.Command("ffmpeg", "-hide_banner", "-nostdin", "-i", path, "-af", "silencedetect=noise=-35dB:d=0.25",
+		"-f", "null", "-").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("silencedetect: %v %s", err, truncateForLog(string(b), 200))
+	}
+	sp := radioParseSpeech(string(b))
+	if len(sp) == 0 {
+		return nil, errors.New("the interpreter file is silent")
+	}
+	return sp, nil
+}
+
+func radioHMS(m []string) float64 {
+	h, _ := strconv.ParseFloat(m[1], 64)
+	mi, _ := strconv.ParseFloat(m[2], 64)
+	s, _ := strconv.ParseFloat(m[3], 64)
+	return h*3600 + mi*60 + s
+}
+
+// radioParseSpeech turns ffmpeg's silencedetect log into merged speech intervals.
+func radioParseSpeech(log string) [][2]float64 {
+	total := 0.0
+	if ms := radioFFTimeRe.FindAllStringSubmatch(log, -1); len(ms) > 0 {
+		total = radioHMS(ms[len(ms)-1]) // decoded length
+	} else if m := radioFFDurRe.FindStringSubmatch(log); m != nil {
+		total = radioHMS(m)
+	}
+	type ev struct {
+		pos   int
+		start bool
+		t     float64
+	}
+	var evs []ev
+	for _, m := range radioSilStartRe.FindAllStringSubmatchIndex(log, -1) {
+		t, _ := strconv.ParseFloat(log[m[2]:m[3]], 64)
+		evs = append(evs, ev{m[0], true, t})
+	}
+	for _, m := range radioSilEndRe.FindAllStringSubmatchIndex(log, -1) {
+		t, _ := strconv.ParseFloat(log[m[2]:m[3]], 64)
+		evs = append(evs, ev{m[0], false, t})
+	}
+	sort.Slice(evs, func(a, b int) bool { return evs[a].pos < evs[b].pos })
+	var sp [][2]float64
+	cursor, inSilence := 0.0, false
+	for _, e := range evs {
+		if e.start && !inSilence {
+			if e.t > cursor {
+				sp = append(sp, [2]float64{cursor, e.t})
+			}
+			inSilence = true
+		} else if !e.start && inSilence {
+			cursor, inSilence = math.Max(cursor, e.t), false
+		}
+	}
+	if !inSilence && total > cursor {
+		sp = append(sp, [2]float64{cursor, total})
+	}
+	var merged [][2]float64
+	for _, iv := range sp {
+		if n := len(merged); n > 0 && iv[0]-merged[n-1][1] < radioInterpMergeGap {
+			merged[n-1][1] = iv[1]
+			continue
+		}
+		merged = append(merged, iv)
+	}
+	return merged
+}
+
+func radioNum(x float64) string { return strconv.FormatFloat(math.Round(x*1000)/1000, 'f', -1, 64) }
+
+// radioInterpEnvelope: the caller's gain envelope — 1 outside the intervals, low inside, linear ramps of [ramp] s down
+// before each start and up after each end; min() of the per-interval envelopes (contract §A2).
+func radioInterpEnvelope(sp [][2]float64, low, ramp float64) string {
+	e := "1"
+	L, D := radioNum(low), radioNum(ramp)
+	for _, iv := range sp {
+		a, b := radioNum(iv[0]), radioNum(iv[1])
+		aD, bU := radioNum(iv[0]-ramp), radioNum(iv[1]+ramp)
+		seg := "if(between(t," + aD + "," + a + "),1-(1-" + L + ")*(t-" + aD + ")/" + D + "," +
+			"if(between(t," + a + "," + b + ")," + L + "," +
+			"if(between(t," + b + "," + bU + ")," + L + "+(1-" + L + ")*(t-" + b + ")/" + D + ",1)))"
+		e = "min(" + e + "," + seg + ")"
+	}
+	return e
+}
+
+// radioInterpFilter: the v5 graph for interpreter speech intervals [sp] (interpreter-file time, unshifted).
+func radioInterpFilter(sp [][2]float64) string {
+	shifted := make([][2]float64, len(sp))
+	for i, iv := range sp {
+		shifted[i] = [2]float64{iv[0] + radioInterpDelay, iv[1] + radioInterpDelay}
+	}
+	env := radioInterpEnvelope(shifted, radioInterpCallerLow, radioInterpRamp)
+	return "[0:a]aresample=48000,volume=" + radioNum(radioInterpCallerWin) + ",volume='" + env + "':eval=frame[o];" +
+		"[1:a]" + radioInterpChain + "[i];" +
+		"[o][i]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.89"
+}
+
+// radioInterpRender: caller + interpreter through the v5 graph → m4a.
+func radioInterpRender(caller, interp string, sp [][2]float64, out string) error {
+	cmd := exec.Command("ffmpeg", "-y", "-nostdin", "-loglevel", "error", "-i", caller, "-i", interp,
+		"-filter_complex", radioInterpFilter(sp), "-ar", "48000", "-ac", "2", "-c:a", "aac", "-b:a", "96k", out)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg interp: %v %s", err, truncateForLog(string(b), 200))
+	}
+	return nil
+}
+
+func radioInterpMix(caller, interp, out string) (float64, error) {
+	sp, err := radioInterpSpeech(interp)
+	if err != nil {
+		return 0, err
+	}
+	if err := radioInterpRender(caller, interp, sp, out); err != nil {
+		return 0, err
+	}
+	return radioCallDurFn(out)
+}
+
+// radioInterpJoin: the interpreter's sentence files in order, radioInterpGap s of silence between them → one m4a.
+func radioInterpJoin(parts []string, out string) error {
+	if len(parts) == 0 {
+		return errors.New("no interpreter parts")
+	}
+	args := []string{"-y", "-nostdin", "-loglevel", "error"}
+	var fc, cat strings.Builder
+	for i, p := range parts {
+		args = append(args, "-i", p)
+		fmt.Fprintf(&fc, "[%d:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=mono[a%d];", i, i)
+		fmt.Fprintf(&cat, "[a%d]", i)
+		if i < len(parts)-1 {
+			fmt.Fprintf(&fc, "anullsrc=r=48000:cl=mono,atrim=duration=%s,aformat=sample_fmts=fltp[g%d];",
+				radioNum(radioInterpGap), i)
+			fmt.Fprintf(&cat, "[g%d]", i)
+		}
+	}
+	fmt.Fprintf(&cat, "concat=n=%d:v=0:a=1", 2*len(parts)-1)
+	args = append(args, "-filter_complex", fc.String()+cat.String(), "-ar", "48000", "-ac", "1", "-c:a", "aac",
+		"-b:a", "128k", out)
+	if b, err := exec.Command("ffmpeg", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("ffmpeg join: %v %s", err, truncateForLog(string(b), 200))
+	}
+	return nil
+}
+
+// radioCallInterpTTSFn: the interpreter's voice via OpenAI (gpt-4o-mini-tts, «ash»), one sentence per call.
 var radioCallInterpTTSFn = func(text string) ([]byte, error) {
 	return ttsFetch(ttsModel, "ash", radioInterpInstructions, text)
 }
 
-// radioCallInterpMixFn: phone-fx caller + interpreter → one m4a (radioInterpFilter), returns seconds.
-var radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
-	cmd := exec.Command("ffmpeg", "-y", "-loglevel", "error", "-i", caller, "-i", interp,
-		"-filter_complex", radioInterpFilter, "-ar", "48000", "-ac", "2", "-c:a", "aac", "-b:a", "96k", out)
-	if b, err := cmd.CombinedOutput(); err != nil {
-		return 0, fmt.Errorf("ffmpeg interp: %v %s", err, truncateForLog(string(b), 200))
-	}
-	return radioCallDurFn(out)
-}
+// radioCallInterpJoinFn: sentence files → one interpreter file (radioInterpJoin).
+var radioCallInterpJoinFn = radioInterpJoin
+
+// radioCallInterpMixFn: phone-fx caller + interpreter → one m4a (mix v5), returns seconds.
+var radioCallInterpMixFn = radioInterpMix
 
 // radioInterpWait: how long the question waits for the Mac's interpreter voice before OpenAI takes over.
 var radioInterpWait atomic.Int64
 
 func init() { radioInterpWait.Store(int64(20 * time.Second)) }
+
+// radioInterpOpenAI voices each sentence separately (in parallel) and joins them with radioInterpGap s of silence.
+// Returns the interpreter file; any failure → "" (logged).
+func radioInterpOpenAI(c *radioCall, dir string, sentences []string) string {
+	data := make([][]byte, len(sentences))
+	errs := make([]error, len(sentences))
+	var wg sync.WaitGroup
+	for i, s := range sentences {
+		wg.Add(1)
+		go func(i int, s string) {
+			defer wg.Done()
+			data[i], errs[i] = radioCallInterpTTSFn(s)
+			if errs[i] == nil {
+				logAPICallWithTokens(c.DeviceID, "radio_call_interp", ttsModel, len([]rune(s)), 0, 0, 0)
+			}
+		}(i, s)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			log.Printf("⚠️ radio call %s: interpreter TTS (sentence %d/%d): %v — the original question airs",
+				c.ID, i+1, len(sentences), err)
+			return ""
+		}
+	}
+	var parts []string
+	defer func() {
+		for _, p := range parts {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				log.Printf("⚠️ radio call %s: %v", c.ID, err)
+			}
+		}
+	}()
+	for i, b := range data {
+		p := filepath.Join(dir, fmt.Sprintf("interp_%02d.mp3", i+1))
+		parts = append(parts, p)
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			log.Printf("⚠️ radio call %s: interpreter file: %v — the original question airs", c.ID, err)
+			return ""
+		}
+	}
+	// own name: a late Mac upload writes interp.m4a and must not clobber this file
+	out := filepath.Join(dir, "interp_tts.m4a")
+	if err := radioCallInterpJoinFn(parts, out); err != nil {
+		log.Printf("⚠️ radio call %s: interpreter join: %v — the original question airs", c.ID, err)
+		if rerr := os.Remove(out); rerr != nil && !os.IsNotExist(rerr) {
+			log.Printf("⚠️ radio call %s: %v", c.ID, rerr)
+		}
+		return ""
+	}
+	return out
+}
 
 // radioInterpret mixes the interpreter over the phone clip at [phone] (in place). Called WITHOUT the line lock.
 // ok=false — the original clip airs as is (off, English, nothing to say, or any failure: logged, never blocks the call).
@@ -870,6 +1187,10 @@ func radioInterpret(c *radioCall, lang, textEN, phone string) (float64, bool) {
 	mode := radioInterpMode()
 	textEN = strings.TrimSpace(textEN)
 	if mode == "off" || lang == "" || strings.HasPrefix(lang, "en") || textEN == "" {
+		return 0, false
+	}
+	sentences := radioSentencesEN(textEN)
+	if len(sentences) == 0 {
 		return 0, false
 	}
 	dir := filepath.Dir(phone)
@@ -880,7 +1201,12 @@ func radioInterpret(c *radioCall, lang, textEN, phone string) (float64, bool) {
 			radioLine.Unlock()
 			return 0, false
 		}
-		j := radioQueueJob(c, "interp", []map[string]string{{"voice": "am_michael", "speed": "1.08", "text": textEN}})
+		// one line per sentence; the Mac joins them with radioInterpGap s of silence and returns ONE file
+		lines := make([]map[string]string, len(sentences))
+		for i, s := range sentences {
+			lines[i] = map[string]string{"voice": "am_michael", "speed": "1.25", "text": s}
+		}
+		j := radioQueueJob(c, "interp", lines)
 		radioLine.Unlock()
 		if radioWaitJob(j, time.Duration(radioInterpWait.Load())) {
 			interp = filepath.Join(dir, "interp.m4a")
@@ -898,15 +1224,7 @@ func radioInterpret(c *radioCall, lang, textEN, phone string) (float64, bool) {
 		}
 	}
 	if interp == "" {
-		data, err := radioCallInterpTTSFn(textEN)
-		if err != nil {
-			log.Printf("⚠️ radio call %s: interpreter TTS: %v — the original question airs", c.ID, err)
-			return 0, false
-		}
-		logAPICallWithTokens(c.DeviceID, "radio_call_interp", ttsModel, len([]rune(textEN)), 0, 0, 0)
-		interp = filepath.Join(dir, "interp.mp3")
-		if err := os.WriteFile(interp, data, 0o644); err != nil {
-			log.Printf("⚠️ radio call %s: interpreter file: %v — the original question airs", c.ID, err)
+		if interp = radioInterpOpenAI(c, dir, sentences); interp == "" {
 			return 0, false
 		}
 	}
