@@ -884,7 +884,10 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 		_ = os.MkdirAll(filepath.Dir(raw), 0o755)
 		if err = os.WriteFile(raw, audio, 0o644); err == nil {
 			callerDur, err = radioCallPhoneFn(raw, phone)
-			_ = os.Remove(raw) // сырая запись вопроса не хранится (политика конфиденциальности, 15.10.2026)
+			// сырая запись вопроса не хранится (политика конфиденциальности, 15.10.2026)
+			if rerr := os.Remove(raw); rerr != nil && !os.IsNotExist(rerr) {
+				log.Printf("⚠️ radio call %s: raw question not removed: %v", c.ID, rerr)
+			}
 		}
 	}
 
@@ -1221,7 +1224,10 @@ func radioCallCleanup(now time.Time) {
 	}
 	radioLine.Unlock()
 	dir := filepath.Join(radioRoot(), "call")
-	entries, _ := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		log.Printf("⚠️ radio call cleanup: %v", err)
+	}
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == live {
 			continue
