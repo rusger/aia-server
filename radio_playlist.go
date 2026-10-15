@@ -6,7 +6,8 @@ package main
 //   POST /api/radio/your-chart
 //   {facts:<chart-facts response>, date?:"M D Y"} or the birth data of
 //   /api/chart-facts; plus lang? (16 languages, default en),
-//   at?:"YYYY-MM-DD" (default today UTC), yogas?:[names from the app's detector]
+//   at?:"YYYY-MM-DD" (default today UTC), yogas?:[names from the app's detector],
+//   heard?:[block ids already heard, ≤ 200], last_first?:block id, nonce?:string ≤ 64
 //
 //   GET /api/radio/cat/{sha1}   — public: a catalog insert from the TTS cache
 //
@@ -20,18 +21,25 @@ package main
 // the app play it without a new player.
 //
 // Access and limits are exactly those of /api/chart-facts (chartAccess).
-// The build is deterministic: lead variants are chosen by
-// seed = sha1(facts + at).
+// Lead variants are deterministic: seed = sha1(facts + at). The ORDER of the
+// rubric blocks is a shuffle bag (owner 2026-10-15): the ident first, the
+// closing last, between them the blocks not yet heard in an order seeded by
+// (facts, at, nonce), then the heard ones (see radioBuilder.order). Every item
+// carries its block id; without a nonce the server draws a fresh one, so each
+// start sounds in a new order.
 
 import (
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"math"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"path"
@@ -44,7 +52,9 @@ import (
 )
 
 const (
-	radioMaxBody      = 16384 // facts (~1.5 KB) + the app's yoga list
+	radioMaxBody      = 32768 // facts (~1.5 KB) + the app's yoga list + heard block ids
+	radioMaxHeard     = 200   // request cap on heard[]
+	radioMaxNonce     = 64    // request cap on nonce (bytes)
 	radioMaxYogas     = 64    // request cap on yogas[]
 	radioMaxYogaLen   = 64
 	radioYogasPlayed  = 5    // at most this many yoga inserts
@@ -101,6 +111,11 @@ var radioHouseTopic = map[int]string{
 }
 
 var radioCatKeyRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// radioBlockReqRe validates block ids sent back by clients (heard,
+// last_first). Looser than what blockID emits so a later format change does
+// not turn ids stored by old clients into 400s; unknown ids are ignored.
+var radioBlockReqRe = regexp.MustCompile(`^[a-z0-9_:-]{1,64}$`)
 
 func radioDir() string {
 	if d := os.Getenv("RADIO_DIR"); d != "" {
@@ -279,6 +294,7 @@ type radioItem struct {
 	Durs   map[string]float64 `json:"durs,omitempty"`
 	Srcs   map[string]string  `json:"srcs,omitempty"` // per-language audio URL (catalog inserts; the site/app prefer it)
 	Rubric string             `json:"rubric"`
+	Block  string             `json:"block"` // the shuffle unit: "ident", "closing" or "<rubric>:<12 hex of its content ids>"
 
 	span    float64 // time on the timeline (a catalog insert in the listener's language may be longer than en)
 	station string  // music under this item
@@ -336,6 +352,9 @@ type radioInputs struct {
 	cat        *radioCat
 	schedule   func(station string) *radioSchedule // nil when the station has no schedule for `at`
 	loops      func(station string) []radioLoop    // <station>/ever/loops.json; nil when absent
+	heard      map[string]bool                     // block ids the listener has heard: they go after the unheard ones
+	lastFirst  string                              // first block after the ident at the previous start
+	nonce      string                              // order seed salt ("" in tests: a fixed order)
 }
 
 // radioBuilder accumulates rubric groups.
@@ -498,17 +517,140 @@ func (b *radioBuilder) add(rubric string, topics []radioItem) {
 	if note, ok := b.langNote(rubric, topics); ok {
 		topics = append([]radioItem{note}, topics...)
 	}
-	lead := b.you("lead", rubric)
-	if lead == nil {
-		b.groups = append(b.groups, topics)
-		return
+	group := topics
+	if lead := b.you("lead", rubric); lead != nil {
+		if li, ok := b.libItem(lead, "lead", rubric, topics[0].station); ok {
+			group = append([]radioItem{li}, topics...)
+		}
 	}
-	li, ok := b.libItem(lead, "lead", rubric, topics[0].station)
-	if !ok {
-		b.groups = append(b.groups, topics)
-		return
+	id := radioBlockID(rubric, group)
+	for i := range group {
+		group[i].Block = id
 	}
-	b.groups = append(b.groups, append([]radioItem{li}, topics...))
+	b.groups = append(b.groups, group)
+}
+
+// radioBlockID names a rubric block by its content: the rubric plus a hash of
+// the ids of its content items. Leads, language notes and yoga names are left
+// out (their variant or language changes from day to day while the content
+// stays), so the id is stable for as long as the same texts play, and a new
+// sky_news / release / month text is a new, unheard block.
+func radioBlockID(rubric string, items []radioItem) string {
+	h := sha1.New()
+	for _, it := range items {
+		switch it.Kind {
+		case "lead", "lang_note", "yoga_name":
+			continue
+		}
+		h.Write([]byte(it.ID))
+		h.Write([]byte{'\n'})
+	}
+	return rubric + ":" + hex.EncodeToString(h.Sum(nil))[:12]
+}
+
+// order shuffles the rubric blocks between the ident (first) and the closing
+// (last): the blocks not in heard first, then the heard ones, each part in a
+// random order seeded by (facts, at, nonce). Two blocks under the same music
+// station do not follow each other when that can be avoided (one block per
+// rubric, so the rubric itself never repeats), and the first block after the
+// ident is not lastFirst when another unheard block can open.
+func (b *radioBuilder) order() {
+	head, tail := 0, len(b.groups)
+	for head < tail && b.groups[head][0].Rubric == rubIdent {
+		head++
+	}
+	for tail > head && b.groups[tail-1][0].Rubric == rubClosing {
+		tail--
+	}
+	h := sha1.Sum(append(append(b.seed[:], "|order|"...), b.in.nonce...))
+	rng := mrand.New(mrand.NewSource(int64(binary.BigEndian.Uint64(h[:8]))))
+	var unheard, heard [][]radioItem
+	for _, g := range b.groups[head:tail] {
+		if b.in.heard[g[0].Block] {
+			heard = append(heard, g)
+		} else {
+			unheard = append(unheard, g)
+		}
+	}
+	for _, part := range [][][]radioItem{unheard, heard} {
+		rng.Shuffle(len(part), func(i, j int) { part[i], part[j] = part[j], part[i] })
+	}
+	prev := ""
+	if head > 0 {
+		prev = b.groups[head-1][0].station
+	}
+	out := append([][]radioItem{}, b.groups[:head]...)
+	avoid := b.in.lastFirst
+	for _, part := range [][][]radioItem{unheard, heard} {
+		if len(part) == 0 {
+			continue
+		}
+		part = radioArrange(part, prev, avoid)
+		avoid = ""
+		prev = part[len(part)-1][0].station
+		out = append(out, part...)
+	}
+	b.groups = append(out, b.groups[tail:]...)
+}
+
+// radioArrange reorders blocks (already shuffled) so that no two neighbours
+// share a station (the block's first item; prev is the station before the
+// first block) whenever such an order exists, and the first block is not
+// avoid when another can open. Greedy in the shuffled order: at every step the
+// first block that differs from the previous station AND leaves the rest
+// arrangeable; failing that, the first that differs; failing that, the first.
+func radioArrange(blocks [][]radioItem, prev, avoid string) [][]radioItem {
+	rest := append([][]radioItem{}, blocks...)
+	out := make([][]radioItem, 0, len(rest))
+	key := func(g []radioItem) string { return g[0].station }
+	// arrangeable: rest without i can follow key(rest[i]) with no equal neighbours.
+	arrangeable := func(i int) bool {
+		n := len(rest) - 1
+		count := map[string]int{}
+		for j, g := range rest {
+			if j != i {
+				count[key(g)]++
+			}
+		}
+		for k, c := range count {
+			limit := (n + 1) / 2
+			if k == key(rest[i]) {
+				limit = n / 2
+			}
+			if c > limit {
+				return false
+			}
+		}
+		return true
+	}
+	for len(rest) > 0 {
+		allowed := func(i int) bool {
+			return len(out) > 0 || avoid == "" || len(rest) == 1 || rest[i][0].Block != avoid
+		}
+		pick := -1
+		for tier := 0; tier < 3 && pick < 0; tier++ {
+			for i, g := range rest {
+				if !allowed(i) {
+					continue
+				}
+				if tier < 2 && key(g) == prev {
+					continue
+				}
+				if tier < 1 && !arrangeable(i) {
+					continue
+				}
+				pick = i
+				break
+			}
+		}
+		if pick < 0 {
+			pick = 0
+		}
+		prev = key(rest[pick])
+		out = append(out, rest[pick])
+		rest = append(rest[:pick:pick], rest[pick+1:]...)
+	}
+	return out
 }
 
 func (b *radioBuilder) addLib(dst *[]radioItem, ts []*radioLibTrack, rubric string, station func(t *radioLibTrack) string) {
@@ -591,6 +733,7 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 	// 0. Ident.
 	if t := b.you("ident", ""); t != nil {
 		if it, ok := b.libItem(t, "ident", rubIdent, day); ok {
+			it.Block = rubIdent
 			b.groups = append(b.groups, []radioItem{it})
 		}
 	}
@@ -871,10 +1014,12 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 	// 16. Closing.
 	if t := b.you("closing", rubClosing); t != nil {
 		if it, ok := b.libItem(t, "closing", rubClosing, day); ok {
+			it.Block = rubClosing
 			b.groups = append(b.groups, []radioItem{it})
 		}
 	}
 
+	b.order()
 	b.layout(pl)
 	return pl
 }
@@ -1094,6 +1239,9 @@ type radioYourChartRequest struct {
 	chartFactsRequest             // birth data (date also serves the Sade Sati ordinal with facts), lang, at
 	Facts             *chartFacts `json:"facts"`
 	Yogas             []string    `json:"yogas"`
+	Heard             []string    `json:"heard"`      // block ids the listener has heard (shuffle bag)
+	LastFirst         string      `json:"last_first"` // first block after the ident at the previous start
+	Nonce             string      `json:"nonce"`      // order seed; empty = a fresh random one
 }
 
 // radioService: the access gate (own windows, same rules as chart-facts),
@@ -1213,6 +1361,31 @@ func (s *radioService) serve(w http.ResponseWriter, req *radioYourChartRequest, 
 		}
 	}
 
+	if len(req.Heard) > radioMaxHeard {
+		chartFactsError(w, http.StatusBadRequest, "Invalid heard")
+		return false
+	}
+	heard := make(map[string]bool, len(req.Heard))
+	for _, id := range req.Heard {
+		if !radioBlockReqRe.MatchString(id) {
+			chartFactsError(w, http.StatusBadRequest, "Invalid heard")
+			return false
+		}
+		heard[id] = true
+	}
+	if req.LastFirst != "" && !radioBlockReqRe.MatchString(req.LastFirst) {
+		chartFactsError(w, http.StatusBadRequest, "Invalid last_first")
+		return false
+	}
+	if len(req.Nonce) > radioMaxNonce {
+		chartFactsError(w, http.StatusBadRequest, "Invalid nonce")
+		return false
+	}
+	nonce := req.Nonce
+	if nonce == "" {
+		nonce = radioFreshNonce()
+	}
+
 	// The birth date (optional with facts) gives the age for the Sade Sati ordinal.
 	var birth *time.Time
 	if req.Date != "" {
@@ -1287,12 +1460,24 @@ func (s *radioService) serve(w http.ResponseWriter, req *radioYourChartRequest, 
 	}
 
 	pl := buildRadioPlaylist(radioInputs{facts: facts, extraYogas: req.Yogas, birth: birth, lang: lang, at: at,
-		lib: libV.(*radioLib), cat: catV.(*radioCat), schedule: schedule, loops: loops})
+		lib: libV.(*radioLib), cat: catV.(*radioCat), schedule: schedule, loops: loops,
+		heard: heard, lastFirst: req.LastFirst, nonce: nonce})
 	if len(pl.missingMusic) > 0 {
 		log.Printf("radio-you: no music bed for stations %v on %s %s", pl.missingMusic, day, who)
 	}
 	chartFactsJSON(w, http.StatusOK, pl)
 	return true
+}
+
+// radioFreshNonce: a random order seed for a request without one (the site's
+// /you/ sends none and still gets a new order on every start).
+func radioFreshNonce() string {
+	var r [8]byte
+	if _, err := rand.Read(r[:]); err != nil {
+		log.Printf("radio-you: crypto/rand failed, nonce from the clock: %v", err)
+		return fmt.Sprintf("t%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(r[:])
 }
 
 // handleCat serves GET /api/radio/cat/{sha1}: only 40-hex keys named in

@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	mrand "math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +51,13 @@ func radioTestDir(t *testing.T, days ...string) string {
 // radioBuild runs the builder against dir like serve does.
 func radioBuild(t *testing.T, dir string, f *chartFacts, at time.Time, lang string, birth *time.Time, extra []string) *radioPlaylist {
 	t.Helper()
+	return radioBuildWith(t, dir, f, at, lang, birth, extra, nil)
+}
+
+// radioBuildWith is radioBuild with the shuffle-bag inputs set by mod.
+func radioBuildWith(t *testing.T, dir string, f *chartFacts, at time.Time, lang string, birth *time.Time, extra []string,
+	mod func(in *radioInputs)) *radioPlaylist {
+	t.Helper()
 	c := &radioFileCache{}
 	lib, err := c.load(filepath.Join(dir, "lib", "index.json"), parseRadioLib)
 	if err != nil {
@@ -59,7 +68,7 @@ func radioBuild(t *testing.T, dir string, f *chartFacts, at time.Time, lang stri
 		t.Fatal(err)
 	}
 	day := at.Format("2006-01-02")
-	return buildRadioPlaylist(radioInputs{facts: f, extraYogas: extra, birth: birth, lang: lang, at: at,
+	in := radioInputs{facts: f, extraYogas: extra, birth: birth, lang: lang, at: at,
 		lib: lib.(*radioLib), cat: cat.(*radioCat), schedule: func(st string) *radioSchedule {
 			v, err := c.load(filepath.Join(dir, st, day, "schedule.json"), parseRadioSchedule)
 			if err != nil {
@@ -72,7 +81,11 @@ func radioBuild(t *testing.T, dir string, f *chartFacts, at time.Time, lang stri
 				return nil
 			}
 			return v.([]radioLoop)
-		}})
+		}}
+	if mod != nil {
+		mod(&in)
+	}
+	return buildRadioPlaylist(in)
 }
 
 // radioStationAt: the station of the item playing at sec (the last one started).
@@ -228,8 +241,19 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	// Sade Sati is not active for the fixture (Saturn in Pisces, Moon in Capricorn).
 	want := []string{rubIdent, rubSkyToday, rubTithi, rubLagna, rubMonth, rubTransits, rubDasha, rubYogas,
 		rubPlanetHouse, rubConjunction, rubNakshatra, rubTopic, rubYear, rubRelease, rubEvent, rubClosing}
-	if got := radioRubrics(pl); !reflect.DeepEqual(got, want) {
-		t.Fatalf("rubrics = %v\nwant %v", got, want)
+	// The blocks are shuffled (radioCheckOrder): ident first, closing last,
+	// every rubric exactly once in between.
+	got := radioRubrics(pl)
+	radioCheckOrder(t, pl, nil)
+	if len(got) != len(want) || got[0] != rubIdent || got[len(got)-1] != rubClosing {
+		t.Fatalf("rubrics = %v\nwant a shuffle of %v", got, want)
+	}
+	gotSet := append([]string{}, got...)
+	wantSet := append([]string{}, want...)
+	sort.Strings(gotSet)
+	sort.Strings(wantSet)
+	if !reflect.DeepEqual(gotSet, wantSet) {
+		t.Fatalf("rubrics = %v\nwant a shuffle of %v", got, want)
 	}
 	if pl.Items[0].Title != "Your Chart" || pl.Items[1].Title != "Coming up" {
 		t.Errorf("untitled lines: %q %q", pl.Items[0].Title, pl.Items[1].Title)
@@ -458,9 +482,7 @@ func TestRadioSadeSati(t *testing.T) {
 	if len(items) != 2 || items[1].Cat != "sade_sati_1" || items[1].station != "saturn" {
 		t.Fatalf("sade sati items = %+v", items)
 	}
-	if r := radioRubrics(pl); r[7] != rubSadeSati || r[6] != rubDasha || r[8] != rubYogas {
-		t.Errorf("sade sati out of order: %v", r)
-	}
+	radioCheckOrder(t, pl, nil)
 	// Facts without a birth date: the ordinal is unknown, the rubric drops out.
 	if items := radioByRubric(radioBuild(t, dir, &f, radioDay("2026-10-13"), "en", nil, nil), rubSadeSati); len(items) != 0 {
 		t.Errorf("sade sati without birth = %v", radioIDs(items))
@@ -499,7 +521,7 @@ func TestRadioHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	withFacts := `{"facts":` + string(factsJSON) + `,"date":"5 15 1990","lang":"ru","at":"2026-10-13"}`
+	withFacts := `{"facts":` + string(factsJSON) + `,"date":"5 15 1990","lang":"ru","at":"2026-10-13","nonce":"n1"}`
 
 	if w := postRadio(s, "", withFacts); w.Code != http.StatusForbidden {
 		t.Fatalf("no Origin: status %d, want 403", w.Code)
@@ -518,7 +540,7 @@ func TestRadioHTTP(t *testing.T) {
 
 	// Birth data instead of facts: computed through chart-facts, same playlist
 	// (at defaults to the fake clock's 2026-10-13).
-	w = postRadio(s, "https://astrolytix.com", strings.Replace(chartFactsFixtureBody, `"lang":"en"`, `"lang":"ru"`, 1))
+	w = postRadio(s, "https://astrolytix.com", strings.Replace(chartFactsFixtureBody, `"lang":"en"`, `"lang":"ru","nonce":"n1"`, 1))
 	if w.Code != http.StatusOK {
 		t.Fatalf("birth request: status %d body %s", w.Code, w.Body)
 	}
@@ -635,13 +657,14 @@ func TestRadioLangNote(t *testing.T) {
 				out = append(out, it.Rubric)
 			}
 		}
+		sort.Strings(out) // the block order is shuffled
 		return out
 	}
 	if got := notes(radioBuild(t, dir, f, radioDay("2026-10-13"), "en", nil, nil)); len(got) != 0 {
 		t.Errorf("en: lang notes in %v", got)
 	}
 	if got := notes(radioBuild(t, dir, f, radioDay("2026-10-13"), "de", nil, nil)); !reflect.DeepEqual(got,
-		[]string{rubTithi, rubDasha, rubYogas}) {
+		[]string{rubDasha, rubTithi, rubYogas}) {
 		t.Errorf("de: lang notes in %v", got)
 	}
 
@@ -833,5 +856,289 @@ func TestRadioYogaNameLocalized(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("%s yogas = %v\nwant %v", lang, got, want)
 		}
+	}
+}
+
+// --- Shuffle bag (owner 2026-10-15) ------------------------------------
+
+// radioCheckOrder: every item carries its block; a block is one contiguous
+// run of one rubric whose lead (if any) comes first; the ident opens, the
+// closing ends; with heard != nil every unheard block precedes every heard one.
+func radioCheckOrder(t *testing.T, pl *radioPlaylist, heard map[string]bool) []string {
+	t.Helper()
+	var blocks []string
+	seen := map[string]bool{}
+	for i, it := range pl.Items {
+		if it.Block == "" {
+			t.Fatalf("item %d (%s) has no block", i, it.ID)
+		}
+		if i > 0 && pl.Items[i-1].Block == it.Block {
+			if pl.Items[i-1].Rubric != it.Rubric {
+				t.Errorf("block %s mixes rubrics", it.Block)
+			}
+			if it.Kind == "lead" {
+				t.Errorf("block %s: lead %s is not first", it.Block, it.ID)
+			}
+			continue
+		}
+		if seen[it.Block] {
+			t.Errorf("block %s is not contiguous", it.Block)
+		}
+		seen[it.Block] = true
+		blocks = append(blocks, it.Block)
+	}
+	if blocks[0] != rubIdent || blocks[len(blocks)-1] != rubClosing {
+		t.Errorf("blocks %v: want ident first, closing last", blocks)
+	}
+	if heard != nil {
+		inHeard := false
+		for _, b := range blocks[1 : len(blocks)-1] {
+			if heard[b] {
+				inHeard = true
+			} else if inHeard {
+				t.Errorf("unheard %s after a heard block: %v", b, blocks)
+			}
+		}
+	}
+	return blocks
+}
+
+func TestRadioShuffleBag(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13", "2026-10-20")
+	f := fixtureFacts(t)
+	build := func(at, nonce string, heard map[string]bool, lastFirst string) *radioPlaylist {
+		return radioBuildWith(t, dir, f, radioDay(at), "ru", &radioFixtureBirth, nil, func(in *radioInputs) {
+			in.nonce, in.heard, in.lastFirst = nonce, heard, lastFirst
+		})
+	}
+
+	// The same nonce gives the same order; different nonces shuffle it, and
+	// the music bed still covers the whole playlist in every order.
+	orders := map[string]bool{}
+	firsts := map[string]bool{}
+	for i := 0; i < 12; i++ {
+		nonce := fmt.Sprintf("n%d", i)
+		pl := build("2026-10-13", nonce, nil, "")
+		blocks := radioCheckOrder(t, pl, nil)
+		orders[strings.Join(blocks, ",")] = true
+		firsts[blocks[1]] = true
+		radioCheckMusic(t, pl)
+		a, err := json.Marshal(pl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(build("2026-10-13", nonce, nil, ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(a) != string(b) {
+			t.Errorf("nonce %s: the same request must give the same playlist", nonce)
+		}
+	}
+	if len(orders) < 10 || len(firsts) < 3 {
+		t.Errorf("12 nonces gave %d orders, %d first blocks", len(orders), len(firsts))
+	}
+
+	// Block ids name the content: stable across days while the texts stay
+	// (lagna, dasha, nakshatra...), new when the text changes (the lead
+	// variant is not part of the id).
+	byRubric := func(pl *radioPlaylist) map[string]string {
+		m := map[string]string{}
+		for _, it := range pl.Items {
+			m[it.Rubric] = it.Block
+		}
+		return m
+	}
+	d1, d2 := byRubric(build("2026-10-13", "x", nil, "")), byRubric(build("2026-10-20", "y", nil, ""))
+	for _, r := range []string{rubLagna, rubDasha, rubNakshatra, rubYogas, rubPlanetHouse, rubConjunction, rubMonth} {
+		if d1[r] == "" || d1[r] != d2[r] || !strings.HasPrefix(d1[r], r+":") || !radioBlockReqRe.MatchString(d1[r]) {
+			t.Errorf("%s block: %q on 13.10, %q on 20.10", r, d1[r], d2[r])
+		}
+	}
+	lead := radioItem{Kind: "lead", ID: "you/lagna/lead-1"}
+	note := radioItem{Kind: "lang_note", ID: "you/lang-note-2"}
+	text := radioItem{Kind: "lib", ID: "signs/04-cancer"}
+	if radioBlockID(rubLagna, []radioItem{lead, note, text}) != radioBlockID(rubLagna, []radioItem{text}) {
+		t.Error("lead / language note variants must not change the block id")
+	}
+	if radioBlockID(rubLagna, []radioItem{text}) == radioBlockID(rubLagna, []radioItem{{Kind: "lib", ID: "signs/05-leo"}}) {
+		t.Error("another text must be another block")
+	}
+
+	// Heard blocks go after the unheard ones (both parts shuffled); every
+	// block is still played.
+	all := radioCheckOrder(t, build("2026-10-13", "h", nil, ""), nil)
+	middle := all[1 : len(all)-1]
+	heard := map[string]bool{"no-such-block": true}
+	for i, b := range middle {
+		if i%2 == 0 {
+			heard[b] = true
+		}
+	}
+	for i := 0; i < 8; i++ {
+		pl := build("2026-10-13", fmt.Sprintf("h%d", i), heard, "")
+		blocks := radioCheckOrder(t, pl, heard)
+		if len(blocks) != len(all) {
+			t.Errorf("heard: %d blocks, want %d", len(blocks), len(all))
+		}
+		if heard[blocks[1]] {
+			t.Errorf("heard: a heard block opens: %v", blocks)
+		}
+	}
+	// Everything heard: still a full shuffled playlist.
+	everything := map[string]bool{}
+	for _, b := range middle {
+		everything[b] = true
+	}
+	if got := radioCheckOrder(t, build("2026-10-13", "e", everything, ""), everything); len(got) != len(all) {
+		t.Errorf("all heard: %d blocks, want %d", len(got), len(all))
+	}
+
+	// last_first: the block that opened the previous start does not open this one.
+	for i := 0; i < 12; i++ {
+		nonce := fmt.Sprintf("n%d", i)
+		prev := radioCheckOrder(t, build("2026-10-13", nonce, nil, ""), nil)[1]
+		if got := radioCheckOrder(t, build("2026-10-13", nonce, nil, prev), nil)[1]; got == prev {
+			t.Errorf("nonce %s: %s opened again despite last_first", nonce, got)
+		}
+	}
+	// ...unless it is the only unheard block (unheard-first wins).
+	only := map[string]bool{}
+	for _, b := range middle[1:] {
+		only[b] = true
+	}
+	if got := radioCheckOrder(t, build("2026-10-13", "o", only, middle[0]), only)[1]; got != middle[0] {
+		t.Errorf("the only unheard block %s must open, got %s", middle[0], got)
+	}
+}
+
+// radioTestBlocks: one-item groups with the given stations, ids b0, b1...
+func radioTestBlocks(stations ...string) [][]radioItem {
+	var out [][]radioItem
+	for i, st := range stations {
+		out = append(out, []radioItem{{ID: fmt.Sprintf("b%d", i), Block: fmt.Sprintf("b%d", i), station: st}})
+	}
+	return out
+}
+
+func TestRadioArrangeNoSameStation(t *testing.T) {
+	for _, c := range []struct {
+		prev     string
+		stations []string
+	}{
+		{"", []string{"a", "a", "a", "b", "b", "c"}},
+		{"a", []string{"a", "a", "a", "b", "b", "c"}},
+		{"a", []string{"a", "a", "b", "b"}},
+		{"m", []string{"m", "m", "m", "s", "s", "r", "q"}},
+	} {
+		for seed := int64(0); seed < 40; seed++ {
+			blocks := radioTestBlocks(c.stations...)
+			r := mrand.New(mrand.NewSource(seed))
+			r.Shuffle(len(blocks), func(i, j int) { blocks[i], blocks[j] = blocks[j], blocks[i] })
+			got := radioArrange(blocks, c.prev, "")
+			if len(got) != len(blocks) {
+				t.Fatalf("lost blocks: %d of %d", len(got), len(blocks))
+			}
+			prev := c.prev
+			var seq []string
+			for _, g := range got {
+				seq = append(seq, g[0].station)
+				if g[0].station == prev {
+					t.Errorf("prev %q %v: same station back to back in %v", c.prev, c.stations, seq)
+					break
+				}
+				prev = g[0].station
+			}
+		}
+	}
+	// Unavoidable: the extra ones still all play, as few neighbours as the greedy allows.
+	got := radioArrange(radioTestBlocks("a", "a", "a", "b"), "", "")
+	if len(got) != 4 {
+		t.Fatalf("got %d blocks", len(got))
+	}
+	// avoid: never first while another can open.
+	for seed := int64(0); seed < 20; seed++ {
+		blocks := radioTestBlocks("a", "b", "c", "a")
+		r := mrand.New(mrand.NewSource(seed))
+		r.Shuffle(len(blocks), func(i, j int) { blocks[i], blocks[j] = blocks[j], blocks[i] })
+		if got := radioArrange(blocks, "", "b1"); got[0][0].Block == "b1" {
+			t.Errorf("seed %d: avoided block opened", seed)
+		}
+	}
+	if got := radioArrange(radioTestBlocks("a"), "", "b0"); got[0][0].Block != "b0" {
+		t.Errorf("the only block must still play")
+	}
+}
+
+func TestRadioHTTPShuffleFields(t *testing.T) {
+	s, _, _ := newTestRadio(t, "2026-10-13")
+	factsJSON, err := json.Marshal(fixtureFacts(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ip := 0
+	post := func(body string) *httptest.ResponseRecorder { // a fresh IP per call: the site windows are per IP
+		ip++
+		r := httptest.NewRequest(http.MethodPost, "/api/radio/your-chart", strings.NewReader(body))
+		r.RemoteAddr = fmt.Sprintf("203.0.113.%d:40000", ip)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Origin", "https://astrolytix.com")
+		w := httptest.NewRecorder()
+		s.handle(w, r)
+		return w
+	}
+	base := `{"facts":` + string(factsJSON) + `,"lang":"en","at":"2026-10-13"`
+	order := func(body string) []string {
+		t.Helper()
+		w := post(body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d body %s", w.Code, w.Body)
+		}
+		var pl radioPlaylist
+		if err := json.Unmarshal(w.Body.Bytes(), &pl); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(w.Body.String(), `"block":"ident"`) {
+			t.Errorf("no block field in the response")
+		}
+		return radioCheckOrder(t, &pl, nil)
+	}
+
+	// No nonce: a fresh order per request (the site sends none).
+	orders := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		orders[strings.Join(order(base+`}`), ",")] = true
+	}
+	if len(orders) < 2 {
+		t.Errorf("requests without a nonce must not all share one order")
+	}
+	// The same nonce: the same order; heard and last_first are honoured.
+	a := order(base + `,"nonce":"abc"}`)
+	if b := order(base + `,"nonce":"abc"}`); strings.Join(a, ",") != strings.Join(b, ",") {
+		t.Errorf("same nonce, different orders:\n%v\n%v", a, b)
+	}
+	if b := order(base + `,"nonce":"abc","last_first":"` + a[1] + `"}`); b[1] == a[1] {
+		t.Errorf("last_first ignored: %v", b)
+	}
+	if b := order(base + `,"nonce":"abc","heard":["` + a[1] + `","unknown:000000000000"]}`); b[len(b)-2] != a[1] {
+		// the only heard block plays last, before the closing
+		t.Errorf("heard ignored: %v", b)
+	}
+
+	for _, bad := range []string{
+		base + `,"heard":["` + strings.Repeat(`lagna:0123456789ab","`, radioMaxHeard) + `x"]}`,
+		base + `,"heard":["Lagna:0123"]}`,
+		base + `,"heard":["` + strings.Repeat("a", 65) + `"]}`,
+		base + `,"last_first":"lagna 1"}`,
+		base + `,"nonce":"` + strings.Repeat("n", 65) + `"}`,
+	} {
+		if w := post(bad); w.Code != http.StatusBadRequest {
+			t.Errorf("%.60s…: status %d, want 400", bad[len(bad)-60:], w.Code)
+		}
+	}
+	// 200 heard ids of the longest form fit the body cap.
+	ok := base + `,"heard":["` + strings.Repeat(strings.Repeat("a", 64)+`","`, radioMaxHeard-1) + strings.Repeat("a", 64) + `"]}`
+	if w := post(ok); w.Code != http.StatusOK {
+		t.Errorf("200 heard ids: status %d body %.200s", w.Code, w.Body)
 	}
 }
