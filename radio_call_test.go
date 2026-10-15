@@ -41,6 +41,8 @@ func setupRadioCall(t *testing.T, f *radioFake) (*mux.Router, string) {
 	ensureVoiceSchema()
 	radioCallSchemaReady.Store(false)
 	ensureRadioCallSchema()
+	radioMailbagSchemaReady.Store(false)
+	ensureRadioMailbagSchema()
 	root := t.TempDir()
 	t.Setenv("RADIO_ROOT", root)
 	t.Setenv("VOICE_ALLOWED_EMAILS", radioOwner)
@@ -85,6 +87,11 @@ func setupRadioCall(t *testing.T, f *radioFake) (*mux.Router, string) {
 	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) { return []byte("mp3"), nil }
 	radioCallKokoroFn = func(text, out string) error { return os.WriteFile(out, []byte("wav"), 0o644) }
 	radioWorkerSeen.Store(time.Now().UnixNano()) // Мак на связи, если тест не скажет иначе
+	t.Setenv("RADIO_INTERP", "")
+	radioCallInterpTTSFn = func(text string) ([]byte, error) { return []byte("mp3"), nil }
+	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+		return 9.25, os.WriteFile(out, []byte("mix"), 0o644)
+	}
 
 	r := mux.NewRouter()
 	withUser := func(h http.HandlerFunc) http.HandlerFunc {
@@ -563,5 +570,252 @@ func TestRadioCallRejectedHasNoCTA(t *testing.T) {
 	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
 	if got := strings.Join(radioKinds(radioNow(t, root)), ","); strings.Contains(got, "cta") {
 		t.Fatalf("a call that did not air must not invite others: %s", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Simultaneous interpretation (RADIO_INTERP)
+
+func radioRuCall(t *testing.T, r *mux.Router) string {
+	t.Helper()
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"ru"}`)
+	id := out["call_id"].(string)
+	if code, o := radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner); code != 200 || o["ok"] != true {
+		t.Fatalf("intro %d %v", code, o)
+	}
+	radioWorker(t, r, "intro_line")
+	return id
+}
+
+func radioRuFake(textEN string) *radioFake {
+	return &radioFake{
+		transcripts: []string{"Меня зовут Оля, про Сатурн", "Что значит Сатурн над моей Луной?"},
+		checks: []radioCheck{{OK: true, Name: "Оля", TopicEN: "Saturn over the Moon", Language: "ru"},
+			{OK: true, Language: "ru", TextEN: textEN}},
+	}
+}
+
+func radioCallerSeg(t *testing.T, root string) map[string]interface{} {
+	t.Helper()
+	for _, s := range radioNow(t, root)["segments"].([]interface{}) {
+		if m := s.(map[string]interface{}); m["kind"] == "caller" {
+			return m
+		}
+	}
+	t.Fatal("no caller segment")
+	return nil
+}
+
+func TestRadioInterpOpenAI(t *testing.T) {
+	r, root := setupRadioCall(t, radioRuFake("What does Saturn over my Moon mean?"))
+	t.Setenv("RADIO_INTERP", "openai")
+	var said, mixCaller, mixInterp string
+	radioCallInterpTTSFn = func(text string) ([]byte, error) { said = text; return []byte("mp3"), nil }
+	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+		mixCaller, mixInterp = caller, interp
+		return 9.25, os.WriteFile(out, []byte("mix"), 0o644)
+	}
+	id := radioRuCall(t, r)
+	if code, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); code != 200 || o["ok"] != true {
+		t.Fatalf("question %d %v", code, o)
+	}
+	if said != "What does Saturn over my Moon mean?" {
+		t.Fatalf("interpreter text %q", said)
+	}
+	dir := filepath.Join(root, "call", id)
+	if mixCaller != filepath.Join(dir, "caller.m4a") || mixInterp != filepath.Join(dir, "interp.mp3") {
+		t.Fatalf("mix inputs %s + %s", mixCaller, mixInterp)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "caller.m4a")); string(b) != "mix" {
+		t.Fatalf("caller.m4a must be the mix, got %q", b)
+	}
+	if seg := radioCallerSeg(t, root); seg["dur"] != 9.25 || seg["src"] != "call/"+id+"/caller.m4a" {
+		t.Fatalf("caller segment %v (mixed duration)", seg)
+	}
+	radioWorker(t, r, "answer_en")
+	waitFor(t, func() bool { return radioNow(t, root)["state"] == "done" })
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,intro_line,onair,caller,answer_local,answer_en,cta" {
+		t.Fatalf("segments %s", got)
+	}
+}
+
+// radioWorkerInterp serves the Mac's «interp» job: one file, durs {"interp": sec}.
+func radioWorkerInterp(t *testing.T, r *mux.Router) map[string]interface{} {
+	t.Helper()
+	var job map[string]interface{}
+	for i := 0; i < 100 && job == nil; i++ {
+		req := httptest.NewRequest("GET", "/api/radio/call/jobs?wait=0", nil)
+		req.Header.Set("X-Radio-Worker", "tok")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		var out struct {
+			Jobs []map[string]interface{} `json:"jobs"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		if len(out.Jobs) > 0 {
+			job = out.Jobs[0]
+		} else {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if job == nil || job["kind"] != "interp" {
+		t.Fatalf("worker job = %v, want interp", job)
+	}
+	post := func(field string) int {
+		var b bytes.Buffer
+		mw := multipart.NewWriter(&b)
+		if field != "" {
+			fw, _ := mw.CreateFormFile(field, "interp.m4a")
+			fw.Write([]byte("kokoro"))
+		}
+		mw.WriteField("durs", `{"interp": 6.1}`)
+		mw.Close()
+		req := httptest.NewRequest("POST", "/api/radio/call/jobs/"+job["id"].(string), &b)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		req.Header.Set("X-Radio-Worker", "tok")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := post(""); code != 400 {
+		t.Fatalf("interp upload without the file: %d", code)
+	}
+	if code := post("interp"); code != 200 {
+		t.Fatalf("interp upload %d", code)
+	}
+	return job
+}
+
+func TestRadioInterpMac(t *testing.T) {
+	r, root := setupRadioCall(t, radioRuFake("What does Saturn over my Moon mean?"))
+	t.Setenv("RADIO_INTERP", "mac")
+	radioCallInterpTTSFn = func(text string) ([]byte, error) {
+		t.Error("OpenAI must not be used when the Mac answers")
+		return nil, nil
+	}
+	var mixInterp string
+	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+		mixInterp = interp
+		return 8.0, os.WriteFile(out, []byte("mix"), 0o644)
+	}
+	id := radioRuCall(t, r)
+	done := make(chan map[string]interface{}, 1)
+	go func() { _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); done <- o }()
+	job := radioWorkerInterp(t, r)
+	lines := job["lines"].([]interface{})
+	l0 := lines[0].(map[string]interface{})
+	if len(lines) != 1 || l0["voice"] != "am_michael" || l0["speed"] != "1.08" || l0["text"] != "What does Saturn over my Moon mean?" {
+		t.Fatalf("interp job lines %v", lines)
+	}
+	if o := <-done; o["ok"] != true {
+		t.Fatalf("question %v", o)
+	}
+	dir := filepath.Join(root, "call", id)
+	if mixInterp != filepath.Join(dir, "interp.m4a") {
+		t.Fatalf("mix must use the Mac's file, got %s", mixInterp)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "interp.m4a")); string(b) != "kokoro" {
+		t.Fatalf("interp.m4a %q", b)
+	}
+	if seg := radioCallerSeg(t, root); seg["dur"] != 8.0 {
+		t.Fatalf("caller segment %v", seg)
+	}
+}
+
+func TestRadioInterpMacSilentFallsBackToOpenAI(t *testing.T) {
+	old := radioInterpWait.Load()
+	radioInterpWait.Store(int64(80 * time.Millisecond))
+	t.Cleanup(func() { radioInterpWait.Store(old) })
+	r, root := setupRadioCall(t, radioRuFake("What does Saturn over my Moon mean?"))
+	t.Setenv("RADIO_INTERP", "mac")
+	var mixInterp string
+	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+		mixInterp = interp
+		return 8.0, os.WriteFile(out, []byte("mix"), 0o644)
+	}
+	id := radioRuCall(t, r)
+	if _, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); o["ok"] != true {
+		t.Fatalf("question %v", o)
+	}
+	if mixInterp != filepath.Join(root, "call", id, "interp.mp3") {
+		t.Fatalf("Mac silent → OpenAI interpreter, got %s", mixInterp)
+	}
+	radioLine.Lock()
+	for _, j := range radioLine.jobs {
+		if j.Kind == "interp" {
+			t.Error("the untaken interp job must leave the queue")
+		}
+	}
+	radioLine.Unlock()
+}
+
+func TestRadioInterpFailuresAirTheOriginal(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tts     error
+		mix     error
+		mode    string
+		textEN  string
+		mixUsed bool
+	}{
+		{name: "tts down", mode: "openai", textEN: "Q?", tts: errors.New("quota")},
+		{name: "mix fails", mode: "openai", textEN: "Q?", mix: errors.New("ffmpeg"), mixUsed: true},
+		{name: "off", mode: "", textEN: "Q?"},
+		{name: "unknown mode = off", mode: "whisper", textEN: "Q?"},
+		{name: "no translation", mode: "openai", textEN: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, root := setupRadioCall(t, radioRuFake(tc.textEN))
+			t.Setenv("RADIO_INTERP", tc.mode)
+			radioCallInterpTTSFn = func(text string) ([]byte, error) { return []byte("mp3"), tc.tts }
+			used := false
+			radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+				used = true
+				if tc.mix != nil {
+					os.WriteFile(out, []byte("half"), 0o644)
+					return 0, tc.mix
+				}
+				return 9.0, os.WriteFile(out, []byte("mix"), 0o644)
+			}
+			id := radioRuCall(t, r)
+			if code, o := radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner); code != 200 || o["ok"] != true {
+				t.Fatalf("the question must air anyway: %d %v", code, o)
+			}
+			if used != tc.mixUsed {
+				t.Fatalf("mix used = %v", used)
+			}
+			dir := filepath.Join(root, "call", id)
+			if b, _ := os.ReadFile(filepath.Join(dir, "caller.m4a")); string(b) != "m4a" {
+				t.Fatalf("original phone clip expected, got %q", b)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "caller_interp.m4a")); !os.IsNotExist(err) {
+				t.Fatal("a failed mix must not leave files behind")
+			}
+			if seg := radioCallerSeg(t, root); seg["dur"] != 7.5 {
+				t.Fatalf("caller segment %v", seg)
+			}
+		})
+	}
+}
+
+func TestRadioInterpSkipsEnglish(t *testing.T) {
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna, about Venus", "What does Venus in Pisces mean?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en", TextEN: "x"}},
+	})
+	t.Setenv("RADIO_INTERP", "openai")
+	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+		t.Error("no interpreter for English")
+		return 0, nil
+	}
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	radioWorker(t, r, "intro_line")
+	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
+	if seg := radioCallerSeg(t, root); seg["dur"] != 7.5 {
+		t.Fatalf("caller segment %v", seg)
 	}
 }

@@ -283,6 +283,10 @@ type radioCall struct {
 	introJob   *radioJob
 	introAired bool
 	introText  string
+	// «голосовое из почты» (radio_mailbag.go): не звонок — строки в radio_calls нет, денег нет, фраз ожидания нет;
+	// линию держит до Until (эпизод доигрывает), потом освобождает radioMailbagRelease.
+	Mailbag bool
+	Until   time.Time
 }
 
 type radioJob struct {
@@ -315,7 +319,7 @@ func radioWriteNow(c *radioCall) {
 		state = "done"
 	}
 	doc := map[string]interface{}{
-		"id": c.ID, "state": state, "hold": c.Live, "hold_set": c.HoldSet,
+		"id": c.ID, "state": state, "hold": c.Live && !c.Mailbag, "hold_set": c.HoldSet,
 		"updated": float64(radioCallNow().UnixNano()) / 1e9, "segments": c.Segments,
 	}
 	b, _ := json.MarshalIndent(doc, "", " ")
@@ -418,6 +422,9 @@ func radioEnd(c *radioCall, state, reason string) {
 		}
 	}
 	radioLine.jobs = kept
+	if c.Mailbag {
+		return // a mailbag episode has no radio_calls row
+	}
 	if _, err := db.Exec(`UPDATE radio_calls SET state = ?, reason = ?, aired = ?, ended_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		state, reason, boolToInt(c.Aired), c.ID); err != nil {
 		log.Printf("⚠️ radio call %s end: %v", c.ID, err)
@@ -431,8 +438,16 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// radioReapIdle frees a line nobody moved on for radioCallIdleTimeout (line locked).
+// radioReapIdle frees a line nobody moved on for radioCallIdleTimeout (line locked). A mailbag episode is not
+// «moved on» by anyone: it holds the line until its planned end (+ a minute, should its release goroutine be late).
 func radioReapIdle() {
+	if c := radioLine.call; c != nil && c.Mailbag {
+		if radioCallNow().After(c.Until.Add(time.Minute)) {
+			log.Printf("⚠️ radio mailbag %s: line still held past its end — freed", c.ID)
+			radioLine.call = nil
+		}
+		return
+	}
 	if c := radioLine.call; c != nil && radioCallNow().Sub(c.Touched) > radioCallIdleTimeout {
 		log.Printf("radio call %s idle — dropped", c.ID)
 		radioEnd(c, "dropped", "idle")
@@ -462,6 +477,10 @@ func radioQueueJob(c *radioCall, kind string, lines []map[string]string) *radioJ
 func radioCallPublic() bool { return os.Getenv("RADIO_CALL_PUBLIC") == "1" }
 
 func radioCallAllowed(email string) (bool, string) {
+	// аварийный выключатель из Stellar Vault (radio_mailbag.go) — для всех, включая владельца
+	if radioSwitchOn("calls_off") {
+		return false, "calls_off"
+	}
 	if voiceAllowed(email) {
 		return true, ""
 	}
@@ -616,7 +635,9 @@ const radioCheckSystem = `You screen phone calls to an astrology radio show (Ved
 life questions that an astrologer could talk about). You get the transcript of what a caller said.
 Reply JSON: {"ok": bool, "reason": "short English reason if not ok", "name": "caller's first name or empty",
 "topic_en": "the question/topic paraphrased in English, 3-12 words, neutral, without the name",
-"language": "ISO 639-1 code of the language the caller spoke"}.
+"language": "ISO 639-1 code of the language the caller spoke",
+"text_en": "if the language is not English: a faithful, complete first-person English translation of the whole
+transcript (not a summary, keep the caller's own words and order); empty string if the caller spoke English"}.
 ok=false for: insults, hate, harassment, sexual content, threats; scams, ads, links, phone numbers, selling;
 politics and news debates; medical emergencies or requests for medical/legal/financial decisions as a must;
 strong off-topic with no astrology or life-question angle; empty, unintelligible or test noise.
@@ -629,6 +650,7 @@ type radioCheck struct {
 	Name     string `json:"name"`
 	TopicEN  string `json:"topic_en"`
 	Language string `json:"language"`
+	TextEN   string `json:"text_en"`
 }
 
 var radioNameRe = regexp.MustCompile(`^[\p{L}][\p{L}\-' ]{0,30}$`)
@@ -799,6 +821,113 @@ func radioFallbackSeg(c *radioCall, kind, text string) (radioSegment, error) {
 	return radioSegment{Src: "call/" + c.ID + "/" + name, Dur: math.Round(d*100) / 100, Kind: kind}, nil
 }
 
+// ---------------------------------------------------------------------------
+// Simultaneous interpretation (contract §A, owner 15.10.2026): RADIO_INTERP = off (default) | openai | mac.
+
+const radioInterpInstructions = "Professional simultaneous interpreter in a booth at a high-level international summit, " +
+	"broadcast on TV. Calm, even, neutral, slightly quick and compact, first person, no emotion of your own, clear diction, " +
+	"steady pace with tiny natural pauses as if following the speaker."
+
+// radioInterpFilter: the caller at full level for 1.3 s, ducked to 0.15 within 0.5 s; the interpreter on top from 1.3 s
+// (numbers validated by ear — keep them).
+const radioInterpFilter = "[0:a]volume='if(lt(t,1.3),1,if(lt(t,1.8),1-(t-1.3)/0.5*0.85,0.15))':eval=frame[orig];" +
+	"[1:a]aresample=48000,highpass=f=120,lowpass=f=9000,acompressor=threshold=-18dB:ratio=3:attack=5:release=80," +
+	"loudnorm=I=-17:TP=-2,adelay=1300|1300,pan=stereo|c0=c0|c1=c0[int];" +
+	"[orig][int]amix=inputs=2:duration=longest:normalize=0,loudnorm=I=-16:TP=-1.5"
+
+func radioInterpMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(os.Getenv("RADIO_INTERP"))); m {
+	case "openai", "mac":
+		return m
+	default:
+		return "off"
+	}
+}
+
+// radioCallInterpTTSFn: the interpreter's voice via OpenAI (gpt-4o-mini-tts, «ash»).
+var radioCallInterpTTSFn = func(text string) ([]byte, error) {
+	return ttsFetch(ttsModel, "ash", radioInterpInstructions, text)
+}
+
+// radioCallInterpMixFn: phone-fx caller + interpreter → one m4a (radioInterpFilter), returns seconds.
+var radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
+	cmd := exec.Command("ffmpeg", "-y", "-loglevel", "error", "-i", caller, "-i", interp,
+		"-filter_complex", radioInterpFilter, "-ar", "48000", "-ac", "2", "-c:a", "aac", "-b:a", "96k", out)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return 0, fmt.Errorf("ffmpeg interp: %v %s", err, truncateForLog(string(b), 200))
+	}
+	return radioCallDurFn(out)
+}
+
+// radioInterpWait: how long the question waits for the Mac's interpreter voice before OpenAI takes over.
+var radioInterpWait atomic.Int64
+
+func init() { radioInterpWait.Store(int64(20 * time.Second)) }
+
+// radioInterpret mixes the interpreter over the phone clip at [phone] (in place). Called WITHOUT the line lock.
+// ok=false — the original clip airs as is (off, English, nothing to say, or any failure: logged, never blocks the call).
+func radioInterpret(c *radioCall, lang, textEN, phone string) (float64, bool) {
+	mode := radioInterpMode()
+	textEN = strings.TrimSpace(textEN)
+	if mode == "off" || lang == "" || strings.HasPrefix(lang, "en") || textEN == "" {
+		return 0, false
+	}
+	dir := filepath.Dir(phone)
+	interp := ""
+	if mode == "mac" {
+		radioLine.Lock()
+		if radioLine.call != c {
+			radioLine.Unlock()
+			return 0, false
+		}
+		j := radioQueueJob(c, "interp", []map[string]string{{"voice": "am_michael", "speed": "1.08", "text": textEN}})
+		radioLine.Unlock()
+		if radioWaitJob(j, time.Duration(radioInterpWait.Load())) {
+			interp = filepath.Join(dir, "interp.m4a")
+		} else {
+			log.Printf("⚠️ radio call %s: the Mac did not voice the interpreter in time — OpenAI", c.ID)
+			radioLine.Lock()
+			var kept []*radioJob
+			for _, q := range radioLine.jobs {
+				if q != j || q.Taken {
+					kept = append(kept, q)
+				}
+			}
+			radioLine.jobs = kept // не взятое задание Маку больше не нужно
+			radioLine.Unlock()
+		}
+	}
+	if interp == "" {
+		data, err := radioCallInterpTTSFn(textEN)
+		if err != nil {
+			log.Printf("⚠️ radio call %s: interpreter TTS: %v — the original question airs", c.ID, err)
+			return 0, false
+		}
+		logAPICallWithTokens(c.DeviceID, "radio_call_interp", ttsModel, len([]rune(textEN)), 0, 0, 0)
+		interp = filepath.Join(dir, "interp.mp3")
+		if err := os.WriteFile(interp, data, 0o644); err != nil {
+			log.Printf("⚠️ radio call %s: interpreter file: %v — the original question airs", c.ID, err)
+			return 0, false
+		}
+	}
+	mixed := filepath.Join(dir, "caller_interp.m4a")
+	d, err := radioCallInterpMixFn(phone, interp, mixed)
+	if err == nil && d <= 0 {
+		err = errors.New("empty mix")
+	}
+	if err == nil {
+		err = os.Rename(mixed, phone)
+	}
+	if err != nil {
+		log.Printf("⚠️ radio call %s: interpreter mix: %v — the original question airs", c.ID, err)
+		if rerr := os.Remove(mixed); rerr != nil && !os.IsNotExist(rerr) {
+			log.Printf("⚠️ radio call %s: %v", c.ID, rerr)
+		}
+		return 0, false
+	}
+	return d, true
+}
+
 // radioMacGrace: the Mac worker must PICK UP a job this fast, else it is offline and the server voices the line
 // at once instead of waiting the full radioIntroWait/radioAnswerWait (owner 14.10.2026: «Мак недоступен 5 секунд»).
 // A Mac that polled within radioMacAlive is busy with the previous line, not offline — then the full wait applies.
@@ -873,6 +1002,7 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	c.State = "checking_question"
 	c.Touched = radioCallNow()
+	qlang := c.Lang
 	radioLine.Unlock()
 
 	ctx := context.Background() // the caller may hang up; the air must finish cleanly
@@ -888,6 +1018,16 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 			if rerr := os.Remove(raw); rerr != nil && !os.IsNotExist(rerr) {
 				log.Printf("⚠️ radio call %s: raw question not removed: %v", c.ID, rerr)
 			}
+		}
+	}
+	// Синхронный перевод (владелец 15.10.2026): неанглийский вопрос идёт с голосом переводчика поверх. Пока он
+	// готовится, станции продолжают фразы ожидания (now.json live, hold) — эфир не стоит.
+	if err == nil && chk.OK {
+		if l := strings.ToLower(strings.TrimSpace(chk.Language)); l != "" && len(l) <= 3 {
+			qlang = l
+		}
+		if d, ok := radioInterpret(c, qlang, chk.TextEN, phone); ok {
+			callerDur = d
 		}
 	}
 
@@ -1173,6 +1313,40 @@ func radioCallJobDoneHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dir := filepath.Join(radioRoot(), "call", c.ID)
+	if j.Kind == "interp" {
+		// the interpreter is one person: ONE file (field "interp", durs {"interp": sec}) → call/<id>/interp.m4a
+		f, _, err := r.FormFile("interp")
+		if err != nil || durs["interp"] <= 0 {
+			voiceError(w, http.StatusBadRequest, "missing interp")
+			return
+		}
+		b, err := io.ReadAll(io.LimitReader(f, 8<<20))
+		f.Close()
+		if err != nil {
+			voiceError(w, http.StatusBadRequest, "read interp")
+			return
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			voiceError(w, http.StatusInternalServerError, "write")
+			return
+		}
+		if err := os.WriteFile(filepath.Join(dir, "interp.m4a"), b, 0o644); err != nil {
+			voiceError(w, http.StatusInternalServerError, "write")
+			return
+		}
+		radioLine.Lock()
+		if c.jobs[jobID] == j {
+			j.Durs = map[string]float64{"interp": math.Round(durs["interp"]*100) / 100}
+			select {
+			case <-j.Done:
+			default:
+				close(j.Done)
+			}
+		}
+		radioLine.Unlock()
+		radioJSON(w, 200, map[string]interface{}{"success": true})
+		return
+	}
 	for _, ch := range radioCallStations {
 		f, _, err := r.FormFile(ch)
 		if err != nil || durs[ch] <= 0 {
