@@ -884,6 +884,10 @@ func radioCallQuestionHandler(w http.ResponseWriter, r *http.Request) {
 		_ = os.MkdirAll(filepath.Dir(raw), 0o755)
 		if err = os.WriteFile(raw, audio, 0o644); err == nil {
 			callerDur, err = radioCallPhoneFn(raw, phone)
+			// сырая запись вопроса не хранится (политика конфиденциальности, 15.10.2026)
+			if rerr := os.Remove(raw); rerr != nil && !os.IsNotExist(rerr) {
+				log.Printf("⚠️ radio call %s: raw question not removed: %v", c.ID, rerr)
+			}
 		}
 	}
 
@@ -1200,4 +1204,55 @@ func radioCallJobDoneHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	radioLine.Unlock()
 	radioJSON(w, 200, map[string]interface{}{"success": true})
+}
+
+// ---------------------------------------------------------------------------
+// Retention (privacy policy, owner 15.10.2026): call audio — 30 days; transcripts and texts — 12 months; the call row
+// (time, state, charge) and the consent stay for billing and proof of consent.
+
+const (
+	radioCallAudioDays = 30
+	radioCallTextDays  = 365
+)
+
+// radioCallCleanup removes call audio older than 30 days (never the call on air) and clears texts older than 12 months.
+func radioCallCleanup(now time.Time) {
+	radioLine.Lock()
+	live := ""
+	if radioLine.call != nil {
+		live = radioLine.call.ID
+	}
+	radioLine.Unlock()
+	dir := filepath.Join(radioRoot(), "call")
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		log.Printf("⚠️ radio call cleanup: %v", err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == live {
+			continue
+		}
+		info, err := e.Info()
+		if err == nil && now.Sub(info.ModTime()) > radioCallAudioDays*24*time.Hour {
+			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+				log.Printf("⚠️ radio call cleanup %s: %v", e.Name(), err)
+			}
+		}
+	}
+	cut := now.Add(-radioCallTextDays * 24 * time.Hour).UTC().Format("2006-01-02 15:04:05")
+	if _, err := db.Exec(`UPDATE radio_calls SET name = NULL, intro_text = NULL, question_text = NULL, answer_text = NULL
+		WHERE created_at < ? AND (name IS NOT NULL OR intro_text IS NOT NULL OR question_text IS NOT NULL OR answer_text IS NOT NULL)`, cut); err != nil {
+		log.Printf("⚠️ radio call text cleanup: %v", err)
+	}
+}
+
+// startRadioCallCleanup runs the cleanup at start and then daily.
+func startRadioCallCleanup() {
+	go func() {
+		ensureRadioCallSchema()
+		for {
+			radioCallCleanup(time.Now())
+			time.Sleep(24 * time.Hour)
+		}
+	}()
 }
