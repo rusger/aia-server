@@ -506,3 +506,47 @@ func TestRadioCallOpenAIDownKokoroOnServer(t *testing.T) {
 		t.Fatalf("Kokoro got the reply text: %q", said)
 	}
 }
+
+func TestRadioCallRetention(t *testing.T) {
+	r, root := setupRadioCall(t, &radioFake{
+		transcripts: []string{"I'm Anna", "About Venus?"},
+		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
+	})
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	radioWorker(t, r, "intro_line")
+	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
+	if m, _ := filepath.Glob(filepath.Join(root, "call", id, "caller_raw*")); len(m) != 0 {
+		t.Fatalf("the raw question recording must not be kept: %v", m)
+	}
+	radioWorker(t, r, "answer_en")
+	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" })
+
+	old := filepath.Join(root, "call", "oldcall")
+	os.MkdirAll(old, 0o755)
+	os.WriteFile(filepath.Join(old, "caller.m4a"), []byte("x"), 0o644)
+	past := time.Now().Add(-31 * 24 * time.Hour)
+	os.Chtimes(old, past, past)
+	db.Exec(`INSERT INTO radio_calls (id, email, state, name, question_text, created_at) VALUES ('ancient', ?, 'aired', 'Bob', 'q', ?)`,
+		radioOwner, time.Now().Add(-400*24*time.Hour).UTC().Format("2006-01-02 15:04:05"))
+	radioCallCleanup(time.Now())
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("call audio older than 30 days must be deleted")
+	}
+	if _, err := os.Stat(filepath.Join(root, "call", id)); err != nil {
+		t.Fatal("a fresh call's audio must stay")
+	}
+	var name, q sql.NullString
+	var state string
+	db.QueryRow(`SELECT state, name, question_text FROM radio_calls WHERE id = 'ancient'`).Scan(&state, &name, &q)
+	if state != "aired" || name.Valid || q.Valid {
+		t.Fatalf("texts older than 12 months cleared, row kept: state=%q name=%v q=%v", state, name, q)
+	}
+	var fresh sql.NullString
+	db.QueryRow(`SELECT question_text FROM radio_calls WHERE id = ?`, id).Scan(&fresh)
+	if !fresh.Valid {
+		t.Fatal("fresh transcripts must stay")
+	}
+}
