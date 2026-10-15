@@ -1040,6 +1040,7 @@ func radioAnswer(c *radioCall, question, chart, lang, name string) {
 			log.Printf("⚠️ radio call %s charge: %v", c.ID, err)
 		}
 	}
+	radioAppendCue(c, "cta") // «позвоните и вы — из приложения Astrolytix для iPhone и Android» (владелец 15.10.2026)
 	radioEnd(c, "aired", "")
 }
 

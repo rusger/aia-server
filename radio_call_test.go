@@ -50,7 +50,7 @@ func setupRadioCall(t *testing.T, f *radioFake) (*mux.Router, string) {
 		d := filepath.Join(root, ch, "call")
 		os.MkdirAll(d, 0o755)
 		cues := map[string][]map[string]interface{}{}
-		for _, k := range []string{"announce", "onair", "dropped"} {
+		for _, k := range []string{"announce", "onair", "dropped", "cta"} {
 			cues[k] = []map[string]interface{}{{"src": ch + "/call/" + k + "_abc.m4a", "dur": 3.0}}
 		}
 		b, _ := json.Marshal(cues)
@@ -259,7 +259,7 @@ func TestRadioCallAiredInRussianWithTranslation(t *testing.T) {
 	radioWorker(t, r, "answer_en")
 	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" })
 	doc = radioNow(t, root)
-	if got := strings.Join(radioKinds(doc), ","); got != "announce,intro_line,onair,caller,answer_local,answer_en" {
+	if got := strings.Join(radioKinds(doc), ","); got != "announce,intro_line,onair,caller,answer_local,answer_en,cta" {
 		t.Fatalf("final segments %s", got)
 	}
 	if _, err := os.Stat(filepath.Join(root, "call", id, "mars", "answer_en.m4a")); err != nil {
@@ -443,11 +443,11 @@ func TestRadioCallReplyFallbackWhenMacLate(t *testing.T) {
 	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
 	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" }) // Мак молчит на ответе
 	doc := radioNow(t, root)
-	if got := strings.Join(radioKinds(doc), ","); got != "announce,intro_line,onair,caller,answer_en" {
+	if got := strings.Join(radioKinds(doc), ","); got != "announce,intro_line,onair,caller,answer_en,cta" {
 		t.Fatalf("the reply must not be lost: %s", got)
 	}
 	segs := doc["segments"].([]interface{})
-	if src := segs[len(segs)-1].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_fb.mp3" {
+	if src := segs[len(segs)-2].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_fb.mp3" {
 		t.Fatalf("reply from the server TTS, got %v", src)
 	}
 }
@@ -474,7 +474,7 @@ func TestRadioCallMacOfflineFallsBackFast(t *testing.T) {
 		t.Fatalf("offline Mac must not hold the call for the full wait: %s", el)
 	}
 	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" })
-	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,intro_line,onair,caller,answer_en" {
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); got != "announce,intro_line,onair,caller,answer_en,cta" {
 		t.Fatalf("server voices intro and reply: %s", got)
 	}
 }
@@ -499,7 +499,7 @@ func TestRadioCallOpenAIDownKokoroOnServer(t *testing.T) {
 	waitFor(t, func() bool { d := radioNow(t, root); return d["state"] == "done" })
 	doc := radioNow(t, root)
 	segs := doc["segments"].([]interface{})
-	if src := segs[len(segs)-1].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_kokoro.wav" {
+	if src := segs[len(segs)-2].(map[string]interface{})["src"]; src != "call/"+id+"/answer_en_kokoro.wav" {
 		t.Fatalf("OpenAI down → Kokoro on the server, got %v", src)
 	}
 	if !strings.Contains(said, "Thank you for calling") {
@@ -548,5 +548,20 @@ func TestRadioCallRetention(t *testing.T) {
 	db.QueryRow(`SELECT question_text FROM radio_calls WHERE id = ?`, id).Scan(&fresh)
 	if !fresh.Valid {
 		t.Fatal("fresh transcripts must stay")
+	}
+}
+
+func TestRadioCallRejectedHasNoCTA(t *testing.T) {
+	f := &radioFake{transcripts: []string{"I'm Anna, about Venus", "you are all idiots"},
+		checks: []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}}}
+	r, root := setupRadioCall(t, f)
+	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
+	_, out := radioDo(t, r, "POST", "/api/radio/call/start", radioOwner, `{"lang":"en"}`)
+	id := out["call_id"].(string)
+	radioAudio(t, r, "/api/radio/call/"+id+"/intro", radioOwner)
+	f.flagged = true
+	radioAudio(t, r, "/api/radio/call/"+id+"/question", radioOwner)
+	if got := strings.Join(radioKinds(radioNow(t, root)), ","); strings.Contains(got, "cta") {
+		t.Fatalf("a call that did not air must not invite others: %s", got)
 	}
 }
