@@ -569,8 +569,8 @@ func adminFinanceStats(w http.ResponseWriter, r *http.Request) {
 	trialInferred, trialFromOffer := 0, 0
 	arows, err := db.Query(`SELECT notification_type, COALESCE(subtype,''), COALESCE(product_id,''),
 	                               COALESCE(transaction_id,''), COALESCE(original_transaction_id,''),
-	                               created_at, offer_type, offer_discount_type
-	                        FROM apple_notifications ORDER BY created_at ASC, id ASC`)
+	                               created_at, offer_type, offer_discount_type ` +
+		appleProductionNotifications + ` ORDER BY created_at ASC, id ASC`)
 	if err == nil {
 		for arows.Next() {
 			var ntype, subtype, pid, txn, otxn, created string
