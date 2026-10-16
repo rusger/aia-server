@@ -176,6 +176,17 @@ type renewalAgg struct {
 	total   int
 }
 
+// appleProductionNotifications is the FROM clause for every Apple stats query.
+// Sandbox rows (TestFlight / App Review purchases — a yearly there renews
+// daily and dies after 12 cycles) are audit only: they are not billing
+// cycles and not revenue. Rows written before the column existed are
+// production.
+const appleProductionNotifications = `FROM apple_notifications WHERE COALESCE(environment,'') <> 'Sandbox'`
+
+const appleRenewalQuery = `SELECT notification_type, COALESCE(subtype,''), COALESCE(product_id,''), COALESCE(original_transaction_id,''), created_at ` +
+	appleProductionNotifications +
+	` ORDER BY original_transaction_id, created_at ASC, id ASC`
+
 // computeRenewalAgg reads one source table (ordered by subscription key + time)
 // and aggregates cycle outcomes, subscription states, a by-plan split and a
 // churn-reason breakdown.
@@ -450,13 +461,7 @@ func adminRenewalStats(w http.ResponseWriter, r *http.Request) {
 	// Make sure the Google table exists so its query returns zeros, not an error.
 	ensureGoogleNotificationsTable()
 
-	apple := computeRenewalAgg(
-		`SELECT notification_type, COALESCE(subtype,''), COALESCE(product_id,''), COALESCE(original_transaction_id,''), created_at
-		 FROM apple_notifications
-		 ORDER BY original_transaction_id, created_at ASC, id ASC`,
-		classifyApple,
-		appleChurnReason,
-	)
+	apple := computeRenewalAgg(appleRenewalQuery, classifyApple, appleChurnReason)
 	google := computeRenewalAgg(
 		`SELECT notification_name, '', COALESCE(subscription_id,''), COALESCE(purchase_token,''), created_at
 		 FROM google_notifications
