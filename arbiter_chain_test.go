@@ -170,3 +170,53 @@ func TestLLMClassOf(t *testing.T) {
 		}
 	}
 }
+
+// 16–19.10.2026: the weekly Claude Max limit was printed as JSON on STDOUT
+// with an empty stderr, and 719 arbiter failures were journaled as `error`
+// ("claude -p failed: exit status 1:"). The error text must carry stdout so
+// llmLimitRe sees the signature and the chain falls through to codex.
+func TestArbiterChainLimitOnStdoutToCodex(t *testing.T) {
+	dir := t.TempDir()
+	claude := fakeBin(t, dir, "claude", `printf '{"duration_api_ms":0,"stop_reason":"stop_sequence","result":"You have hit your limit"}'; exit 1`+"\n")
+	codex := fakeBin(t, dir, "codex", `while [ $# -gt 0 ]; do [ "$1" = "-o" ] && O=$2; shift; done
+printf '{"changed":false,"changes":[],"corrected":"same"}' > "$O"
+echo '{"type":"turn.completed","usage":{"input_tokens":9,"output_tokens":3}}'`+"\n")
+	journal := filepath.Join(dir, "usage.jsonl")
+	t.Setenv("CLAUDE_BIN", claude)
+	t.Setenv("CODEX_BIN", codex)
+	t.Setenv("LLM_USAGE_LOG", journal)
+	t.Setenv("LLM_FALLBACK", "codex,openai")
+	t.Setenv("CODEX_MODEL", "gpt-5.6-sol")
+
+	reply, label, err := callModelChain(context.Background(), "check this", "claude-cli-default")
+	if err != nil || !strings.Contains(reply, `"corrected":"same"`) || label != "codex:gpt-5.6-sol" {
+		t.Fatalf("reply=%q label=%q err=%v", reply, label, err)
+	}
+	rows := readJournal(t, journal)
+	if len(rows) != 2 || rows[0].Provider != "claude" || rows[0].OK || rows[0].ErrClass != "limit" ||
+		rows[1].Provider != "codex" || !rows[1].OK || !rows[1].Fallback {
+		t.Fatalf("journal: %+v", rows)
+	}
+	if !strings.Contains(rows[0].Err, `stderr= stdout={"duration_api_ms":0`) {
+		t.Fatalf("journal err must carry stdout: %q", rows[0].Err)
+	}
+}
+
+// A runaway stdout must not bloat the journal / ai_arbiter_events.detail:
+// both streams are clipped by trimForLog (500 bytes each).
+func TestCallClaudeCLIErrorClipsStreams(t *testing.T) {
+	dir := t.TempDir()
+	claude := fakeBin(t, dir, "claude", `head -c 60000 /dev/zero | tr '\0' x; head -c 3000 /dev/zero | tr '\0' e >&2; exit 1`+"\n")
+	t.Setenv("CLAUDE_BIN", claude)
+	_, err := callClaudeCLI("check this")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if len(msg) > 1200 || !strings.Contains(msg, "stderr=eee") || !strings.Contains(msg, "stdout=xxx") {
+		t.Fatalf("len=%d msg=%.120q", len(msg), msg)
+	}
+	if llmClassOf(err) != "error" {
+		t.Fatalf("garbage is not a limit: %s", llmClassOf(err))
+	}
+}

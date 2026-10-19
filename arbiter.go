@@ -232,7 +232,11 @@ func callClaudeCLI(prompt string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("claude -p failed: %v: %s", err, strings.TrimSpace(errb.String()))
+		// Both streams go into the error: the subscription limit (16–19.10.2026,
+		// 719 calls) is printed as JSON on STDOUT with an empty stderr, and the
+		// journal class (llmLimitRe) can only see what the error text carries.
+		return "", fmt.Errorf("claude -p failed: %v: stderr=%s stdout=%s", err,
+			trimForLog(errb.String()), trimForLog(out.String()))
 	}
 	return out.String(), nil
 }
