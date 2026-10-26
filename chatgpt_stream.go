@@ -220,7 +220,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("✅ ChatGPT stream done: device=%s tokens=%d prompt (%d cached) + %d completion",
 		deviceID, promptTokens, cachedTokens, completionTokens)
-	logAPICallWithTokens(deviceID, callType, req.Model,
+	logAPICallForAnswer(deviceID, callType, req.Model, req.AnswerID,
 		promptTokens, completionTokens, totalTokens, cachedTokens)
 	emit(map[string]bool{"done": true})
 }
