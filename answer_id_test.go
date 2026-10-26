@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -82,6 +86,41 @@ func TestAnswerIDReachesApiCallsAndGuardEvents(t *testing.T) {
 	logGuardEvent("dev1", "horoscope", "claim_audit_result", "gpt-4o-mini", "zh", 2, "", "2.1.23+161", "gr2026-10-19", "ans-42")
 	if got := waitForString(t, `SELECT answer_id FROM ai_guard_events WHERE kind='claim_audit_result'`); got != "ans-42" {
 		t.Fatalf("ai_guard_events.answer_id = %q", got)
+	}
+}
+
+func TestAnswerIDReachesArbiterRows(t *testing.T) {
+	setupAnswerIDTestDB(t)
+	// The table is created once per process; this test owns a fresh DB.
+	arbiterTableOnce, arbiterTableErr = sync.Once{}, nil
+	t.Cleanup(func() { arbiterTableOnce, arbiterTableErr = sync.Once{}, nil })
+	if err := ensureArbiterTable(); err != nil {
+		t.Fatal(err)
+	}
+	logArbiter(ArbiterRequest{
+		Feature: "horoscope", FactBasis: "facts", Answer: "orig",
+		AnswerID: "ans-7", Language: "zh", AppVersion: "2.1.23+161", RulesetVersion: "gr2026-10-19",
+	}, "sonnet", true, "ok", "fixed", "corrected", time.Second, 10, "")
+	got := waitForString(t, `SELECT answer_id||'/'||language||'/'||app_version||'/'||ruleset_version||'/'||original_answer||'/'||corrected_answer FROM ai_arbiter_events`)
+	if got != "ans-7/zh/2.1.23+161/gr2026-10-19/orig/corrected" {
+		t.Fatalf("arbiter row = %q", got)
+	}
+}
+
+func TestAnswerIDReachesCorpusRows(t *testing.T) {
+	setupAnswerIDTestDB(t)
+	corpusTableOnce, corpusTableErr = sync.Once{}, nil
+	t.Cleanup(func() { corpusTableOnce, corpusTableErr = sync.Once{}, nil })
+	body := `{"feature":"natal_interpretation","raw_answer":"a","shipped_answer":"b","answer_id":"ans-9"}`
+	r := httptest.NewRequest(http.MethodPost, "/api/ai/guard/corpus", strings.NewReader(body))
+	r = r.WithContext(context.WithValue(r.Context(), "claims", &JWTClaims{DeviceID: "dev1"}))
+	w := httptest.NewRecorder()
+	guardCorpusReport(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if got := waitForString(t, `SELECT answer_id FROM ai_guard_corpus`); got != "ans-9" {
+		t.Fatalf("corpus answer_id = %q", got)
 	}
 }
 
