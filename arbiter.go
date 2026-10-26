@@ -106,6 +106,13 @@ func ensureArbiterTable() error {
 			// Omission probe (triage 2026-09-04, plan W6): what the answer
 			// SHOULD have said and did not — report-only, never applied.
 			"omissions TEXT DEFAULT ''",
+			// Chain id + who sent it (2026-10-26): joins an arbitration to
+			// the api_calls / guard rows of the same answer and lets the
+			// change rate be read per language and per client build.
+			"answer_id TEXT DEFAULT ''",
+			"language TEXT DEFAULT ''",
+			"app_version TEXT DEFAULT ''",
+			"ruleset_version TEXT DEFAULT ''",
 		} {
 			if _, err := analyticsDB.Exec("ALTER TABLE ai_arbiter_events ADD COLUMN " + c); err != nil &&
 				!strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
@@ -152,7 +159,7 @@ func clampArbiterField(s string) string {
 	return s[:cut]
 }
 
-func logArbiter(feature, model string, changed bool, reason, summary, original, corrected, facts string, latency time.Duration, promptBytes int, omissions string) {
+func logArbiter(req ArbiterRequest, model string, changed bool, reason, summary, corrected string, latency time.Duration, promptBytes int, omissions string) {
 	if analyticsDB == nil {
 		return
 	}
@@ -163,11 +170,14 @@ func logArbiter(feature, model string, changed bool, reason, summary, original, 
 	go func() {
 		if _, err := analyticsDB.Exec(
 			`INSERT INTO ai_arbiter_events
-			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis, latency_ms, prompt_bytes, omissions)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feature, model, ci, reason, clampArbiterField(summary),
-			clampArbiterField(original), clampArbiterField(corrected), clampArbiterField(facts),
+			 (feature, model, changed, reason, change_summary, original_answer, corrected_answer, fact_basis, latency_ms, prompt_bytes, omissions,
+			  answer_id, language, app_version, ruleset_version)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			req.Feature, model, ci, reason, clampArbiterField(summary),
+			clampArbiterField(req.Answer), clampArbiterField(corrected), clampArbiterField(req.FactBasis),
 			latency.Milliseconds(), promptBytes, clampArbiterField(omissions),
+			clampAnswerID(req.AnswerID), clampAnswerID(req.Language),
+			clampAnswerID(req.AppVersion), clampAnswerID(req.RulesetVersion),
 		); err != nil {
 			log.Printf("⚠️ ai_arbiter_events insert failed: %v", err)
 		}
@@ -180,6 +190,13 @@ type ArbiterRequest struct {
 	Feature   string `json:"feature"`
 	FactBasis string `json:"fact_basis"`
 	Answer    string `json:"answer"`
+	// Optional since 2026-10-26 (older clients omit them): per-answer chain
+	// id and the sender's language / build / guard ruleset — audit columns
+	// only, they never reach the prompt.
+	AnswerID       string `json:"answer_id"`
+	Language       string `json:"language"`
+	AppVersion     string `json:"app_version"`
+	RulesetVersion string `json:"ruleset_version"`
 }
 
 type ArbiterResponse struct {
@@ -294,7 +311,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 	prompt := arbiterPrompt(req.FactBasis, req.Answer)
 	started := time.Now()
 	noop := func(reason, detail string) {
-		logArbiter(req.Feature, model, false, reason, detail, req.Answer, req.Answer, req.FactBasis,
+		logArbiter(req, model, false, reason, detail, req.Answer,
 			time.Since(started), len(prompt), "")
 		json.NewEncoder(w).Encode(ArbiterResponse{Success: true, Changed: false, Corrected: req.Answer, Reason: reason})
 	}
@@ -346,7 +363,7 @@ func arbiterReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	summary := strings.Join(changes, " | ")
-	logArbiter(req.Feature, model, changed, "ok", summary, req.Answer, corrected, req.FactBasis,
+	logArbiter(req, model, changed, "ok", summary, corrected,
 		time.Since(started), len(prompt), strings.Join(omitted, " | "))
 	json.NewEncoder(w).Encode(ArbiterResponse{
 		Success: true, Changed: changed, Corrected: corrected, Changes: changes,

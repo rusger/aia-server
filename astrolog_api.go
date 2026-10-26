@@ -30,6 +30,7 @@ import (
     "strings"
     "sync"
     "time"
+    "unicode/utf8"
 
     "github.com/golang-jwt/jwt/v5"
     "github.com/gorilla/mux"
@@ -191,6 +192,12 @@ type ChatGPTProxyRequest struct {
     // "barnum_judge" / "barnum_fix" passes) be logged in api_calls under their
     // own call_type. Defaults to "chatgpt" when empty.
     CallType    string             `json:"call_type,omitempty"`
+    // Optional chain id (2026-10-26): one id per user-visible answer, shared
+    // by the main call and every overhead pass on it (claim_audit,
+    // grounding_fix, barnum_*, yoga_fix) and by the guard/corpus/arbiter
+    // rows, so the number of calls an answer really cost is countable.
+    // Stored as given (clamped); empty for older clients.
+    AnswerID    string             `json:"answer_id,omitempty"`
 }
 
 // ChatGPT proxy response
@@ -1207,6 +1214,9 @@ func initAnalyticsDB() error {
     // Add cached_tokens column (migration for cached input token tracking)
     analyticsDB.Exec(`ALTER TABLE api_calls ADD COLUMN cached_tokens INTEGER DEFAULT 0;`)
 
+    // answer_id: the per-answer chain id (see ChatGPTProxyRequest.AnswerID).
+    addAnswerIDColumn("api_calls")
+
     // Create monthly aggregates table for historical data retention
     createMonthlyTableSQL := `
     CREATE TABLE IF NOT EXISTS api_calls_monthly (
@@ -1350,6 +1360,7 @@ func initAnalyticsDB() error {
             }
         }
     }
+    addAnswerIDColumn("ai_guard_events")
 
     log.Println("✅ Analytics database initialized successfully")
     return nil
@@ -1362,13 +1373,20 @@ func logAPICall(deviceID, callType, model string) {
 
 // Log an API call with token usage for cost tracking
 func logAPICallWithTokens(deviceID, callType, model string, promptTokens, completionTokens, totalTokens, cachedTokens int) {
+    logAPICallForAnswer(deviceID, callType, model, "", promptTokens, completionTokens, totalTokens, cachedTokens)
+}
+
+// logAPICallForAnswer is logAPICallWithTokens plus the client's per-answer
+// chain id (empty when the client sent none).
+func logAPICallForAnswer(deviceID, callType, model, answerID string, promptTokens, completionTokens, totalTokens, cachedTokens int) {
     if analyticsDB == nil {
         return
     }
+    answerID = clampAnswerID(answerID)
     go func() {
         _, err := analyticsDB.Exec(
-            `INSERT INTO api_calls (device_id, call_type, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            deviceID, callType, model, promptTokens, completionTokens, totalTokens, cachedTokens)
+            `INSERT INTO api_calls (device_id, call_type, model, prompt_tokens, completion_tokens, total_tokens, cached_tokens, answer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, callType, model, promptTokens, completionTokens, totalTokens, cachedTokens, answerID)
         if err != nil {
             log.Printf("⚠️ Failed to log API call: %v", err)
         }
@@ -1420,8 +1438,43 @@ func clampDetail(s string) string {
     return s[:cut]
 }
 
+// maxAnswerIDBytes bounds the client-supplied per-answer chain id (a UUID is
+// 36 bytes); anything longer is cut, never rejected.
+const maxAnswerIDBytes = 64
+
+// clampAnswerID trims a client-supplied short audit string (answer id,
+// language, build, ruleset) to maxAnswerIDBytes on a UTF-8 boundary.
+func clampAnswerID(s string) string {
+    s = strings.TrimSpace(s)
+    if len(s) <= maxAnswerIDBytes {
+        return s
+    }
+    cut := maxAnswerIDBytes
+    for cut > 0 && !utf8.RuneStart(s[cut]) {
+        cut--
+    }
+    return s[:cut]
+}
+
+// addAnswerIDColumn adds the answer_id chain-id column (+ index) to an
+// analytics table. Idempotent: "duplicate column" on an already-migrated DB is
+// expected; any other failure is logged, never fatal (telemetry only).
+func addAnswerIDColumn(table string) {
+    if analyticsDB == nil {
+        return
+    }
+    if _, err := analyticsDB.Exec(`ALTER TABLE ` + table + ` ADD COLUMN answer_id TEXT DEFAULT ''`); err != nil &&
+        !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+        log.Printf("⚠️ %s.answer_id migration: %v", table, err)
+        return
+    }
+    if _, err := analyticsDB.Exec(`CREATE INDEX IF NOT EXISTS idx_` + table + `_answer_id ON ` + table + `(answer_id)`); err != nil {
+        log.Printf("⚠️ %s.answer_id index: %v", table, err)
+    }
+}
+
 // logGuardEvent inserts one AI-guard telemetry row (see ai_guard_events).
-func logGuardEvent(deviceID, feature, kind, model, language string, count int, detail, appVersion, rulesetVersion string) {
+func logGuardEvent(deviceID, feature, kind, model, language string, count int, detail, appVersion, rulesetVersion, answerID string) {
     if analyticsDB == nil {
         return
     }
@@ -1429,10 +1482,11 @@ func logGuardEvent(deviceID, feature, kind, model, language string, count int, d
         count = 1
     }
     detail = clampDetail(detail)
+    answerID = clampAnswerID(answerID)
     go func() {
         _, err := analyticsDB.Exec(
-            `INSERT INTO ai_guard_events (device_id, feature, kind, model, language, count, detail, app_version, ruleset_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            deviceID, feature, kind, model, language, count, detail, appVersion, rulesetVersion)
+            `INSERT INTO ai_guard_events (device_id, feature, kind, model, language, count, detail, app_version, ruleset_version, answer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            deviceID, feature, kind, model, language, count, detail, appVersion, rulesetVersion, answerID)
         if err != nil {
             log.Printf("⚠️ Failed to log guard event: %v", err)
         }
@@ -3576,7 +3630,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // against the allowlist before the quota checks — overhead passes
     // (grounding_fix / claim_audit / barnum_*) stay separable in the usage
     // reports, unknown client-supplied tags have been clamped to "chatgpt".
-    logAPICallWithTokens(deviceID, callType, req.Model, promptTokens, completionTokens, totalTokens, cachedTokens)
+    logAPICallForAnswer(deviceID, callType, req.Model, req.AnswerID, promptTokens, completionTokens, totalTokens, cachedTokens)
 
     // Crisis screen hit: hand the hotline block to the user ABOVE the normal
     // answer, as ordinary message text — old clients render it with no change.
@@ -7321,6 +7375,8 @@ type GuardEventRequest struct {
     // Optional since 2026-08-28; older clients simply omit them.
     AppVersion     string `json:"app_version"`
     RulesetVersion string `json:"ruleset_version"`
+    // Optional since 2026-10-26: per-answer chain id (see ChatGPTProxyRequest).
+    AnswerID string `json:"answer_id"`
 }
 
 // aiGuardReport ingests one AI-guard telemetry row. JWT-protected; the
@@ -7351,7 +7407,7 @@ func aiGuardReport(w http.ResponseWriter, r *http.Request) {
     }
 
     logGuardEvent(claims.DeviceID, req.Feature, req.Kind, req.Model,
-        req.Language, req.Count, req.Detail, req.AppVersion, req.RulesetVersion)
+        req.Language, req.Count, req.Detail, req.AppVersion, req.RulesetVersion, req.AnswerID)
 
     json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }

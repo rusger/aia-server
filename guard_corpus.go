@@ -76,7 +76,9 @@ func ensureCorpusTable() error {
         `)
 		if corpusTableErr != nil {
 			log.Printf("❌ ai_guard_corpus table create failed: %v", corpusTableErr)
+			return
 		}
+		addAnswerIDColumn("ai_guard_corpus")
 	})
 	return corpusTableErr
 }
@@ -130,6 +132,8 @@ type GuardCorpusRequest struct {
 	ShippedAnswer  string `json:"shipped_answer"`
 	AppVersion     string `json:"app_version"`
 	RulesetVersion string `json:"ruleset_version"`
+	// Optional since 2026-10-26: per-answer chain id (see ChatGPTProxyRequest).
+	AnswerID string `json:"answer_id"`
 }
 
 // guardCorpusReport ingests one captured case. JWT-protected (any signed-in
@@ -171,11 +175,12 @@ func guardCorpusReport(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		if _, err := analyticsDB.Exec(
 			`INSERT INTO ai_guard_corpus
-			 (feature, model, language, kinds, sampled, fact_basis, raw_answer, shipped_answer, app_version, ruleset_version)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (feature, model, language, kinds, sampled, fact_basis, raw_answer, shipped_answer, app_version, ruleset_version, answer_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			req.Feature, req.Model, req.Language, req.Kinds, sampledInt,
 			clampCorpusField(req.FactBasis), clampCorpusField(req.RawAnswer),
 			clampCorpusField(req.ShippedAnswer), req.AppVersion, req.RulesetVersion,
+			clampAnswerID(req.AnswerID),
 		); err != nil {
 			log.Printf("⚠️ ai_guard_corpus insert failed: %v", err)
 		}
