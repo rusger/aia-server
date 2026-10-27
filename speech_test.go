@@ -154,6 +154,9 @@ func TestSpeechTTSRefusalsNeverCallAzure(t *testing.T) {
 	setupSpeechTest(t, failHandler(t, "azure"), failHandler(t, "groq"))
 	cfg := speechTestConfig()
 	now := time.Now()
+	if _, why := speechSynthesize("", "hi", "en", cfg, now); why != "no_device" {
+		t.Errorf("no device: %q", why)
+	}
 	if _, why := speechSynthesize("d", "hi", "tr", cfg, now); why != "unsupported_lang" {
 		t.Errorf("lang: %q", why)
 	}
@@ -321,6 +324,9 @@ func TestSpeechSTTLimits(t *testing.T) {
 	cfg := speechTestConfig()
 	cfg.groqKey = "groq-key"
 	now := time.Now()
+	if res := speechTranscribe("", "en", wavOf(5), cfg, now); res.Success || res.Reason != "no_device" {
+		t.Errorf("no device: %+v", res)
+	}
 	if res := speechTranscribe("d", "en", wavOf(0.1), cfg, now); !res.Success || res.Reason != "too_short" {
 		t.Errorf("short: %+v", res)
 	}
@@ -461,6 +467,15 @@ func TestSpeechFFmpegToWav16k(t *testing.T) {
 	}
 	if s := speechWavSeconds(wav); s < 2.9 || s > 3.1 {
 		t.Errorf("duration %.2f s, want ≈ 3", s)
+	}
+	long := filepath.Join(t.TempDir(), "long.m4a")
+	if out, err := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+		"-i", "sine=frequency=440:duration=64:sample_rate=16000", "-c:a", "aac", long).CombinedOutput(); err != nil {
+		t.Fatalf("make long m4a: %v %s", err, out)
+	}
+	in, _ = os.ReadFile(long)
+	if wav, err = ffmpegToWav16k(in); err != nil || speechWavSeconds(wav) > speechSTTMaxSeconds {
+		t.Errorf("64 s clip must be cut under the limit: err %v, %.2f s", err, speechWavSeconds(wav))
 	}
 	if _, err := ffmpegToWav16k([]byte("not audio")); err == nil {
 		t.Error("garbage must fail to convert")

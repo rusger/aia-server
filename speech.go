@@ -377,6 +377,11 @@ func speechTTSHandler(w http.ResponseWriter, r *http.Request) {
 
 // speechSynthesize returns mp3 bytes or the refusal reason.
 func speechSynthesize(deviceID, text, lang string, cfg speechConfig, now time.Time) ([]byte, string) {
+	if deviceID == "" {
+		// The day caps are per device: a token without one would share a
+		// single '' bucket with every other such token.
+		return nil, "no_device"
+	}
 	l := speechLang(lang)
 	if l == "" {
 		return nil, "unsupported_lang"
@@ -442,7 +447,9 @@ func speechSynthesize(deviceID, text, lang string, cfg speechConfig, now time.Ti
 
 // --- speech to text ---
 
-// ffmpegToWav16k converts any clip ffmpeg reads to 16 kHz mono 16-bit WAV.
+// ffmpegToWav16k converts any clip ffmpeg reads to 16 kHz mono 16-bit WAV,
+// cut at 60 s (the app stops recording at 60 s) so a clip near the limit
+// still transcribes instead of failing as too long.
 func ffmpegToWav16k(in []byte) ([]byte, error) {
 	dir, err := os.MkdirTemp("", "speech-stt-")
 	if err != nil {
@@ -456,7 +463,7 @@ func ffmpegToWav16k(in []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-		"-i", src, "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-t", "65", dst)
+		"-i", src, "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", "-t", "60", dst)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("ffmpeg: %v: %s", err, trimForLog(string(out)))
 	}
@@ -571,6 +578,9 @@ type speechSTTResult struct {
 
 // speechTranscribe: Azure F0 first; on any Azure refusal Groq (if keyed).
 func speechTranscribe(deviceID, lang string, wav []byte, cfg speechConfig, now time.Time) speechSTTResult {
+	if deviceID == "" {
+		return speechSTTResult{Reason: "no_device"}
+	}
 	l := speechLang(lang)
 	if l == "" {
 		return speechSTTResult{Reason: "unsupported_lang"}
