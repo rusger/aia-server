@@ -62,6 +62,7 @@ const (
 	speechSTTMaxSeconds    = 61.0
 	speechSTTMinSeconds    = 0.3
 	speechHTTPTimeout      = 25 * time.Second
+	speechTTSTimeout       = 55 * time.Second // a 4800-char answer can take a while; app waits 60 s, nginx 60 s
 	speechSTTBusyWait      = 10 * time.Second
 	speechCooldown         = 15 * time.Minute
 	speechMaxAudioBytes    = 16 << 20
@@ -412,7 +413,7 @@ func speechSynthesize(deviceID, text, lang string, cfg speechConfig, now time.Ti
 		return nil, over
 	}
 	v := speechVoices[l]
-	ctx, cancel := context.WithTimeout(context.Background(), speechHTTPTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), speechTTSTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, speechAzureTTSURL(cfg.region),
 		strings.NewReader(speechSSML(v.locale, v.name, text)))
