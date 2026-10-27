@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -82,15 +83,17 @@ func radioLineFree() bool {
 
 const radioAdminQS = "?admin_email=boss@example.com&admin_secret=s3cret"
 
-func TestRadioMailbagAirsOnceThroughTheLine(t *testing.T) {
+func TestRadioMailbagAirsThroughTheLine(t *testing.T) {
 	r, root := setupMailbag(t)
+	radioMailbagShuffle = func(ids []string) { sort.Strings(ids) } // deterministic: by id inside a plays level
+	t.Cleanup(func() { radioMailbagShuffle = radioMailbagShuffleRandom })
 	radioMailbagEpisode(t, root, "ep2", "ep2", "2026-10-14T10:00:00Z", nil)
 	radioMailbagEpisode(t, root, "ep1", "ep1", "2026-10-13T10:00:00Z", nil)
 	radioMailbagEpisode(t, root, ".incoming-ep0", "ep0", "2026-10-01T10:00:00Z", nil) // upload in progress
 	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
 
 	if got := radioMailbagTick(); got != "ep1" {
-		t.Fatalf("oldest unaired first, got %q", got)
+		t.Fatalf("first pick of the round, got %q", got)
 	}
 	doc := radioNow(t, root)
 	if doc["id"] != "mb-ep1" || doc["state"] != "live" || doc["hold"] != false {
@@ -124,8 +127,114 @@ func TestRadioMailbagAirsOnceThroughTheLine(t *testing.T) {
 	}
 	waitFor(t, radioLineFree)
 	now = now.Add(time.Hour)
-	if got := radioMailbagTick(); got != "" {
-		t.Fatalf("each episode airs once; .incoming dirs never: %q", got)
+	if got := radioMailbagTick(); got != "ep1" {
+		t.Fatalf("round 2 starts; ep2 just aired so it does not open it; .incoming dirs never: %q", got)
+	}
+}
+
+// Rotation (owner 27.10.2026): a round airs every episode exactly once in random order, then a new round; a new
+// episode joins the round in progress; deleted episodes never air; no back-to-back repeat across rounds.
+func TestRadioMailbagRotation(t *testing.T) {
+	r, root := setupMailbag(t)
+	t.Setenv("RADIO_MAILBAG_GAP_MIN", "0")
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	radioMailbagNow = func() time.Time { return now }
+	for _, id := range []string{"a", "b", "c"} {
+		radioMailbagEpisode(t, root, id, id, "2026-10-27T10:00:00Z", nil)
+	}
+	air := func() string {
+		t.Helper()
+		now = now.Add(time.Minute)
+		got := radioMailbagTick()
+		if got == "" {
+			t.Fatal("nothing aired")
+		}
+		waitFor(t, radioLineFree)
+		return got
+	}
+	round := func(want ...string) []string {
+		t.Helper()
+		var got []string
+		seen := map[string]bool{}
+		for range want {
+			id := air()
+			if seen[id] {
+				t.Fatalf("%s twice in one round: %v", id, append(got, id))
+			}
+			seen[id] = true
+			got = append(got, id)
+		}
+		for _, w := range want {
+			if !seen[w] {
+				t.Fatalf("round %v misses %s", got, w)
+			}
+		}
+		return got
+	}
+	r1 := round("a", "b", "c")
+	r2 := round("a", "b", "c")
+	if r2[0] == r1[2] {
+		t.Fatalf("the episode that closed round 1 opened round 2: %v %v", r1, r2)
+	}
+
+	// mid-round: one aired in round 3, then d arrives — it joins round 3 (airs before anything repeats)
+	first := air()
+	radioMailbagEpisode(t, root, "d", "d", "2026-10-27T13:00:00Z", nil)
+	rest := map[string]bool{"a": true, "b": true, "c": true, "d": true}
+	delete(rest, first)
+	for i := 0; i < 3; i++ {
+		id := air()
+		if !rest[id] {
+			t.Fatalf("round 3 after %s: %s aired again before %v", first, id, rest)
+		}
+		delete(rest, id)
+	}
+
+	// deleted episodes never air
+	if code, _ := radioDo(t, r, "POST", "/api/admin/radio/mailbag/b/delete"+radioAdminQS, "", ``); code != 200 {
+		t.Fatal("delete b")
+	}
+	for i := 0; i < 6; i++ {
+		if id := air(); id == "b" {
+			t.Fatal("deleted episode aired")
+		}
+	}
+	var plays int
+	db.QueryRow(`SELECT plays FROM radio_mailbag WHERE id = 'd'`).Scan(&plays)
+	if plays != 5 {
+		t.Fatalf("d: joined round 3 at the round's level (2 plays), aired in rounds 3, 4, 5 → 5, got %d", plays)
+	}
+}
+
+// Rows aired under the old «airs once» rule count as played once when the plays column is added.
+func TestRadioMailbagPlaysBackfill(t *testing.T) {
+	setupMailbag(t)
+	db.Exec(`DROP TABLE radio_mailbag`)
+	db.Exec(`CREATE TABLE radio_mailbag (id TEXT PRIMARY KEY, name TEXT, lang TEXT, bank_n INTEGER,
+		question_text TEXT, answer_text TEXT, created_at TEXT, aired_at TEXT, deleted_at TEXT)`)
+	db.Exec(`INSERT INTO radio_mailbag (id, created_at, aired_at) VALUES ('old', '2026-10-01 10:00:00', '2026-10-02 10:00:00'),
+		('new', '2026-10-01 10:00:00', NULL)`)
+	radioMailbagSchemaReady.Store(false)
+	ensureRadioMailbagSchema()
+	if !radioMailbagSchemaReady.Load() {
+		t.Fatal("schema not ready")
+	}
+	got := map[string]int{}
+	rows, _ := db.Query(`SELECT id, plays FROM radio_mailbag`)
+	for rows.Next() {
+		var id string
+		var p int
+		rows.Scan(&id, &p)
+		got[id] = p
+	}
+	rows.Close()
+	if got["old"] != 1 || got["new"] != 0 {
+		t.Fatalf("backfill %v", got)
+	}
+	radioMailbagSchemaReady.Store(false)
+	ensureRadioMailbagSchema() // second run: «duplicate column» is expected and ignored
+	if !radioMailbagSchemaReady.Load() {
+		t.Fatal("second run")
 	}
 }
 

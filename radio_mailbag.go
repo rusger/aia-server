@@ -5,10 +5,14 @@ package main
 //
 // Friends of the show record questions; the Mac (insta-agent scripts/radio_mailbag.py) turns each into a ready
 // episode and uploads it atomically to <RADIO_ROOT>/mailbag/<id>/ (files land in mailbag/.incoming-<id>/, the
-// manifest is written last, then the directory is renamed — dot-dirs are ignored here). A goroutine airs the oldest
-// unaired episode through the same line as live calls, but only when somebody is listening (distinct IPs fetching HLS
-// segments in the nginx log over the last minute), the line is free and the last episode was long enough ago.
-// Each episode airs once. Honest format: «a voice message in our mailbox», never «on the line now».
+// manifest is written last, then the directory is renamed — dot-dirs are ignored here). A goroutine airs an episode
+// through the same line as live calls, but only when somebody is listening (distinct IPs fetching HLS segments in the
+// nginx log over the last minute), the line is free and the last episode was long enough ago.
+// Rotation (owner 27.10.2026): the episodes are a bank drawn at random WITHOUT replacement — every round airs each
+// episode once (plays = how many times it aired; the pick is a random one among the fewest plays), then a new round
+// starts. A new episode joins the CURRENT round (it starts at the current minimum of plays, so it is shuffled in with
+// the ones not yet aired this round rather than jumping the queue). The episode that aired last never opens the next
+// round when another one is available. Honest format: «a voice message in our mailbox», never «on the line now».
 //
 // Env: RADIO_MAILBAG=1 (scheduler on; default off), RADIO_MAILBAG_MIN_LISTENERS (1), RADIO_MAILBAG_GAP_MIN (30),
 // RADIO_ACCESS_LOG (/var/log/nginx/access.log). Switches (DB, Stellar Vault): calls_off, mailbag_off.
@@ -23,6 +27,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -58,6 +63,13 @@ func init() {
 
 var radioMailbagNow = time.Now
 
+// radioMailbagShuffle orders the candidates of one plays level (tests make it deterministic).
+var radioMailbagShuffle = radioMailbagShuffleRandom
+
+func radioMailbagShuffleRandom(ids []string) {
+	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+}
+
 var radioMailbagIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 // ---------------------------------------------------------------------------
@@ -81,6 +93,16 @@ func ensureRadioMailbagSchema() {
 			log.Printf("⚠️ radio mailbag schema: %v — will retry", err)
 			return
 		}
+	}
+	// plays (rotation, 27.10.2026): added to tables created before it; rows aired under the old «airs once» rule
+	// count as played once. A failed ALTER (other than «already there») leaves the schema not ready → retried.
+	if _, err := db.Exec(`ALTER TABLE radio_mailbag ADD COLUMN plays INTEGER NOT NULL DEFAULT 0`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			log.Printf("⚠️ radio mailbag schema (plays): %v — will retry", err)
+			return
+		}
+	} else if _, err := db.Exec(`UPDATE radio_mailbag SET plays = 1 WHERE aired_at IS NOT NULL AND plays = 0`); err != nil {
+		log.Printf("⚠️ radio mailbag schema (plays backfill): %v", err)
 	}
 	radioMailbagSchemaReady.Store(true)
 }
@@ -222,8 +244,10 @@ func radioMailbagScan() {
 		if m.AnswerEN != "" && m.AnswerEN != m.AnswerText {
 			answer += "\n---\n" + m.AnswerEN
 		}
-		if _, err := db.Exec(`INSERT INTO radio_mailbag (id, name, lang, bank_n, question_text, answer_text, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+		// a new row starts at the current round's minimum of plays (joins the round in progress)
+		if _, err := db.Exec(`INSERT INTO radio_mailbag (id, name, lang, bank_n, question_text, answer_text, created_at, plays)
+			VALUES (?, ?, ?, ?, ?, ?, ?,
+				(SELECT COALESCE(MIN(plays), 0) FROM radio_mailbag WHERE deleted_at IS NULL))
 			ON CONFLICT(id) DO UPDATE SET name = excluded.name, lang = excluded.lang, bank_n = excluded.bank_n,
 				question_text = excluded.question_text, answer_text = excluded.answer_text
 			WHERE radio_mailbag.deleted_at IS NULL`,
@@ -344,31 +368,18 @@ func radioMailbagTick() string {
 	if n < envIntDefault("RADIO_MAILBAG_MIN_LISTENERS", 1) {
 		return ""
 	}
-	rows, err := db.Query(`SELECT id FROM radio_mailbag WHERE aired_at IS NULL AND deleted_at IS NULL ORDER BY created_at, id`)
+	ids, plays, err := radioMailbagCandidates()
 	if err != nil {
 		log.Printf("⚠️ radio mailbag pick: %v", err)
 		return ""
 	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			log.Printf("⚠️ radio mailbag pick: %v", err)
-			continue
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		log.Printf("⚠️ radio mailbag pick: %v", err)
-	}
-	rows.Close()
 	for _, id := range ids {
 		m, err := radioMailbagLoad(id)
 		if err != nil {
 			log.Printf("⚠️ radio mailbag %s not airable: %v", id, err)
 			continue
 		}
-		if radioMailbagAir(m, now, n) {
+		if radioMailbagAir(m, plays[id], now, n) {
 			return id
 		}
 		return ""
@@ -376,16 +387,66 @@ func radioMailbagTick() string {
 	return ""
 }
 
-// radioMailbagAir takes the free line and publishes the episode; the row is marked aired first (each episode once).
-func radioMailbagAir(m *radioMailbagManifest, now time.Time, listeners int) bool {
+// radioMailbagCandidates: every episode that is not deleted, fewest plays first, random order inside one plays level
+// (draw without replacement within a round). The episode that aired last moves to the end of its level, so a new
+// round never opens with the episode that has just closed the previous one (unless it is the only one).
+func radioMailbagCandidates() ([]string, map[string]int, error) {
+	var last sql.NullString
+	if err := db.QueryRow(`SELECT id FROM radio_mailbag WHERE aired_at IS NOT NULL AND deleted_at IS NULL
+		ORDER BY aired_at DESC, id LIMIT 1`).Scan(&last); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, err
+	}
+	rows, err := db.Query(`SELECT id, plays FROM radio_mailbag WHERE deleted_at IS NULL ORDER BY plays, id`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	plays := map[string]int{}
+	var levels [][]string
+	prev := -1
+	for rows.Next() {
+		var id string
+		var p int
+		if err := rows.Scan(&id, &p); err != nil {
+			return nil, nil, err
+		}
+		if p != prev || len(levels) == 0 {
+			levels = append(levels, nil)
+			prev = p
+		}
+		levels[len(levels)-1] = append(levels[len(levels)-1], id)
+		plays[id] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	var out []string
+	for _, lv := range levels {
+		radioMailbagShuffle(lv)
+		if last.Valid && len(lv) > 1 {
+			for i, id := range lv {
+				if id == last.String {
+					lv = append(append(lv[:i:i], lv[i+1:]...), id)
+					break
+				}
+			}
+		}
+		out = append(out, lv...)
+	}
+	return out, plays, nil
+}
+
+// radioMailbagAir takes the free line and publishes the episode; the row is marked aired first (plays+1, guarded by
+// the plays value it was picked with, so two ticks can never count one airing twice).
+func radioMailbagAir(m *radioMailbagManifest, plays int, now time.Time, listeners int) bool {
 	radioLine.Lock()
 	defer radioLine.Unlock()
 	radioReapIdle()
 	if radioLine.call != nil {
 		return false
 	}
-	res, err := db.Exec(`UPDATE radio_mailbag SET aired_at = ? WHERE id = ? AND aired_at IS NULL AND deleted_at IS NULL`,
-		now.UTC().Format("2006-01-02 15:04:05"), m.ID)
+	res, err := db.Exec(`UPDATE radio_mailbag SET aired_at = ?, plays = plays + 1
+		WHERE id = ? AND plays = ? AND deleted_at IS NULL`, now.UTC().Format("2006-01-02 15:04:05"), m.ID, plays)
 	if err != nil {
 		log.Printf("⚠️ radio mailbag %s mark aired: %v", m.ID, err)
 		return false
@@ -412,7 +473,7 @@ func radioMailbagAir(m *radioMailbagManifest, now time.Time, listeners int) bool
 	c.Until = radioCallNow().Add(time.Duration(total*float64(time.Second)) + time.Duration(radioMailbagSlack.Load()))
 	radioLine.call = c
 	radioWriteNow(c)
-	log.Printf("📮 radio mailbag %s on air (%s, %s, %.0f s, %d listeners)", m.ID, m.Name, m.Lang, total, listeners)
+	log.Printf("📮 radio mailbag %s on air (%s, %s, %.0f s, play %d, %d listeners)", m.ID, m.Name, m.Lang, total, plays+1, listeners)
 	go radioMailbagRelease(c)
 	return true
 }
@@ -525,7 +586,7 @@ func adminRadioMailbag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	radioMailbagScan()
-	rows, err := db.Query(`SELECT id, name, lang, bank_n, created_at, aired_at, deleted_at, question_text, answer_text
+	rows, err := db.Query(`SELECT id, name, lang, bank_n, created_at, aired_at, deleted_at, question_text, answer_text, plays
 		FROM radio_mailbag ORDER BY created_at DESC, id`)
 	if err != nil {
 		log.Printf("⚠️ admin radio mailbag: %v", err)
@@ -538,7 +599,8 @@ func adminRadioMailbag(w http.ResponseWriter, r *http.Request) {
 		var id string
 		var name, lang, created, aired, deleted, q, a sql.NullString
 		var bank sql.NullInt64
-		if err := rows.Scan(&id, &name, &lang, &bank, &created, &aired, &deleted, &q, &a); err != nil {
+		var plays int
+		if err := rows.Scan(&id, &name, &lang, &bank, &created, &aired, &deleted, &q, &a, &plays); err != nil {
 			log.Printf("⚠️ admin radio mailbag: %v", err)
 			radioJSON(w, 500, map[string]interface{}{"success": false, "error": "db"})
 			return
@@ -549,7 +611,8 @@ func adminRadioMailbag(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, map[string]interface{}{"id": id, "name": radioNullStr(name), "lang": radioNullStr(lang),
 			"bank_n": bn, "created": radioNullStr(created), "aired_at": radioNullStr(aired),
-			"deleted_at": radioNullStr(deleted), "question_text": radioNullStr(q), "answer_text": radioNullStr(a)})
+			"deleted_at": radioNullStr(deleted), "question_text": radioNullStr(q), "answer_text": radioNullStr(a),
+			"plays": plays})
 	}
 	if err := rows.Err(); err != nil {
 		log.Printf("⚠️ admin radio mailbag: %v", err)
