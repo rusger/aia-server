@@ -198,9 +198,41 @@ var radioCallDurFn = func(path string) (float64, error) {
 	return strconv.ParseFloat(strings.TrimSpace(string(b)), 64)
 }
 
+// radioBrandSay: how the brand is written for the TTS voice in Cyrillic-script languages (owner 28.10.2026: Russian
+// mailbag episodes said «Астроликс»). Mirror of insta-agent scripts/radio_mailbag.py say_brand (e7c67d22) — keep in
+// sync. Only the text sent to TTS is rewritten; the answer stored and returned to the client stays as is.
+var radioBrandSay = map[string][2]string{
+	"ru": {"радио Астролитикс", "Астролитикс"},
+	"uk": {"радіо Астролітікс", "Астролітікс"},
+	"be": {"радыё Астралітыкс", "Астралітыкс"},
+	"bg": {"радио Астролитикс", "Астролитикс"},
+	"sr": {"радио Астролитикс", "Астролитикс"},
+	"mk": {"радио Астролитикс", "Астролитикс"},
+	"kk": {"Астролитикс радиосы", "Астролитикс"},
+	"ky": {"Астролитикс радиосу", "Астролитикс"},
+}
+
+var (
+	radioBrandRadioRx = regexp.MustCompile(`(?i)\bAstrolytix\s+Radio\b`)
+	radioBrandRx      = regexp.MustCompile(`(?i)\bAstrolytix\b`)
+)
+
+// radioSayBrand rewrites the brand for the TTS text of a non-Latin-script language ("Astrolytix Radio" first, then the
+// bare name); Latin-script languages keep the spelling and rely on ttsBrandHint in the instructions.
+func radioSayBrand(text, lang string) string {
+	if len(lang) > 2 {
+		lang = lang[:2]
+	}
+	say, ok := radioBrandSay[strings.ToLower(lang)]
+	if !ok {
+		return text
+	}
+	return radioBrandRx.ReplaceAllString(radioBrandRadioRx.ReplaceAllString(text, say[0]), say[1])
+}
+
 // radioCallLocalTTSFn: a non-English reply voiced once for all stations (OpenAI TTS, same voices as /api/tts).
 var radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) {
-	return ttsFetch(ttsModel, ttsVoiceFor(gender, lang), ttsInstructions, text)
+	return ttsFetch(ttsModel, ttsVoiceFor(gender, lang), ttsInstructions, radioSayBrand(text, lang))
 }
 
 // radioCallKokoroFn: the free last-resort voice — Kokoro on this box (tools/kokoro_say.py, RADIO_KOKORO_DIR with the
@@ -827,7 +859,7 @@ func radioFallbackSeg(c *radioCall, kind, text string) (radioSegment, error) {
 
 const radioInterpInstructions = "Professional simultaneous interpreter in a booth at a high-level international summit, " +
 	"broadcast on TV. Calm, even, neutral, slightly quick and compact, first person, no emotion of your own, clear diction, " +
-	"steady pace with tiny natural pauses as if following the speaker."
+	"steady pace with tiny natural pauses as if following the speaker. " + ttsBrandHint
 
 // Mix v5 (contract §A2, owner-approved 15.10.2026 — keep these numbers): the interpreter starts 1.0 s after the caller;
 // the caller is ×1.4 and ducks to 0.75 of that only while the interpreter speaks (0.15 s linear ramps), so in the

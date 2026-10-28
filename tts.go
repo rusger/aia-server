@@ -38,7 +38,11 @@ const (
 // ttsInstructions: one calm narrator for every language — the model follows
 // the text's own language.
 const ttsInstructions = "Warm, calm, unhurried narrator reading a personal astrology reading to its owner. " +
-	"Natural pace, clear diction, gentle confidence; no theatrics."
+	"Natural pace, clear diction, gentle confidence; no theatrics. " + ttsBrandHint
+
+// ttsBrandHint: the voice said «Астроликс» for the Latin spelling in non-English text (owner 28.10.2026); same line in
+// insta-agent radio_mailbag.py. Cyrillic languages additionally get the brand respelled (radioSayBrand).
+const ttsBrandHint = "Pronounce the brand name Astrolytix as 'astro-LEE-tiks', four syllables."
 
 type ttsRequest struct {
 	Text   string `json:"text"`

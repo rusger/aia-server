@@ -868,3 +868,22 @@ func TestRadioInterpSkipsEnglish(t *testing.T) {
 		t.Fatalf("caller segment %v", seg)
 	}
 }
+
+// Owner 28.10.2026: «Астроликс» in Russian replies — the TTS text gets the brand respelled, Latin languages keep it.
+func TestRadioSayBrand(t *testing.T) {
+	in := "Welcome to Astrolytix Radio! astrolytix radio and ASTROLYTIX are one; Astrolytixer stays."
+	got := radioSayBrand(in, "ru-RU")
+	want := "Welcome to радио Астролитикс! радио Астролитикс and Астролитикс are one; Astrolytixer stays."
+	if got != want {
+		t.Fatalf("ru: %q", got)
+	}
+	if got := radioSayBrand(in, "de"); got != in {
+		t.Fatalf("de must stay: %q", got)
+	}
+	if got := radioSayBrand("Astrolytix", "kk"); got != "Астролитикс" {
+		t.Fatalf("kk: %q", got)
+	}
+	if !strings.Contains(ttsInstructions, "astro-LEE-tiks") || !strings.Contains(radioInterpInstructions, "astro-LEE-tiks") {
+		t.Fatal("brand hint missing from TTS instructions")
+	}
+}
