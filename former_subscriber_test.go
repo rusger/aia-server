@@ -98,6 +98,10 @@ func TestFormerSubscriberCriterion(t *testing.T) {
 	anonDevice(t, "SANDBOX2", "fp:sandbox2", "free", "")
 	storePurchase(t, anon("SANDBOX2"), "apple_s2s", "apple", "s2", "", 0)
 	fsExec(t, `INSERT INTO apple_notifications VALUES ('EXPIRED','Sandbox','s2','s2')`)
+	// An empty environment is NOT sandbox (repo convention): still a subscriber.
+	anonDevice(t, "EMPTYENV", "fp:emptyenv", "free", "")
+	storePurchase(t, anon("EMPTYENV"), "apple_s2s", "apple", "e1", "", 0)
+	fsExec(t, `INSERT INTO apple_notifications VALUES ('EXPIRED','','e1','e1')`)
 	// Expired admin gift.
 	anonDevice(t, "GIFT", "fp:gift", "paid", past)
 	storePurchase(t, anon("GIFT"), "GIFT", "admin", "", "", 0)
@@ -133,6 +137,7 @@ func TestFormerSubscriberCriterion(t *testing.T) {
 		{"sandbox by JWS", anon("SANDBOX"), "SANDBOX", false},
 		{"sandbox by notifications", anon("SANDBOX2"), "SANDBOX2", false},
 		{"expired admin gift", anon("GIFT"), "GIFT", false},
+		{"empty environment counts as production", anon("EMPTYENV"), "EMPTYENV", true},
 		{"is_super", anon("OWNER"), "OWNER", false},
 		{"reinstall keeps the cut", anon("NEW"), "NEW", true},
 		{"other free account, same device", "fresh@x.com", "NEW", true},

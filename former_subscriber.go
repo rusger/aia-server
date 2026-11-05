@@ -142,16 +142,24 @@ func identityInstalls(deviceID string) []string {
 	}
 	rows, err := db.Query(`SELECT device_id FROM device_identity WHERE identity_key = ?`, di.key)
 	if err != nil {
+		log.Printf("⚠️ former-subscriber installs(%s key=%s): %v", deviceID, di.key, err)
 		return ids
 	}
 	defer rows.Close()
 	seen := map[string]bool{deviceID: true}
 	for rows.Next() {
 		var id string
-		if rows.Scan(&id) == nil && !seen[id] {
+		if err := rows.Scan(&id); err != nil {
+			log.Printf("⚠️ former-subscriber installs scan(%s): %v", deviceID, err)
+			continue
+		}
+		if !seen[id] {
 			seen[id] = true
 			ids = append(ids, id)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("⚠️ former-subscriber installs rows(%s key=%s): %v", deviceID, di.key, err)
 	}
 	return ids
 }
@@ -181,13 +189,19 @@ func identityAccounts(email string, installs []string) []string {
 	} {
 		rows, err := db.Query(q, args...)
 		if err != nil {
+			log.Printf("⚠️ former-subscriber accounts(%v): %s: %v", installs, q, err)
 			continue
 		}
 		for rows.Next() {
 			var a string
-			if rows.Scan(&a) == nil {
-				add(a)
+			if err := rows.Scan(&a); err != nil {
+				log.Printf("⚠️ former-subscriber accounts scan(%v): %v", installs, err)
+				continue
 			}
+			add(a)
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("⚠️ former-subscriber accounts rows(%v): %v", installs, err)
 		}
 		rows.Close()
 	}
@@ -231,15 +245,22 @@ func everSubscribed(accounts, installs []string) bool {
 		 WHERE (email IN (`+ph+`) OR device_id IN (`+ph+`)) AND store IN (`+sph+`)`,
 		append(append(append([]interface{}{}, args...), args...), sargs...)...)
 	if err != nil {
+		// Fail open (a DB hiccup must not lock paying-adjacent users out), but loudly.
+		log.Printf("⚠️ former-subscriber purchases(accounts=%v installs=%v): %v", accounts, installs, err)
 		return false
 	}
 	type row struct{ store, txn, otxn, token string }
 	var found []row
 	for rows.Next() {
 		var r row
-		if rows.Scan(&r.store, &r.txn, &r.otxn, &r.token) == nil {
-			found = append(found, r)
+		if err := rows.Scan(&r.store, &r.txn, &r.otxn, &r.token); err != nil {
+			log.Printf("⚠️ former-subscriber purchases scan(%v): %v", accounts, err)
+			continue
 		}
+		found = append(found, r)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("⚠️ former-subscriber purchases rows(%v): %v", accounts, err)
 	}
 	rows.Close()
 	for _, r := range found {
@@ -251,19 +272,24 @@ func everSubscribed(accounts, installs []string) bool {
 }
 
 // appleSandboxPurchase: the JWS says environment=Sandbox, or the transaction
-// has App Store notifications and none of them is Production.
+// has a Sandbox App Store notification and no non-Sandbox one (same
+// COALESCE(environment,”) <> 'Sandbox' convention as renewals.go).
 func appleSandboxPurchase(txn, otxn, token string) bool {
 	if env := jwsEnvironment(token); env != "" {
-		return env != "Production"
+		return env == "Sandbox"
 	}
-	var prod, other int
-	_ = db.QueryRow(
-		`SELECT COALESCE(SUM(environment = 'Production'),0), COALESCE(SUM(environment <> 'Production'),0)
+	var sandbox, live int
+	if err := db.QueryRow(
+		`SELECT COALESCE(SUM(COALESCE(environment,'') = 'Sandbox'),0),
+		        COALESCE(SUM(COALESCE(environment,'') <> 'Sandbox'),0)
 		 FROM apple_notifications
 		 WHERE (transaction_id <> '' AND transaction_id IN (?, ?))
 		    OR (original_transaction_id <> '' AND original_transaction_id IN (?, ?))`,
-		txn, otxn, txn, otxn).Scan(&prod, &other)
-	return prod == 0 && other > 0
+		txn, otxn, txn, otxn).Scan(&sandbox, &live); err != nil {
+		log.Printf("⚠️ former-subscriber sandbox check(txn=%s otxn=%s): %v", txn, otxn, err)
+		return false // counted as production: the purchase row itself is the stronger fact
+	}
+	return sandbox > 0 && live == 0
 }
 
 // jwsEnvironment reads "environment" from a StoreKit 2 JWS payload without
