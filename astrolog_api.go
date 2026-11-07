@@ -9874,7 +9874,9 @@ func main() {
     router.HandleFunc("/api/admin/radio/mailbag/{id}/delete", adminGuardMiddleware(adminRadioMailbagDelete)).Methods("POST")
     router.HandleFunc("/api/admin/radio/switches", adminGuardMiddleware(adminRadioSwitches)).Methods("GET", "POST")
     router.HandleFunc("/api/chatgpt-stream", jwtAuthMiddleware(formerSubscriberGate(chatGPTStreamProxy))).Methods("POST")
-    router.HandleFunc("/api/chatgpt-stream/resume", jwtAuthMiddleware(formerSubscriberGate(chatGPTStreamResume))).Methods("GET")
+    // resume replays a buffer — no model call, so no formerSubscriberGate (the
+    // gate's pinned route list is "handlers that reach a paid model").
+    router.HandleFunc("/api/chatgpt-stream/resume", jwtAuthMiddleware(chatGPTStreamResume)).Methods("GET")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
     // De-identified guard corpus for hallucination triage (guard_corpus.go).
