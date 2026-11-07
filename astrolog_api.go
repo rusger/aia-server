@@ -9850,6 +9850,7 @@ func main() {
     router.HandleFunc("/api/voice/usage", jwtAuthMiddleware(voiceUsageHandler)).Methods("POST")
     router.HandleFunc("/api/voice/purchase", jwtAuthMiddleware(voicePurchaseHandler)).Methods("POST") // minute packs (consumables)
     router.HandleFunc("/api/app/latest", appLatestHandler).Methods("GET") // latest released app version (app_latest.go)
+    router.HandleFunc("/api/events/ingresses", jwtAuthMiddleware(ingressManifestHandler)).Methods("GET") // planet sign changes for the push overlay (ingress_manifest.go)
     startRadioCallCleanup() // call audio 30 days, texts 12 months (radio_call.go, privacy policy)
     // listener calls on Astrolytix Radio (radio_call.go, owner 14.10.2026)
     router.HandleFunc("/api/radio/call/status", jwtAuthMiddleware(radioCallStatusHandler)).Methods("GET")
