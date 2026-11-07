@@ -85,8 +85,12 @@ func backfillIngressFrom(longitudes func(time.Time) (map[string]float64, error))
 			log.Printf("⚠️ ingress backfill %s: %v", p.ekey, err)
 			continue
 		}
-		if err := json.Unmarshal([]byte(p.params), &known); err != nil || known.SignIdx == nil {
-			log.Printf("⚠️ ingress backfill %s: no signIdx (%v)", p.ekey, err)
+		if err := json.Unmarshal([]byte(p.params), &known); err != nil {
+			log.Printf("⚠️ ingress backfill %s: %v", p.ekey, err)
+			continue
+		}
+		if known.SignIdx == nil {
+			log.Printf("⚠️ ingress backfill %s: no signIdx", p.ekey)
 			continue
 		}
 		lons, err := longitudes(date.AddDate(0, 0, -1))
@@ -132,8 +136,16 @@ func loadIngressManifest() ([]ingressEntry, error) {
 		}
 		var p ingressParams
 		day, ok := ingressDay(ekey)
-		if err := json.Unmarshal([]byte(params), &p); err != nil || !ok || p.SignIdx == nil {
-			log.Printf("⚠️ ingress manifest: skipping %s (%v)", ekey, err)
+		if !ok {
+			log.Printf("⚠️ ingress manifest: skipping %s: unexpected ekey", ekey)
+			continue
+		}
+		if err := json.Unmarshal([]byte(params), &p); err != nil {
+			log.Printf("⚠️ ingress manifest: skipping %s: %v", ekey, err)
+			continue
+		}
+		if p.SignIdx == nil {
+			log.Printf("⚠️ ingress manifest: skipping %s: no signIdx", ekey)
 			continue
 		}
 		e := ingressEntry{Planet: p.Planet, Date: day, To: signSlug(*p.SignIdx)}
