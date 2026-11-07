@@ -215,6 +215,7 @@ func signOf(lon float64) int { return int(math.Floor(lon/30.0)) % 12 }
 
 type ingressEvt struct {
 	planet  string
+	fromIdx int // sign left; not always signIdx-1 (retrograde, nodes)
 	signIdx int
 	date    time.Time
 }
@@ -276,7 +277,7 @@ func findIngresses(planets []string, step time.Duration, from, to time.Time) []i
 				// Sign changed between t-step and t — bisect for the day.
 				d := bisectIngress(p, os, t.Add(-step), t)
 				if !d.IsZero() {
-					out = append(out, ingressEvt{planet: p, signIdx: ns, date: d})
+					out = append(out, ingressEvt{planet: p, fromIdx: os, signIdx: ns, date: d})
 				}
 			}
 			prevSign[p] = ns
@@ -493,7 +494,7 @@ func refreshPushEvents() {
 		ekey := fmt.Sprintf("slow_ingress:%s:%s", ig.planet, day)
 		payload := fmt.Sprintf("astro:slow_ingress:slow_ingress:%s:%s", ig.planet, day)
 		insert(ekey, "slow_ingress", ig.date,
-			map[string]interface{}{"planet": ig.planet, "signIdx": ig.signIdx}, payload)
+			map[string]interface{}{"planet": ig.planet, "fromIdx": ig.fromIdx, "signIdx": ig.signIdx}, payload)
 	}
 
 	// Stations (retrograde/direct turns) — next ~200 days. Frequent enough
@@ -510,6 +511,9 @@ func refreshPushEvents() {
 		insert(ekey, "station", st.date,
 			map[string]interface{}{"planet": st.planet, "retro": st.retro}, payload)
 	}
+
+	// INSERT OR IGNORE keeps rows stored before fromIdx existed as they were.
+	backfillIngressFrom(siderealLongitudes)
 
 	log.Printf("✓ refreshPushEvents done")
 }
