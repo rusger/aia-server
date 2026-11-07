@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -93,3 +94,60 @@ func TestTikTokAPIError(t *testing.T) {
 		t.Fatalf("no error field means ok: %s", c)
 	}
 }
+
+func TestTikTokAvatarExpiry(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	live := "https://p16-sign.tiktokcdn-us.com/a/b~c.jpeg?lk3s=x&nonce=1&x-expires=" + itoa(now.Add(48*time.Hour).Unix()) + "&x-signature=abc"
+	soon := "https://p16-sign.tiktokcdn-us.com/a/b~c.jpeg?x-expires=" + itoa(now.Add(30*time.Minute).Unix()) + "&x-signature=abc"
+	dead := "https://p16-sign.tiktokcdn-us.com/a/b~c.jpeg?x-expires=" + itoa(now.Add(-time.Hour).Unix()) + "&x-signature=abc"
+	plain := "https://example.com/avatar.jpg"
+	if _, ok := tiktokAvatarExpiry(plain); ok {
+		t.Fatal("unsigned link has no expiry")
+	}
+	if _, ok := tiktokAvatarExpiry("https://x/?x-expires=abc"); ok {
+		t.Fatal("garbage stamp is not an expiry")
+	}
+	if exp, ok := tiktokAvatarExpiry(live); !ok || !exp.Equal(now.Add(48*time.Hour)) {
+		t.Fatalf("expiry parse: %v %v", exp, ok)
+	}
+	for _, c := range []struct {
+		u    string
+		dead bool
+	}{{live, false}, {soon, true}, {dead, true}, {plain, false}, {"", false}} {
+		if got := tiktokAvatarDead(c.u, now); got != c.dead {
+			t.Fatalf("dead(%q) = %v, want %v", c.u, got, c.dead)
+		}
+	}
+	if tiktokAvatarServable(dead, now) != "" || tiktokAvatarServable(soon, now) != "" {
+		t.Fatal("a dead or about-to-die link must not reach the app")
+	}
+	if tiktokAvatarServable(live, now) != live || tiktokAvatarServable(plain, now) != plain {
+		t.Fatal("live links pass through unchanged")
+	}
+}
+
+func TestTikTokAvatarStale(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	live := "https://p16-sign.tiktokcdn-us.com/a.jpeg?x-expires=" + itoa(now.Add(72*time.Hour).Unix())
+	dead := "https://p16-sign.tiktokcdn-us.com/a.jpeg?x-expires=" + itoa(now.Add(-time.Hour).Unix())
+	cases := []struct {
+		name  string
+		a     tiktokAccount
+		stale bool
+	}{
+		{"never checked, live link", tiktokAccount{AvatarURL: live}, true},
+		{"live link checked 1h ago", tiktokAccount{AvatarURL: live, AvatarCheckedAt: now.Add(-time.Hour)}, false},
+		{"live link checked 25h ago", tiktokAccount{AvatarURL: live, AvatarCheckedAt: now.Add(-25 * time.Hour)}, true},
+		{"dead link checked 10 min ago (TikTok down — no storm)", tiktokAccount{AvatarURL: dead, AvatarCheckedAt: now.Add(-10 * time.Minute)}, false},
+		{"dead link checked 61 min ago", tiktokAccount{AvatarURL: dead, AvatarCheckedAt: now.Add(-61 * time.Minute)}, true},
+		{"no avatar checked 10 min ago", tiktokAccount{AvatarCheckedAt: now.Add(-10 * time.Minute)}, false},
+		{"no avatar checked 2h ago", tiktokAccount{AvatarCheckedAt: now.Add(-2 * time.Hour)}, true},
+	}
+	for _, c := range cases {
+		if got := tiktokAvatarStale(&c.a, now); got != c.stale {
+			t.Fatalf("%s: stale = %v, want %v", c.name, got, c.stale)
+		}
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
