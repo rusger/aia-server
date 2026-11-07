@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,8 +40,16 @@ const (
 	tiktokStatusURL      = "https://open.tiktokapis.com/v2/post/publish/status/fetch/"
 
 	tiktokRefreshMargin = 5 * time.Minute
-	tiktokMaxSingle     = 64 << 20 // TikTok: one chunk may be up to 64 MB
-	tiktokChunk         = 32 << 20 // multi-chunk plan: 32 MB pieces
+	// avatar_url is a signed CDN link (…?x-expires=<unix>&x-signature=…) that
+	// dies after a few days; serving a dead one gave the app HTTP 403 floods
+	// (Sentry APP-R, 25.10.2026). GET /account re-reads user/info when the
+	// link is about to expire (margin), at most once per tiktokAvatarRetry on
+	// failure, and once per tiktokAvatarTTL otherwise — never on every request.
+	tiktokAvatarMargin = time.Hour
+	tiktokAvatarRetry  = time.Hour
+	tiktokAvatarTTL    = 24 * time.Hour
+	tiktokMaxSingle    = 64 << 20 // TikTok: one chunk may be up to 64 MB
+	tiktokChunk        = 32 << 20 // multi-chunk plan: 32 MB pieces
 )
 
 var tiktokReady atomic.Bool
@@ -66,6 +75,7 @@ type tiktokAccount struct {
 	RefreshExpiresAt time.Time
 	DisplayName      string
 	AvatarURL        string
+	AvatarCheckedAt  time.Time // last user/info read (zero = never)
 }
 
 func ensureTikTokSchema() {
@@ -82,10 +92,17 @@ func ensureTikTokSchema() {
 			refresh_expires_at DATETIME NOT NULL,
 			display_name       TEXT,
 			avatar_url         TEXT,
+			avatar_checked_at  DATETIME,
 			updated_at         DATETIME
 		)`)
 	if err != nil {
 		log.Printf("⚠️ tiktok_accounts schema create failed: %v — will retry on next request", err)
+		return
+	}
+	// column added 07.11.2026; tables created before that lack it
+	if _, err := db.Exec(`ALTER TABLE tiktok_accounts ADD COLUMN avatar_checked_at DATETIME`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		log.Printf("⚠️ tiktok_accounts avatar_checked_at column: %v — will retry on next request", err)
 		return
 	}
 	tiktokReady.Store(true)
@@ -170,28 +187,75 @@ func tiktokAPIError(body []byte) (code, message string) {
 func tiktokLoadAccount(email string) (*tiktokAccount, error) {
 	ensureTikTokSchema()
 	a := &tiktokAccount{Email: email}
-	var exp, rexp string
+	var exp, rexp, checked string
 	err := db.QueryRow(`SELECT open_id, access_token, refresh_token, expires_at, refresh_expires_at,
-		COALESCE(display_name,''), COALESCE(avatar_url,'') FROM tiktok_accounts WHERE email = ?`, email).
-		Scan(&a.OpenID, &a.AccessToken, &a.RefreshToken, &exp, &rexp, &a.DisplayName, &a.AvatarURL)
+		COALESCE(display_name,''), COALESCE(avatar_url,''), COALESCE(avatar_checked_at,'') FROM tiktok_accounts WHERE email = ?`, email).
+		Scan(&a.OpenID, &a.AccessToken, &a.RefreshToken, &exp, &rexp, &a.DisplayName, &a.AvatarURL, &checked)
 	if err != nil {
 		return nil, err
 	}
 	a.ExpiresAt, _ = time.Parse(time.RFC3339, exp)
 	a.RefreshExpiresAt, _ = time.Parse(time.RFC3339, rexp)
+	a.AvatarCheckedAt, _ = time.Parse(time.RFC3339, checked)
 	return a, nil
 }
 
 func tiktokSaveAccount(a *tiktokAccount) error {
 	ensureTikTokSchema()
-	_, err := db.Exec(`INSERT INTO tiktok_accounts (email, open_id, access_token, refresh_token, expires_at, refresh_expires_at, display_name, avatar_url, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+	checked := ""
+	if !a.AvatarCheckedAt.IsZero() {
+		checked = a.AvatarCheckedAt.UTC().Format(time.RFC3339)
+	}
+	_, err := db.Exec(`INSERT INTO tiktok_accounts (email, open_id, access_token, refresh_token, expires_at, refresh_expires_at, display_name, avatar_url, avatar_checked_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(email) DO UPDATE SET open_id = excluded.open_id, access_token = excluded.access_token,
 			refresh_token = excluded.refresh_token, expires_at = excluded.expires_at, refresh_expires_at = excluded.refresh_expires_at,
-			display_name = excluded.display_name, avatar_url = excluded.avatar_url, updated_at = CURRENT_TIMESTAMP`,
+			display_name = excluded.display_name, avatar_url = excluded.avatar_url, avatar_checked_at = excluded.avatar_checked_at,
+			updated_at = CURRENT_TIMESTAMP`,
 		a.Email, a.OpenID, a.AccessToken, a.RefreshToken, a.ExpiresAt.UTC().Format(time.RFC3339),
-		a.RefreshExpiresAt.UTC().Format(time.RFC3339), a.DisplayName, a.AvatarURL)
+		a.RefreshExpiresAt.UTC().Format(time.RFC3339), a.DisplayName, a.AvatarURL, checked)
 	return err
+}
+
+// tiktokAvatarExpiry reads the x-expires unix timestamp TikTok's CDN signs
+// into avatar_url. ok=false: no/unparseable stamp (treat as "unknown", not dead).
+func tiktokAvatarExpiry(avatarURL string) (time.Time, bool) {
+	u, err := url.Parse(avatarURL)
+	if err != nil {
+		return time.Time{}, false
+	}
+	sec, err := strconv.ParseInt(u.Query().Get("x-expires"), 10, 64)
+	if err != nil || sec <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(sec, 0), true
+}
+
+// tiktokAvatarDead — the signed link is past (or within margin of) its x-expires.
+func tiktokAvatarDead(avatarURL string, now time.Time) bool {
+	exp, ok := tiktokAvatarExpiry(avatarURL)
+	return ok && !now.Add(tiktokAvatarMargin).Before(exp)
+}
+
+// tiktokAvatarStale decides whether GET /account should re-read user/info now.
+// Dead or missing link: retry no more often than tiktokAvatarRetry (a broken
+// TikTok must not turn every /account into an API call). Live link: once per
+// tiktokAvatarTTL so a never-expiring link still tracks name/picture changes.
+func tiktokAvatarStale(a *tiktokAccount, now time.Time) bool {
+	since := now.Sub(a.AvatarCheckedAt)
+	if a.AvatarURL == "" || tiktokAvatarDead(a.AvatarURL, now) {
+		return since >= tiktokAvatarRetry
+	}
+	return since >= tiktokAvatarTTL
+}
+
+// tiktokAvatarServable — what /account may hand to the app: never a dead link
+// (the client would get HTTP 403 from the CDN); empty means "no avatar".
+func tiktokAvatarServable(avatarURL string, now time.Time) string {
+	if tiktokAvatarDead(avatarURL, now) {
+		return ""
+	}
+	return avatarURL
 }
 
 // --- TikTok calls ----------------------------------------------------------
@@ -342,27 +406,7 @@ func tiktokExchange(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:        time.Now().Add(time.Duration(t.ExpiresIn) * time.Second),
 		RefreshExpiresAt: time.Now().Add(time.Duration(t.RefreshExpiresIn) * time.Second)}
 	// display name / avatar for the app's "connected as …" line
-	if raw, code, msg, err := tiktokBearer("GET", tiktokUserInfoURL, a.AccessToken, nil); err == nil && code == "ok" {
-		var u struct {
-			Data struct {
-				User struct {
-					OpenID      string `json:"open_id"`
-					DisplayName string `json:"display_name"`
-					AvatarURL   string `json:"avatar_url"`
-				} `json:"user"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(raw, &u) == nil {
-			a.DisplayName, a.AvatarURL = u.Data.User.DisplayName, u.Data.User.AvatarURL
-			if a.OpenID == "" {
-				a.OpenID = u.Data.User.OpenID
-			}
-		}
-	} else if err != nil {
-		log.Printf("⚠️ tiktok user/info for %s: %v", email, err)
-	} else {
-		log.Printf("⚠️ tiktok user/info for %s: %s %s", email, code, msg)
-	}
+	tiktokReadUserInfo(a, time.Now())
 	if err := tiktokSaveAccount(a); err != nil {
 		log.Printf("⚠️ tiktok save account for %s: %v", email, err)
 		tiktokFail(w, http.StatusInternalServerError, "Database error", "db")
@@ -370,6 +414,40 @@ func tiktokExchange(w http.ResponseWriter, r *http.Request) {
 	}
 	tiktokJSON(w, http.StatusOK, map[string]interface{}{"success": true, "open_id": a.OpenID,
 		"display_name": a.DisplayName, "avatar_url": a.AvatarURL, "scope": t.Scope})
+}
+
+// tiktokReadUserInfo fills display name / avatar from TikTok user/info and
+// stamps AvatarCheckedAt whether or not the call worked (that stamp is the
+// rate limit). Failure keeps the old values; the caller saves. Returns ok.
+func tiktokReadUserInfo(a *tiktokAccount, now time.Time) bool {
+	a.AvatarCheckedAt = now
+	raw, code, msg, err := tiktokBearer("GET", tiktokUserInfoURL, a.AccessToken, nil)
+	if err != nil {
+		log.Printf("⚠️ tiktok user/info for %s: %v", a.Email, err)
+		return false
+	}
+	if code != "ok" {
+		log.Printf("⚠️ tiktok user/info for %s: %s %s", a.Email, code, msg)
+		return false
+	}
+	var u struct {
+		Data struct {
+			User struct {
+				OpenID      string `json:"open_id"`
+				DisplayName string `json:"display_name"`
+				AvatarURL   string `json:"avatar_url"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &u) != nil || (u.Data.User.AvatarURL == "" && u.Data.User.DisplayName == "") {
+		log.Printf("⚠️ tiktok user/info for %s: unexpected body", a.Email)
+		return false
+	}
+	a.DisplayName, a.AvatarURL = u.Data.User.DisplayName, u.Data.User.AvatarURL
+	if a.OpenID == "" {
+		a.OpenID = u.Data.User.OpenID
+	}
+	return true
 }
 
 // GET /api/tiktok/account
@@ -383,8 +461,24 @@ func tiktokAccountStatus(w http.ResponseWriter, r *http.Request) {
 		tiktokJSON(w, http.StatusOK, map[string]interface{}{"success": true, "connected": false})
 		return
 	}
+	now := time.Now()
+	if tiktokAvatarStale(a, now) {
+		// fresh token first; if the refresh itself fails we keep what we have
+		// (AvatarCheckedAt is stamped only when user/info actually ran, so a
+		// dead refresh token means one refresh attempt per /account — same as
+		// every other TikTok handler, no extra API calls)
+		if fa, err := tiktokFreshAccount(email); err != nil {
+			log.Printf("⚠️ tiktok avatar refresh for %s: %v", email, err)
+		} else {
+			a = fa
+			tiktokReadUserInfo(a, now)
+			if err := tiktokSaveAccount(a); err != nil {
+				log.Printf("⚠️ tiktok save account for %s: %v", email, err)
+			}
+		}
+	}
 	tiktokJSON(w, http.StatusOK, map[string]interface{}{"success": true, "connected": true, "open_id": a.OpenID,
-		"display_name": a.DisplayName, "avatar_url": a.AvatarURL,
+		"display_name": a.DisplayName, "avatar_url": tiktokAvatarServable(a.AvatarURL, now),
 		"refresh_expires_at": a.RefreshExpiresAt.UTC().Format(time.RFC3339)})
 }
 
