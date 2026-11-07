@@ -6,11 +6,20 @@ package main
 // client token-by-token over SSE instead of buffered for minutes.
 //
 // Wire protocol (deliberately tiny, not raw OpenAI SSE):
-//   data: {"c":"<content delta>"}   — text chunk
-//   data: {"done":true}             — clean end of stream
-//   data: {"error":"<message>"}     — terminal mid-stream failure
-// Pre-stream failures (auth, quotas, upstream 4xx/5xx) are plain JSON with
-// the appropriate status code, so old error handling keeps working.
+//   data: {"i":N,"c":"<content delta>"}   — text chunk
+//   data: {"i":N,"done":true}             — clean end of stream
+//   data: {"i":N,"error":"<message>"}     — terminal mid-stream failure
+//   : ping                                — keep-alive comment while the model thinks
+// "i" is the event sequence number (07.11.2026) used by the resume protocol in
+// chatgpt_resume.go; the app's parser ignores unknown keys and non-"data:"
+// lines (chatgpt_service.dart), so older clients are unaffected. Pre-stream
+// failures (auth, quotas, upstream 4xx/5xx) are plain JSON with the
+// appropriate status code, so old error handling keeps working.
+//
+// Since 07.11.2026 the OpenAI read runs in its own goroutine and appends to a
+// streamBuf; the handler only follows that buffer. The upstream request is
+// not bound to r.Context() on purpose: a client that drops mid-answer does not
+// kill the generation, and with a stream_id it can resume it.
 
 import (
 	"bufio"
@@ -27,23 +36,21 @@ import (
 func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value("claims").(*JWTClaims)
 	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, `{"success":false,"error":"Unauthorized"}`)
+		streamJSONError(w, http.StatusUnauthorized, "Unauthorized", "")
 		return
 	}
 	if OPENAI_API_KEY == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"success":false,"error":"ChatGPT service not configured on server"}`)
+		streamJSONError(w, http.StatusInternalServerError, "ChatGPT service not configured on server", "")
 		return
 	}
 
 	var req ChatGPTProxyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"success":false,"error":"Invalid request format"}`)
+		streamJSONError(w, http.StatusBadRequest, "Invalid request format", "")
+		return
+	}
+	if req.StreamID != "" && !streamIDRe.MatchString(req.StreamID) {
+		streamJSONError(w, http.StatusBadRequest, "Invalid stream_id", "")
 		return
 	}
 
@@ -54,48 +61,48 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	// Same gate battery as chatGPTProxy (kept as a parallel copy on purpose:
 	// the buffered handler is the hot path and stays untouched).
 	if !ipLimiter.GetLimiter(getClientIP(r)).Allow() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprint(w, `{"success":false,"error":"Too many requests from your network. Please wait."}`)
+		streamJSONError(w, http.StatusTooManyRequests, "Too many requests from your network. Please wait.", "")
 		return
 	}
 	if !deviceLimiter.GetLimiter(deviceID).Allow() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusTooManyRequests)
-		fmt.Fprint(w, `{"success":false,"error":"Rate limit exceeded. Please try again."}`)
+		streamJSONError(w, http.StatusTooManyRequests, "Rate limit exceeded. Please try again.", "")
 		return
 	}
-	callType, overhead := normalizeAICallType(req.CallType)
-	if limit, tier := aiDailyLimitForUser(claims.Email, deviceID); limit > 0 {
-		resetAt := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02") + "T00:00:00Z"
-		if !overhead && dailyChatGPTCount(deviceID) >= limit {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusPaymentRequired)
-			json.NewEncoder(w).Encode(ChatGPTProxyResponse{
-				Success: false,
-				Error:   "Daily AI limit reached. Upgrade to Pro for higher limits.",
-				Code:    "daily_limit", Tier: tier, ResetAt: resetAt,
-			})
-			return
-		}
-		if dailyAICallCount(deviceID) >= limit*aiOverheadFactor {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusPaymentRequired)
-			json.NewEncoder(w).Encode(ChatGPTProxyResponse{
-				Success: false,
-				Error:   "Daily AI limit reached. Upgrade to Pro for higher limits.",
-				Code:    "daily_limit", Tier: tier, ResetAt: resetAt,
-			})
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		streamJSONError(w, http.StatusInternalServerError, "Streaming unsupported", "")
+		return
+	}
+
+	// Idempotent repeat (same device, same stream_id): the answer is already
+	// being generated or is finished — replay it, do not touch quota or OpenAI.
+	// Checked before the daily limit so a retry never fails on the quota the
+	// original call is about to consume.
+	now := time.Now()
+	var key string
+	if req.StreamID != "" {
+		key = streamKey(deviceID, req.StreamID)
+		if b := streams.lookup(key, now); b != nil {
+			log.Printf("↩️ ChatGPT stream repeat: device=%s — replaying, no second model call", deviceID)
+			streamSSEHeaders(w)
+			streamFollow(r.Context(), w, flusher, b, -1, true)
 			return
 		}
 	}
 
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"success":false,"error":"Streaming unsupported"}`)
-		return
+	callType, overhead := normalizeAICallType(req.CallType)
+	if limit, tier := aiDailyLimitForUser(claims.Email, deviceID); limit > 0 {
+		resetAt := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02") + "T00:00:00Z"
+		if (!overhead && dailyChatGPTCount(deviceID) >= limit) || dailyAICallCount(deviceID) >= limit*aiOverheadFactor {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusPaymentRequired)
+			json.NewEncoder(w).Encode(ChatGPTProxyResponse{
+				Success: false,
+				Error:   "Daily AI limit reached. Upgrade to Pro for higher limits.",
+				Code:    "daily_limit", Tier: tier, ResetAt: resetAt,
+			})
+			return
+		}
 	}
 
 	openAIRequest := map[string]interface{}{
@@ -112,18 +119,30 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := json.Marshal(openAIRequest)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"success":false,"error":"Failed to prepare request"}`)
+		streamJSONError(w, http.StatusInternalServerError, "Failed to prepare request", "")
 		return
+	}
+
+	// Claim the stream_id before talking to OpenAI: two concurrent POSTs with
+	// the same id must produce one generation (the loser follows the winner).
+	var buf *streamBuf
+	if key != "" {
+		var existed bool
+		if buf, existed = streams.register(key, now); existed {
+			log.Printf("↩️ ChatGPT stream repeat (raced): device=%s — following, no second model call", deviceID)
+			streamSSEHeaders(w)
+			streamFollow(r.Context(), w, flusher, buf, -1, true)
+			return
+		}
+	} else {
+		buf = newStreamBuf(now) // old client: not resumable, same pipeline
 	}
 
 	upstream, err := http.NewRequest("POST",
 		"https://api.openai.com/v1/chat/completions", bytes.NewBuffer(body))
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprint(w, `{"success":false,"error":"Failed to create request"}`)
+		streams.drop(key)
+		streamJSONError(w, http.StatusInternalServerError, "Failed to create request", "")
 		return
 	}
 	upstream.Header.Set("Content-Type", "application/json")
@@ -132,46 +151,38 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 300 * time.Second}
 	resp, err := client.Do(upstream)
 	if err != nil {
+		streams.drop(key) // pre-stream failure: a retry with the same id may try again
 		log.Printf("❌ OpenAI stream connect error: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprint(w, `{"success":false,"error":"Failed to connect to ChatGPT"}`)
+		streamJSONError(w, http.StatusBadGateway, "Failed to connect to ChatGPT", "")
 		return
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		streams.drop(key)
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		resp.Body.Close()
 		log.Printf("❌ OpenAI stream error status %d: %s", resp.StatusCode, string(b))
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		fmt.Fprintf(w, `{"success":false,"error":"ChatGPT API error: %d"}`, resp.StatusCode)
+		streamJSONError(w, http.StatusBadGateway, fmt.Sprintf("ChatGPT API error: %d", resp.StatusCode), "")
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	// nginx honours this per-response: without it the proxy buffers the whole
-	// stream and the client sees one late blob — the exact thing we're fixing.
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
+	streamSSEHeaders(w)
+	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, req.Model, req.AnswerID, crisisHit, crisisLang)
+	streamFollow(r.Context(), w, flusher, buf, -1, true)
+}
 
-	emit := func(v interface{}) {
-		b, err := json.Marshal(v)
-		if err != nil {
-			return
-		}
-		fmt.Fprintf(w, "data: %s\n\n", b)
-		flusher.Flush()
-	}
+// chatGPTStreamGenerate reads one OpenAI SSE response into buf and books the
+// call once at the end — whether or not anyone is still listening.
+func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callType, model, answerID string, crisisHit bool, crisisLang string) {
+	defer body.Close()
+	emit := func(v map[string]interface{}) { buf.append(v, time.Now()) }
 
 	if crisisHit {
 		log.Printf("🆘 Crisis markers detected (stream): device=%s lang=%s", deviceID, crisisLang)
-		emit(map[string]string{"c": crisisNotice(crisisLang) + "\n\n———\n\n"})
+		emit(map[string]interface{}{"c": crisisNotice(crisisLang) + "\n\n———\n\n"})
 	}
 
 	var promptTokens, completionTokens, totalTokens, cachedTokens int
-	scanner := bufio.NewScanner(resp.Body)
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -209,18 +220,18 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-			emit(map[string]string{"c": chunk.Choices[0].Delta.Content})
+			emit(map[string]interface{}{"c": chunk.Choices[0].Delta.Content})
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("⚠️ OpenAI stream interrupted for device %s: %v", deviceID, err)
-		emit(map[string]string{"error": "stream interrupted"})
+		emit(map[string]interface{}{"error": "stream interrupted"})
 		return
 	}
 
 	log.Printf("✅ ChatGPT stream done: device=%s tokens=%d prompt (%d cached) + %d completion",
 		deviceID, promptTokens, cachedTokens, completionTokens)
-	logAPICallForAnswer(deviceID, callType, req.Model, req.AnswerID,
+	logAPICallForAnswer(deviceID, callType, model, answerID,
 		promptTokens, completionTokens, totalTokens, cachedTokens)
-	emit(map[string]bool{"done": true})
+	emit(map[string]interface{}{"done": true})
 }

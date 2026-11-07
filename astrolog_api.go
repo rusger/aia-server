@@ -198,6 +198,11 @@ type ChatGPTProxyRequest struct {
     // rows, so the number of calls an answer really cost is countable.
     // Stored as given (clamped); empty for older clients.
     AnswerID    string             `json:"answer_id,omitempty"`
+    // Optional per-attempt id (07.11.2026, chatgpt_resume.go): the client
+    // generates one per /api/chatgpt-stream call; a repeat with the same id
+    // replays the buffered answer instead of asking the model again, and
+    // /api/chatgpt-stream/resume picks a dropped stream up by it.
+    StreamID    string             `json:"stream_id,omitempty"`
 }
 
 // ChatGPT proxy response
@@ -9869,6 +9874,7 @@ func main() {
     router.HandleFunc("/api/admin/radio/mailbag/{id}/delete", adminGuardMiddleware(adminRadioMailbagDelete)).Methods("POST")
     router.HandleFunc("/api/admin/radio/switches", adminGuardMiddleware(adminRadioSwitches)).Methods("GET", "POST")
     router.HandleFunc("/api/chatgpt-stream", jwtAuthMiddleware(formerSubscriberGate(chatGPTStreamProxy))).Methods("POST")
+    router.HandleFunc("/api/chatgpt-stream/resume", jwtAuthMiddleware(formerSubscriberGate(chatGPTStreamResume))).Methods("GET")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
     // De-identified guard corpus for hallucination triage (guard_corpus.go).
