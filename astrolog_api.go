@@ -3026,6 +3026,25 @@ const (
     aiOverheadFactor = 5
 )
 
+// marathonReportMaxTokens caps the reply to a marathon day report: the tag is
+// client-supplied, so a patched app labelling everything "marathon_report" gets
+// short answers only, and each still counts against its normal quota.
+const marathonReportMaxTokens = 900
+
+// marathonReportModel gives the reply to a marathon day report the MODEL_SUPER
+// model for every user (owner 2026-11-08: this one reply must be substantial,
+// few users reach it). Only the non-streaming /api/chatgpt uses it; any other
+// call keeps the entitlement decision of enforceModelForUser.
+func marathonReportModel(rawCallType, model string, maxTokens int) (string, int) {
+    if rawCallType != "marathon_report" {
+        return model, maxTokens
+    }
+    if maxTokens <= 0 || maxTokens > marathonReportMaxTokens {
+        maxTokens = marathonReportMaxTokens
+    }
+    return MODEL_SUPER, maxTokens
+}
+
 // aiOverheadCallTypes is the allowlist of overhead tags the client may put in
 // a /api/chatgpt request. Anything else — including an empty tag — is treated
 // as a user-visible answer ('chatgpt', fully quota-counted), so a spoofed
@@ -3388,6 +3407,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 
     // Server-side entitlement check: never trust the client's model choice
     req.Model = enforceModelForUser(claims.Email, deviceID, req.Model)
+    req.Model, req.MaxTokens = marathonReportModel(req.CallType, req.Model, req.MaxTokens)
 
     // Check IP rate limit first (protects against mass-device attacks)
     clientIP := getClientIP(r)
