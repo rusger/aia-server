@@ -3384,9 +3384,12 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Parse request
+    // Parse request (gzip-aware, size-capped: chat_upload.go)
     var req ChatGPTProxyRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+    if err := decodeAIRequest(w, r, &req); err != nil {
+        if err == errAIRequestTooLarge {
+            w.WriteHeader(http.StatusRequestEntityTooLarge)
+        }
         json.NewEncoder(w).Encode(ChatGPTProxyResponse{
             Success: false,
             Error:   "Invalid request format",
@@ -3431,6 +3434,18 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         })
         return
     }
+
+    // Same request again (same device + stream_id: a retry after a lost
+    // response, or the fallback after a failed stream) → the answer already
+    // generated or in flight, no second model call and no quota. Before the
+    // daily limit so a retry never fails on the quota its original consumes.
+    replay, finishSingleFlight, releaseSingleFlight := chatGPTBufferedSingleFlight(r.Context(), deviceID, req.StreamID)
+    if replay != "" {
+        log.Printf("↩️ ChatGPT repeat (buffered): device=%s — replaying, no second model call", deviceID)
+        json.NewEncoder(w).Encode(ChatGPTProxyResponse{Success: true, Content: replay})
+        return
+    }
+    defer releaseSingleFlight()
 
     // Clamp the client-supplied call tag before it can influence quota
     // accounting or the cost reports.
@@ -3662,6 +3677,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     if crisisHit {
         content = crisisNotice(crisisLang) + "\n\n———\n\n" + content
     }
+    finishSingleFlight(content) // a repeat of this request gets this answer
 
     // Return success response
     json.NewEncoder(w).Encode(ChatGPTProxyResponse{
