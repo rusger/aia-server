@@ -1,14 +1,14 @@
 # HTTP - redirect to HTTPS
 server {
     listen 80;
-    server_name astrolytix.com www.astrolytix.com;
+    server_name astrolytix.com;
     return 301 https://$host$request_uri;
 }
 
 # HTTPS - main server
 server {
     listen 443 ssl http2;
-    server_name astrolytix.com www.astrolytix.com;
+    server_name astrolytix.com;
 
     # SSL certificates (Let's Encrypt)
     ssl_certificate /etc/letsencrypt/live/astrolytix.com/fullchain.pem;
@@ -21,20 +21,75 @@ server {
     root /var/www/html;
     index index.html;
 
+    # AI chat uploads (A45, 10.11.2026): /api/chatgpt, /api/chatgpt-stream and
+    # /api/chatgpt-stream/resume only. A chat POST is 7-210 KB (access.log rl=);
+    # on some RU networks it stalls mid-upload and used to hang for the default
+    # 60 s before a 408. 20 s fails it fast so the app's retry (same stream_id,
+    # no second model call - aia-server chat_upload.go) starts sooner. Other
+    # /api/ uploads (presenter videos, radio call-ins) keep the default.
+    # Everything else mirrors location /api/ below.
+    location ^~ /api/chatgpt {
+        client_body_timeout 20s;
+        client_max_body_size 4m;
+        proxy_pass http://localhost:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 180s;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        access_log /var/log/nginx/access.log timing;
+    }
+
     # API proxy
     location /api/ {
+        client_max_body_size 100m;  # presenter videos from the Mac node, 07.10.2026
         proxy_pass http://localhost:8081/api/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-	# Extended timeout for AI models (o1 can take 60-120s)                                                                                                            
+        # Extended timeout for AI models (o1 can take 60-120s)
         proxy_read_timeout 180s;
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
-        # Request size/timing per API call (format: etc-nginx-conf.d-request-timing.conf)
         access_log /var/log/nginx/access.log timing;
+    }
+
+    # D1 referral landing pages (astrolytix.com/r/{code}) -> Go API on :8081.
+    # Public HTML for invitees without the app; the app itself uses the
+    # universal link. Scoped to /r/ only - does not touch the static site,
+    # the IPN endpoints (:8082) or mcp.astrolytix.com.
+    location /r/ {
+        proxy_pass http://localhost:8081/r/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # YooKassa IPN — proxy to Flask bot on :8082
+    location = /yookassa_ipn-rusger-uni {
+        proxy_pass http://127.0.0.1:8082/yookassa_ipn-rusger-uni;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # CoinPayments IPN — proxy to Flask bot on :8082
+    location = /coinpayments_ipn-rusger-uni {
+        proxy_pass http://127.0.0.1:8082/coinpayments_ipn-rusger-uni;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Cache static assets (images, css, js, fonts) for 1 year
@@ -49,6 +104,19 @@ server {
         expires 7d;
         add_header Cache-Control "public";
     }
+
+    # Universal Links (iOS) & App Links (Android)
+    location = /.well-known/apple-app-site-association {
+        default_type application/json;
+        alias /var/www/html/.well-known/apple-app-site-association;
+    }
+
+    location = /.well-known/assetlinks.json {
+        default_type application/json;
+        alias /var/www/html/.well-known/assetlinks.json;
+    }
+
+    include snippets/radio-deep.conf;
 
     # Static files
     location / {

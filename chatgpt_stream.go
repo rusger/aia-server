@@ -45,8 +45,12 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ChatGPTProxyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		streamJSONError(w, http.StatusBadRequest, "Invalid request format", "")
+	if err := decodeAIRequest(w, r, &req); err != nil { // gzip-aware, capped: chat_upload.go
+		status := http.StatusBadRequest
+		if err == errAIRequestTooLarge {
+			status = http.StatusRequestEntityTooLarge
+		}
+		streamJSONError(w, status, "Invalid request format", "")
 		return
 	}
 	if req.StreamID != "" && !streamIDRe.MatchString(req.StreamID) {
