@@ -65,6 +65,20 @@ func TestDecodeAIRequestCaps(t *testing.T) {
 	if err := decodeAIRequest(httptest.NewRecorder(), r, &req); err != errAIRequestTooLarge {
 		t.Fatalf("inflated over cap: want errAIRequestTooLarge, got %v", err)
 	}
+	// compressed stream itself over the cap → 413 too, not a gzip error
+	rnd := make([]byte, aiRequestMaxBytes+4096)
+	for i := range rnd {
+		rnd[i] = byte(i*7919 + i/13)
+	}
+	var zb bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&zb, gzip.NoCompression)
+	zw.Write(rnd)
+	zw.Close()
+	r = httptest.NewRequest("POST", "/api/chatgpt", bytes.NewReader(zb.Bytes()))
+	r.Header.Set("Content-Encoding", "gzip")
+	if err := decodeAIRequest(httptest.NewRecorder(), r, &req); err != errAIRequestTooLarge {
+		t.Fatalf("compressed over cap: want errAIRequestTooLarge, got %v", err)
+	}
 	// broken gzip → error, not a panic
 	r = httptest.NewRequest("POST", "/api/chatgpt", strings.NewReader("not gzip"))
 	r.Header.Set("Content-Encoding", "gzip")

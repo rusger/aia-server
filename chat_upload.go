@@ -34,12 +34,36 @@ const aiRequestMaxBytes = 2 << 20
 
 var errAIRequestTooLarge = errors.New("request body too large")
 
+// wireReader remembers the error of the raw (wire) body: over the cap a gzip
+// reader may report its own error (unexpected EOF) instead of the
+// MaxBytesError underneath, and the client must still get 413.
+type wireReader struct {
+	r   io.Reader
+	err error
+}
+
+func (w *wireReader) Read(p []byte) (int, error) {
+	n, err := w.r.Read(p)
+	if err != nil && err != io.EOF {
+		w.err = err
+	}
+	return n, err
+}
+
 // decodeAIRequest reads a (possibly gzip-compressed) JSON body into v.
 func decodeAIRequest(w http.ResponseWriter, r *http.Request, v interface{}) error {
-	var body io.Reader = http.MaxBytesReader(w, r.Body, aiRequestMaxBytes)
+	wire := &wireReader{r: http.MaxBytesReader(w, r.Body, aiRequestMaxBytes)}
+	var body io.Reader = wire
+	tooLarge := func(err error) bool {
+		var mbe *http.MaxBytesError
+		return errors.As(err, &mbe) || errors.As(wire.err, &mbe)
+	}
 	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Content-Encoding")), "gzip") {
 		zr, err := gzip.NewReader(body)
 		if err != nil {
+			if tooLarge(err) {
+				return errAIRequestTooLarge
+			}
 			return err
 		}
 		defer zr.Close()
@@ -47,8 +71,7 @@ func decodeAIRequest(w http.ResponseWriter, r *http.Request, v interface{}) erro
 	}
 	data, err := io.ReadAll(io.LimitReader(body, aiRequestMaxBytes+1))
 	if err != nil {
-		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if tooLarge(err) {
 			return errAIRequestTooLarge
 		}
 		return err
