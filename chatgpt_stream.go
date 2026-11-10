@@ -59,7 +59,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deviceID := claims.DeviceID
-	crisisHit, crisisLang := detectCrisis(lastUserMessage(req.Messages))
+	crisisHit, crisisLang, crisisID := detectCrisisMarker(lastUserMessage(req.Messages))
 	req.Model = enforceModelForUser(claims.Email, deviceID, req.Model)
 
 	// Same gate battery as chatGPTProxy (kept as a parallel copy on purpose:
@@ -173,18 +173,18 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	streamSSEHeaders(w)
-	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, req.Model, req.AnswerID, crisisHit, crisisLang)
+	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, req.Model, req.AnswerID, crisisHit, crisisLang, crisisID)
 	streamFollow(r.Context(), w, flusher, buf, -1, true)
 }
 
 // chatGPTStreamGenerate reads one OpenAI SSE response into buf and books the
 // call once at the end — whether or not anyone is still listening.
-func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callType, model, answerID string, crisisHit bool, crisisLang string) {
+func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callType, model, answerID string, crisisHit bool, crisisLang, crisisID string) {
 	defer body.Close()
 	emit := func(v map[string]interface{}) { buf.append(v, time.Now()) }
 
 	if crisisHit {
-		log.Printf("🆘 Crisis markers detected (stream): device=%s lang=%s", deviceID, crisisLang)
+		log.Printf("🆘 Crisis markers detected (stream): device=%s lang=%s marker=%s", deviceID, crisisLang, crisisID)
 		emit(map[string]interface{}{"c": crisisNotice(crisisLang) + "\n\n———\n\n"})
 	}
 
