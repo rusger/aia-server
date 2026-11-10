@@ -3403,9 +3403,9 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // Silent crisis screen on the user's own words. Never blocks or changes
     // the LLM call — on a hit the localized hotline block is prepended to the
     // normal reply below. Content is deliberately kept out of the log line.
-    crisisHit, crisisLang := detectCrisis(lastUserMessage(req.Messages))
+    crisisHit, crisisLang, crisisID := detectCrisisMarker(lastUserMessage(req.Messages))
     if crisisHit {
-        log.Printf("🆘 Crisis markers detected: device=%s lang=%s", deviceID, crisisLang)
+        log.Printf("🆘 Crisis markers detected: device=%s lang=%s marker=%s", deviceID, crisisLang, crisisID)
     }
 
     // Server-side entitlement check: never trust the client's model choice
