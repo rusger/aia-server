@@ -258,10 +258,25 @@ func radioMailbagScan() {
 }
 
 // ---------------------------------------------------------------------------
-// Listeners: distinct client IPs that fetched an HLS segment under /radio/ in the last minute (nginx access log,
-// combined/timing format: `IP - user [02/Jan/2006:15:04:05 -0700] "GET /radio/moon/live/aac_1.ts HTTP/2.0" 200 …`).
+// Listeners: distinct client IPs that, in the last minute (nginx access log, combined/timing format:
+// `IP - user [02/Jan/2006:15:04:05 -0700] "GET /radio/moon/live/aac_1.ts HTTP/2.0" 200 … "ref" "ua" rl=…`), either
+// fetched a station's audio — live HLS chunks (app, CarPlay, AirPlay) or the station's recordings
+// `/radio/<station>/….m4a|mp3` — or sent the site player's pulse `/radio/hb.txt?ch=<station>&s=<session>` (every 30 s).
+// Until 10.11.2026 only HLS chunks counted, so a site player never got an episode (A48). Same rules as the air watch
+// (insta-agent scripts/air_peak_watch.py): /radio/lib and /radio/cat are not air, a playlist alone is not playing,
+// bots/monitors and the server itself are not listeners.
 
-var radioHLSLineRe = regexp.MustCompile(`^(\S+) \S+ \S+ \[([^\]]+)\] "GET (/radio/[^ "?]+\.(?:ts|aac|m4s))(?:\?[^ "]*)? HTTP/[^"]*" (\d{3}) `)
+var radioLogLineRe = regexp.MustCompile(`^(\S+) \S+ \S+ \[([^\]]+)\] "GET (/radio/[^ "]+) HTTP/[^"]*" (\d{3}) \S+(?: "[^"]*" "([^"]*)")?`)
+
+var radioStationMediaRe = regexp.MustCompile(`^/radio/(?:sun|moon|mars|mercury|jupiter|venus|saturn|rahu|ketu)/.+\.(?:ts|aac|m4s|m4a|mp3)$`)
+
+var radioPulseRe = regexp.MustCompile(`^/radio/hb\.txt\?(?:.*&)?ch=(sun|moon|mars|mercury|jupiter|venus|saturn|rahu|ketu)(?:&|$)`)
+
+var radioPulseSessionRe = regexp.MustCompile(`[?&]s=[A-Za-z0-9]{6,32}(?:&|$)`)
+
+var radioBotUARe = regexp.MustCompile(`(?i)bot|crawl|spider|slurp|preview|monitor|curl|wget|python-requests|httpx|headless`)
+
+var radioSelfIPs = map[string]bool{"127.0.0.1": true, "::1": true, "91.98.77.205": true}
 
 var radioListenersFn = radioListenersFromLog
 
@@ -299,11 +314,25 @@ func radioCountListeners(logTail []byte, now time.Time) int {
 	sc := bufio.NewScanner(bytes.NewReader(logTail))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		m := radioHLSLineRe.FindSubmatch(sc.Bytes())
+		m := radioLogLineRe.FindSubmatch(sc.Bytes())
 		if m == nil {
 			continue
 		}
-		if code := string(m[4]); code != "200" && code != "206" && code != "304" {
+		ip, path := string(m[1]), string(m[3])
+		if code := string(m[4]); code[0] != '2' && code[0] != '3' {
+			continue
+		}
+		if radioSelfIPs[ip] || radioBotUARe.Match(m[5]) {
+			continue
+		}
+		listening := radioPulseRe.MatchString(path) && radioPulseSessionRe.MatchString(path)
+		if !listening {
+			if i := strings.IndexByte(path, '?'); i >= 0 {
+				path = path[:i]
+			}
+			listening = radioStationMediaRe.MatchString(path)
+		}
+		if !listening {
 			continue
 		}
 		t, err := time.Parse("02/Jan/2006:15:04:05 -0700", string(m[2]))
@@ -311,7 +340,7 @@ func radioCountListeners(logTail []byte, now time.Time) int {
 			continue
 		}
 		if age := now.Sub(t); age >= 0 && age <= radioMailbagListenWin {
-			ips[string(m[1])] = true
+			ips[ip] = true
 		}
 	}
 	return len(ips)

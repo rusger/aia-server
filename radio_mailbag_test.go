@@ -322,6 +322,35 @@ func TestRadioListenersFromNginxLog(t *testing.T) {
 	}
 }
 
+// A48 (10.11.2026): site players (pulse) and station recordings are listeners too; lib/cat, tv pulses, bots,
+// the server itself, playlists alone and stale lines are not.
+func TestRadioListenersSitePulseAndRecordings(t *testing.T) {
+	now := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	at := "[10/Nov/2026:08:59:40 +0000]"
+	line := func(ip, path, code, ua string) string {
+		return ip + ` - - ` + at + ` "GET ` + path + ` HTTP/2.0" ` + code + ` 12 "https://astrolytix.com/radio/" "` + ua + `" rl=1 rt=0.001`
+	}
+	log := strings.Join([]string{
+		line("1.1.1.1", "/radio/hb.txt?ch=moon&s=abc123XYZ&lang=ru", "200", "Mozilla/5.0"),
+		line("1.1.1.1", "/radio/moon/ever/music.m4a", "206", "Mozilla/5.0"), // same IP — still one listener
+		line("2.2.2.2", "/radio/ketu/2026-11-10/seg/sky_news.m4a?v=1", "200", "Dart/3.11"),
+		line("3.3.3.3", "/radio/sun/live/aac_17.ts", "304", "AppleCoreMedia/1.0"),
+		line("4.4.4.4", "/radio/hb.txt?ch=tv&s=abc123XYZ", "200", "Mozilla/5.0"),
+		line("4.4.4.5", "/radio/hb.txt?ch=moon", "200", "Mozilla/5.0"),
+		line("5.5.5.5", "/radio/lib/you-ident-3.m4a", "200", "Dart/3.11"),
+		line("5.5.5.6", "/radio/cat/en/love.m4a", "200", "Dart/3.11"),
+		line("6.6.6.6", "/radio/mars/live/aac_1.ts", "200", "Googlebot/2.1"),
+		line("6.6.6.7", "/radio/hb.txt?ch=sun&s=abc123XYZ", "200", "python-requests/2.34.2"),
+		line("91.98.77.205", "/radio/mars/live/aac_1.ts", "200", "Liquidsoap"),
+		line("7.7.7.7", "/radio/venus/live/aac.m3u8", "200", "Mozilla/5.0"),
+		line("8.8.8.8", "/radio/venus/live/aac_2.ts", "404", "Mozilla/5.0"),
+		`9.9.9.9 - - [10/Nov/2026:08:58:50 +0000] "GET /radio/hb.txt?ch=moon&s=abc123XYZ HTTP/2.0" 200 1 "-" "Mozilla/5.0"`,
+	}, "\n")
+	if n := radioCountListeners([]byte(log), now); n != 3 {
+		t.Fatalf("listeners = %d, want 3 (site pulse, station recording, HLS chunk)", n)
+	}
+}
+
 func TestRadioAdminEndpoints(t *testing.T) {
 	r, root := setupMailbag(t)
 	for _, path := range []string{"/api/admin/radio/calls", "/api/admin/radio/mailbag", "/api/admin/radio/switches"} {
