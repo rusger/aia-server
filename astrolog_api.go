@@ -3439,17 +3439,17 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // response, or the fallback after a failed stream) → the answer already
     // generated or in flight, no second model call and no quota. Before the
     // daily limit so a retry never fails on the quota its original consumes.
-    replay, finishSingleFlight, releaseSingleFlight := chatGPTBufferedSingleFlight(r.Context(), deviceID, req.StreamID)
+    // Clamp the client-supplied call tag before it can influence quota
+    // accounting or the cost reports.
+    callType, overhead := normalizeAICallType(req.CallType)
+
+    replay, finishSingleFlight, releaseSingleFlight := chatGPTBufferedSingleFlight(r.Context(), deviceID, req.StreamID, callType, !overhead)
     if replay != "" {
         log.Printf("↩️ ChatGPT repeat (buffered): device=%s — replaying, no second model call", deviceID)
         json.NewEncoder(w).Encode(ChatGPTProxyResponse{Success: true, Content: replay})
         return
     }
     defer releaseSingleFlight()
-
-    // Clamp the client-supplied call tag before it can influence quota
-    // accounting or the cost reports.
-    callType, overhead := normalizeAICallType(req.CallType)
 
     // Daily AI ceiling by DB entitlement — the non-spoofable backstop against a
     // patched free client spamming premium AI. Counted per device from the same
@@ -9836,9 +9836,11 @@ func main() {
     go pushEventLoop()
     // iOS Live Activity end pushes for the marathon countdown (see live_activity.go).
     migrateLiveActivities()
+    migratePendingAnswers()
     migrateLiveActivityStarts()
     migratePresenterJobs()
     go liveActivityEndLoop()
+    go pendingAnswersLoop()
 
     router := mux.NewRouter()
 
@@ -9913,6 +9915,9 @@ func main() {
     // resume replays a buffer — no model call, so no formerSubscriberGate (the
     // gate's pinned route list is "handlers that reach a paid model").
     router.HandleFunc("/api/chatgpt-stream/resume", jwtAuthMiddleware(chatGPTStreamResume)).Methods("GET")
+    // late delivery (pending_answers.go): what is waiting, and "got it" by checksum — no model call
+    router.HandleFunc("/api/chatgpt-stream/pending", jwtAuthMiddleware(chatGPTPendingAnswers)).Methods("GET")
+    router.HandleFunc("/api/chatgpt-stream/ack", jwtAuthMiddleware(chatGPTAckAnswer)).Methods("POST")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
     // De-identified guard corpus for hallucination triage (guard_corpus.go).

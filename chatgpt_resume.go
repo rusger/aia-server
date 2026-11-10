@@ -66,6 +66,18 @@ type streamBuf struct {
 	finished time.Time
 	wake     chan struct{} // closed and replaced on every append (broadcast)
 	evicted  bool          // over streamBufMaxBytes: no longer resumable
+	// persist, when set, gets the events once the stream finishes with "done"
+	// (pending_answers.go keeps them until the app confirms delivery).
+	persist func(events [][]byte)
+}
+
+// persistAs makes the finished answer survive until acknowledged.
+func (b *streamBuf) persistAs(deviceID, streamID, callType string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.persist = func(events [][]byte) {
+		savePendingAnswer(deviceID, streamID, callType, events, time.Now())
+	}
 }
 
 func newStreamBuf(now time.Time) *streamBuf {
@@ -92,6 +104,10 @@ func (b *streamBuf) append(v map[string]interface{}, now time.Time) {
 	}
 	if _, ok := v["done"]; ok {
 		b.done, b.finished = true, now
+		if b.persist != nil {
+			events := append([][]byte(nil), b.events...)
+			go b.persist(events)
+		}
 	} else if _, ok := v["error"]; ok {
 		b.done, b.finished = true, now
 	}
@@ -290,7 +306,7 @@ func chatGPTStreamResume(w http.ResponseWriter, r *http.Request) {
 		streamJSONError(w, http.StatusInternalServerError, "Streaming unsupported", "")
 		return
 	}
-	b := streams.lookup(streamKey(claims.DeviceID, streamID), time.Now())
+	b := streams.lookupOrRestore(claims.DeviceID, streamID, time.Now())
 	if b == nil {
 		streamJSONError(w, http.StatusGone, "stream expired", "stream_expired")
 		return

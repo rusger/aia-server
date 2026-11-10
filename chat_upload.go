@@ -124,14 +124,17 @@ func bufferedAnswer(ctx context.Context, b *streamBuf) (string, bool) {
 // must be called with the final answer on success (it is stored for repeats)
 // and is a no-op without a stream_id; any return without finish drops the
 // claim so a retry generates afresh (nothing was booked).
-func chatGPTBufferedSingleFlight(ctx context.Context, deviceID, streamID string) (replay string, finish func(content string), release func()) {
+//
+// With persist the finished answer is also kept in pending_answers until the
+// app acknowledges it (user-facing answers; overhead passes are not kept).
+func chatGPTBufferedSingleFlight(ctx context.Context, deviceID, streamID, callType string, persist bool) (replay string, finish func(content string), release func()) {
 	noop := func(string) {}
 	if streamID == "" || !streamIDRe.MatchString(streamID) {
 		return "", noop, func() {}
 	}
 	key := streamKey(deviceID, streamID)
 	now := time.Now()
-	if b := streams.lookup(key, now); b != nil {
+	if b := streams.lookupOrRestore(deviceID, streamID, now); b != nil {
 		if text, ok := bufferedAnswer(ctx, b); ok {
 			return text, noop, func() {}
 		}
@@ -143,6 +146,9 @@ func chatGPTBufferedSingleFlight(ctx context.Context, deviceID, streamID string)
 			return text, noop, func() {}
 		}
 		return "", noop, func() {}
+	}
+	if persist {
+		b.persistAs(deviceID, streamID, callType)
 	}
 	finished := false
 	finish = func(content string) {
