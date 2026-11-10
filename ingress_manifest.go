@@ -1,9 +1,10 @@
 package main
 
-// ingress_manifest.go — GET /api/events/ingresses: planet sign changes the
-// server knows about, for the transit push overlay. A push payload carries
-// only planet + date; the app looks the signs up here, so payloads stay the
-// same and installed versions keep matching their local records and history.
+// ingress_manifest.go — GET /api/events/ingresses: planet sign changes and
+// stations the server knows about, for the push overlay. A push payload
+// carries only planet + date (+ direction for a station); the app looks the
+// signs up here, so payloads stay the same and installed versions keep
+// matching their local records and history.
 
 import (
 	"encoding/json"
@@ -158,7 +159,138 @@ func loadIngressManifest() ([]ingressEntry, error) {
 	return out, rows.Err()
 }
 
-// GET /api/events/ingresses → {ingresses: [{planet, date, from, to, key}]}.
+type stationParams struct {
+	Planet  string `json:"planet"`
+	Retro   bool   `json:"retro"`
+	SignIdx *int   `json:"signIdx"`
+}
+
+// stationEntry is one station in the manifest (A26, owner 10.11.2026): the
+// planet turns retrograde or direct inside Sign.
+type stationEntry struct {
+	Planet string `json:"planet"`
+	Date   string `json:"date"`
+	Kind   string `json:"kind"` // retro | direct, as in the push payload
+	Sign   string `json:"sign"`
+	Key    string `json:"key"` // <planet>_<sign>_<kind>, names the station video
+}
+
+// stationDay extracts the direction and day from a station:<Planet>:<dir>:<day> ekey.
+func stationDay(ekey string) (dir, day string, ok bool) {
+	parts := strings.Split(ekey, ":")
+	if len(parts) != 4 {
+		return "", "", false
+	}
+	return parts[2], parts[3], true
+}
+
+// backfillStationSign adds signIdx to station rows stored without it: the
+// sign at noon of the station day, the same sample findStations reads.
+func backfillStationSign(longitudes func(time.Time) (map[string]float64, error)) {
+	rows, err := db.Query(`SELECT id, ekey, params FROM push_events
+		WHERE kind = 'station' AND json_extract(params, '$.signIdx') IS NULL`)
+	if err != nil {
+		log.Printf("⚠️ station backfill query: %v", err)
+		return
+	}
+	type pending struct {
+		id           int64
+		ekey, params string
+	}
+	var todo []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.id, &p.ekey, &p.params); err != nil {
+			log.Printf("⚠️ station backfill scan: %v", err)
+			continue
+		}
+		todo = append(todo, p)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("⚠️ station backfill rows: %v", err)
+	}
+	rows.Close()
+
+	for _, p := range todo {
+		var fields map[string]interface{}
+		var known stationParams
+		_, day, ok := stationDay(p.ekey)
+		if !ok {
+			log.Printf("⚠️ station backfill %s: unexpected ekey", p.ekey)
+			continue
+		}
+		date, err := time.Parse("2006-01-02", day)
+		if err != nil {
+			log.Printf("⚠️ station backfill %s: %v", p.ekey, err)
+			continue
+		}
+		if err := json.Unmarshal([]byte(p.params), &fields); err != nil {
+			log.Printf("⚠️ station backfill %s: %v", p.ekey, err)
+			continue
+		}
+		if err := json.Unmarshal([]byte(p.params), &known); err != nil {
+			log.Printf("⚠️ station backfill %s: %v", p.ekey, err)
+			continue
+		}
+		lons, err := longitudes(date)
+		if err != nil {
+			log.Printf("⚠️ station backfill %s: %v", p.ekey, err)
+			continue
+		}
+		lon, ok := lons[known.Planet]
+		if !ok {
+			log.Printf("⚠️ station backfill %s: no longitude", p.ekey)
+			continue
+		}
+		fields["signIdx"] = signOf(lon)
+		pj, err := json.Marshal(fields)
+		if err != nil {
+			log.Printf("⚠️ station backfill %s: %v", p.ekey, err)
+			continue
+		}
+		if _, err := db.Exec(`UPDATE push_events SET params = ? WHERE id = ?`, string(pj), p.id); err != nil {
+			log.Printf("⚠️ station backfill %s: %v", p.ekey, err)
+		}
+	}
+}
+
+func loadStationManifest() ([]stationEntry, error) {
+	rows, err := db.Query(`SELECT ekey, params FROM push_events
+		WHERE kind = 'station' ORDER BY event_date`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []stationEntry{}
+	for rows.Next() {
+		var ekey, params string
+		if err := rows.Scan(&ekey, &params); err != nil {
+			return nil, err
+		}
+		var p stationParams
+		dir, day, ok := stationDay(ekey)
+		if !ok || (dir != "retro" && dir != "direct") {
+			log.Printf("⚠️ station manifest: skipping %s: unexpected ekey", ekey)
+			continue
+		}
+		if err := json.Unmarshal([]byte(params), &p); err != nil {
+			log.Printf("⚠️ station manifest: skipping %s: %v", ekey, err)
+			continue
+		}
+		if p.SignIdx == nil {
+			log.Printf("⚠️ station manifest: skipping %s: no signIdx", ekey)
+			continue
+		}
+		sign := signSlug(*p.SignIdx)
+		out = append(out, stationEntry{Planet: p.Planet, Date: day, Kind: dir, Sign: sign,
+			Key: fmt.Sprintf("%s_%s_%s", strings.ToLower(p.Planet), sign, dir)})
+	}
+	return out, rows.Err()
+}
+
+// GET /api/events/ingresses → {ingresses: [{planet, date, from, to, key}],
+// stations: [{planet, date, kind, sign, key}]}.
 func ingressManifestHandler(w http.ResponseWriter, r *http.Request) {
 	entries, err := loadIngressManifest()
 	if err != nil {
@@ -166,8 +298,14 @@ func ingressManifestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unavailable"}`, http.StatusInternalServerError)
 		return
 	}
+	stations, err := loadStationManifest()
+	if err != nil {
+		log.Printf("⚠️ station manifest: %v", err)
+		http.Error(w, `{"error":"unavailable"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{"ingresses": entries}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"ingresses": entries, "stations": stations}); err != nil {
 		log.Printf("⚠️ ingress manifest write: %v", err)
 	}
 }

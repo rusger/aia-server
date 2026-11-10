@@ -290,6 +290,9 @@ type stationEvt struct {
 	planet string
 	retro  bool // true = turns retrograde, false = turns direct
 	date   time.Time
+	// signIdx is the sign the planet stands in at the station (noon of date);
+	// with planet and direction it names the station video (A26).
+	signIdx int
 }
 
 // findStations scans [from, to] for planetary stations (retrograde/direct
@@ -352,7 +355,8 @@ func findStations(from, to time.Time) []stationEvt {
 						continue
 					}
 					if (dd > 0) != (prev > 0) {
-						out = append(out, stationEvt{planet: p, retro: dd < 0, date: dt})
+						// lonsAt(dt) is memoized: motion just read it.
+						out = append(out, stationEvt{planet: p, retro: dd < 0, date: dt, signIdx: signOf(lonsAt(dt)[p])})
 						break
 					}
 				}
@@ -509,8 +513,9 @@ func refreshPushEvents() {
 		ekey := fmt.Sprintf("station:%s:%s:%s", st.planet, dir, day)
 		payload := fmt.Sprintf("astro:station:station:%s:%s:%s", st.planet, dir, day)
 		insert(ekey, "station", st.date,
-			map[string]interface{}{"planet": st.planet, "retro": st.retro}, payload)
+			map[string]interface{}{"planet": st.planet, "retro": st.retro, "signIdx": st.signIdx}, payload)
 	}
+	backfillStationSign(siderealLongitudes)
 
 	// INSERT OR IGNORE keeps rows stored before fromIdx existed as they were.
 	backfillIngressFrom(siderealLongitudes)
