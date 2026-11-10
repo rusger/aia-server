@@ -107,7 +107,7 @@ func TestBufferedSingleFlightRepeatReplays(t *testing.T) {
 	ctx := context.Background()
 	generated := 0
 	call := func() string {
-		replay, finish, release := chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0001")
+		replay, finish, release := chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0001", "chatgpt", false)
 		defer release()
 		if replay != "" {
 			return replay
@@ -123,7 +123,7 @@ func TestBufferedSingleFlightRepeatReplays(t *testing.T) {
 		t.Fatalf("repeat: got %q, generated %d (want 1)", got, generated)
 	}
 	// another device with the same id is a different request
-	replay, _, release := chatGPTBufferedSingleFlight(ctx, "dev2", "stream-0001")
+	replay, _, release := chatGPTBufferedSingleFlight(ctx, "dev2", "stream-0001", "chatgpt", false)
 	release()
 	if replay != "" {
 		t.Fatal("another device must not get this answer")
@@ -139,7 +139,7 @@ func TestBufferedSingleFlightReplaysStream(t *testing.T) {
 	b.append(map[string]interface{}{"c": "Часть 1. "}, now)
 	b.append(map[string]interface{}{"c": "Часть 2."}, now)
 	b.append(map[string]interface{}{"done": true}, now)
-	replay, _, release := chatGPTBufferedSingleFlight(context.Background(), "dev1", "stream-0002")
+	replay, _, release := chatGPTBufferedSingleFlight(context.Background(), "dev1", "stream-0002", "chatgpt", false)
 	release()
 	if replay != "Часть 1. Часть 2." {
 		t.Fatalf("got %q", replay)
@@ -156,7 +156,7 @@ func TestBufferedSingleFlightWaitsForInFlight(t *testing.T) {
 		b.append(map[string]interface{}{"c": "готово"}, time.Now())
 		b.append(map[string]interface{}{"done": true}, time.Now())
 	}()
-	replay, _, release := chatGPTBufferedSingleFlight(context.Background(), "dev1", "stream-0003")
+	replay, _, release := chatGPTBufferedSingleFlight(context.Background(), "dev1", "stream-0003", "chatgpt", false)
 	release()
 	if replay != "готово" {
 		t.Fatalf("got %q", replay)
@@ -168,7 +168,7 @@ func TestBufferedSingleFlightWaitsForInFlight(t *testing.T) {
 func TestBufferedSingleFlightFailureLetsRetryGenerate(t *testing.T) {
 	withFreshStreams(t)
 	ctx := context.Background()
-	replay, _, release := chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0004")
+	replay, _, release := chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0004", "chatgpt", false)
 	if replay != "" {
 		t.Fatal("first call must generate")
 	}
@@ -176,7 +176,7 @@ func TestBufferedSingleFlightFailureLetsRetryGenerate(t *testing.T) {
 	if streams.len() != 0 {
 		t.Fatal("a failed attempt must drop its claim")
 	}
-	replay, finish, release := chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0004")
+	replay, finish, release := chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0004", "chatgpt", false)
 	if replay != "" {
 		t.Fatal("retry after failure must generate")
 	}
@@ -187,13 +187,13 @@ func TestBufferedSingleFlightFailureLetsRetryGenerate(t *testing.T) {
 	b, _ := streams.register(streamKey("dev1", "stream-0005"), now)
 	b.append(map[string]interface{}{"c": "half"}, now)
 	b.append(map[string]interface{}{"error": "stream interrupted"}, now)
-	replay, finish, release = chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0005")
+	replay, finish, release = chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0005", "chatgpt", false)
 	if replay != "" {
 		t.Fatal("an errored stream must not be replayed as an answer")
 	}
 	finish("fresh")
 	release()
-	if replay, _, _ = chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0005"); replay != "fresh" {
+	if replay, _, _ = chatGPTBufferedSingleFlight(ctx, "dev1", "stream-0005", "chatgpt", false); replay != "fresh" {
 		t.Fatalf("after regeneration the repeat must get the new answer, got %q", replay)
 	}
 }
@@ -202,7 +202,7 @@ func TestBufferedSingleFlightFailureLetsRetryGenerate(t *testing.T) {
 func TestBufferedSingleFlightWithoutStreamID(t *testing.T) {
 	withFreshStreams(t)
 	for _, id := range []string{"", "short", "bad id with spaces"} {
-		replay, finish, release := chatGPTBufferedSingleFlight(context.Background(), "dev1", id)
+		replay, finish, release := chatGPTBufferedSingleFlight(context.Background(), "dev1", id, "chatgpt", false)
 		finish("x")
 		release()
 		if replay != "" || streams.len() != 0 {

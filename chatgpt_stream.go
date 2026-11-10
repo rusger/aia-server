@@ -86,7 +86,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	var key string
 	if req.StreamID != "" {
 		key = streamKey(deviceID, req.StreamID)
-		if b := streams.lookup(key, now); b != nil {
+		if b := streams.lookupOrRestore(deviceID, req.StreamID, now); b != nil {
 			log.Printf("↩️ ChatGPT stream repeat: device=%s — replaying, no second model call", deviceID)
 			streamSSEHeaders(w)
 			streamFollow(r.Context(), w, flusher, b, -1, true)
@@ -137,6 +137,9 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 			streamSSEHeaders(w)
 			streamFollow(r.Context(), w, flusher, buf, -1, true)
 			return
+		}
+		if !overhead { // a user-facing answer waits for the app's ack (pending_answers.go)
+			buf.persistAs(deviceID, req.StreamID, callType)
 		}
 	} else {
 		buf = newStreamBuf(now) // old client: not resumable, same pipeline
