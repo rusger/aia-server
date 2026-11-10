@@ -141,6 +141,16 @@ func TestPendingAnswersListAckAndChecksum(t *testing.T) {
 	if c := ack("dev1", "bad id", "x"); c != http.StatusBadRequest {
 		t.Fatalf("malformed ack: %d", c)
 	}
+	// a real DB failure is reported, never passed off as "deleted"
+	db.Exec(`DROP TABLE pending_answers`)
+	if c := ack("dev1", "stream-p011", answerSHA256("Ответ")); c != http.StatusInternalServerError {
+		t.Fatalf("ack on a DB error: %d", c)
+	}
+	w = httptest.NewRecorder()
+	chatGPTPendingAnswers(w, withClaims(httptest.NewRequest("GET", "/api/chatgpt-stream/pending", nil), "dev1"))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("pending on a DB error: %d", w.Code)
+	}
 }
 
 func TestPendingAnswersCapAndRetention(t *testing.T) {

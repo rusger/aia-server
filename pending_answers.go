@@ -17,6 +17,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"log"
@@ -187,7 +188,7 @@ func chatGPTPendingAnswers(w http.ResponseWriter, r *http.Request) {
 		streamJSONError(w, http.StatusUnauthorized, "Unauthorized", "")
 		return
 	}
-	if !deviceLimiter.GetLimiter(claims.DeviceID).Allow() {
+	if !ipLimiter.GetLimiter(getClientIP(r)).Allow() || !deviceLimiter.GetLimiter(claims.DeviceID).Allow() {
 		streamJSONError(w, http.StatusTooManyRequests, "Rate limit exceeded. Please try again.", "")
 		return
 	}
@@ -198,14 +199,20 @@ func chatGPTPendingAnswers(w http.ResponseWriter, r *http.Request) {
 		streamJSONError(w, http.StatusInternalServerError, "Database error", "")
 		return
 	}
+	defer rows.Close()
 	items := []pendingAnswerItem{}
 	for rows.Next() {
 		var it pendingAnswerItem
-		if rows.Scan(&it.StreamID, &it.CallType, &it.CreatedAt, &it.SHA256) == nil {
-			items = append(items, it)
+		if err := rows.Scan(&it.StreamID, &it.CallType, &it.CreatedAt, &it.SHA256); err != nil {
+			streamJSONError(w, http.StatusInternalServerError, "Database error", "")
+			return
 		}
+		items = append(items, it)
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil { // a partial list must not pass as complete
+		streamJSONError(w, http.StatusInternalServerError, "Database error", "")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "answers": items})
 }
@@ -231,9 +238,13 @@ func chatGPTAckAnswer(w http.ResponseWriter, r *http.Request) {
 	var stored string
 	err := db.QueryRow(`SELECT sha256 FROM pending_answers WHERE device_id = ? AND stream_id = ?`,
 		claims.DeviceID, req.StreamID).Scan(&stored)
-	if err != nil { // nothing stored (already acked, pruned, old server): fine
+	if err == sql.ErrNoRows { // nothing stored (already acked, pruned): fine
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"success":true}`))
+		return
+	}
+	if err != nil {
+		streamJSONError(w, http.StatusInternalServerError, "Database error", "")
 		return
 	}
 	if stored != req.SHA256 {
