@@ -266,7 +266,7 @@ func radioMailbagScan() {
 // (insta-agent scripts/air_peak_watch.py): /radio/lib and /radio/cat are not air, a playlist alone is not playing,
 // bots/monitors and the server itself are not listeners.
 
-var radioHLSLineRe = regexp.MustCompile(`^(\S+) \S+ \S+ \[([^\]]+)\] "GET (/radio/[^ "]+) HTTP/[^"]*" (\d{3}) \S+(?: "[^"]*" "([^"]*)")?`)
+var radioLogLineRe = regexp.MustCompile(`^(\S+) \S+ \S+ \[([^\]]+)\] "GET (/radio/[^ "]+) HTTP/[^"]*" (\d{3}) \S+(?: "[^"]*" "([^"]*)")?`)
 
 var radioStationMediaRe = regexp.MustCompile(`^/radio/(?:sun|moon|mars|mercury|jupiter|venus|saturn|rahu|ketu)/.+\.(?:ts|aac|m4s|m4a|mp3)$`)
 
@@ -314,7 +314,7 @@ func radioCountListeners(logTail []byte, now time.Time) int {
 	sc := bufio.NewScanner(bytes.NewReader(logTail))
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		m := radioHLSLineRe.FindSubmatch(sc.Bytes())
+		m := radioLogLineRe.FindSubmatch(sc.Bytes())
 		if m == nil {
 			continue
 		}
