@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -203,6 +204,58 @@ func TestRadioMailbagRotation(t *testing.T) {
 	db.QueryRow(`SELECT plays FROM radio_mailbag WHERE id = 'd'`).Scan(&plays)
 	if plays != 5 {
 		t.Fatalf("d: joined round 3 at the round's level (2 plays), aired in rounds 3, 4, 5 → 5, got %d", plays)
+	}
+}
+
+// A48 13.11.2026: a new round is a fresh shuffle, but the second half of the previous round never opens it —
+// between two airings of one episode at least N/2 others air.
+func TestRadioMailbagRoundSpacing(t *testing.T) {
+	_, root := setupMailbag(t)
+	t.Setenv("RADIO_MAILBAG_GAP_MIN", "0")
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	radioMailbagNow = func() time.Time { return now }
+	const n, rounds = 30, 10
+	// 300 airings: free the line within ~20 ms instead of setupMailbag's ~300 ms
+	radioMailbagLiveFor.Store(int64(5 * time.Millisecond))
+	radioMailbagSlack.Store(int64(-67*time.Second + 20*time.Millisecond))
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("e%02d", i)
+		radioMailbagEpisode(t, root, id, id, "2026-11-13T10:00:00Z", nil)
+	}
+	var seq []string
+	for i := 0; i < n*rounds; i++ {
+		now = now.Add(time.Minute)
+		id := radioMailbagTick()
+		if id == "" {
+			t.Fatalf("airing %d: nothing aired", i)
+		}
+		waitFor(t, radioLineFree)
+		seq = append(seq, id)
+	}
+	last := map[string]int{}
+	for i, id := range seq {
+		if j, ok := last[id]; ok && i-j <= n/2 {
+			t.Fatalf("%s aired at %d and %d: only %d others between (want ≥ %d)", id, j, i, i-j-1, n/2)
+		}
+		last[id] = i
+	}
+	orders := map[string]bool{}
+	for r := 0; r < rounds; r++ {
+		round := seq[r*n : (r+1)*n]
+		seen := map[string]bool{}
+		for _, id := range round {
+			if seen[id] {
+				t.Fatalf("round %d: %s twice", r, id)
+			}
+			seen[id] = true
+		}
+		if len(seen) != n {
+			t.Fatalf("round %d: %d distinct, want %d", r, len(seen), n)
+		}
+		orders[strings.Join(round, ",")] = true
+	}
+	if len(orders) < rounds/2 {
+		t.Fatalf("rounds repeat the same order: %d distinct orders of %d", len(orders), rounds)
 	}
 }
 

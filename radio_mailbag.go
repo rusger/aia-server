@@ -417,13 +417,35 @@ func radioMailbagTick() string {
 }
 
 // radioMailbagCandidates: every episode that is not deleted, fewest plays first, random order inside one plays level
-// (draw without replacement within a round). The episode that aired last moves to the end of its level, so a new
-// round never opens with the episode that has just closed the previous one (unless it is the only one).
+// (draw without replacement within a round, a fresh shuffle every round). The N/2 episodes that aired most recently
+// (N = live episodes) move to the end of their level, still in random order: the second half of a round can never
+// open the next one, so between two airings of one episode at least N/2 others air (A48, 13.11.2026: with only the
+// last one moved, 8 of 30 repeated within a day, the closest after 10 h).
 func radioMailbagCandidates() ([]string, map[string]int, error) {
-	var last sql.NullString
-	if err := db.QueryRow(`SELECT id FROM radio_mailbag WHERE aired_at IS NOT NULL AND deleted_at IS NULL
-		ORDER BY aired_at DESC, id LIMIT 1`).Scan(&last); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	var live int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM radio_mailbag WHERE deleted_at IS NULL`).Scan(&live); err != nil {
 		return nil, nil, err
+	}
+	recent := map[string]bool{}
+	if k := live / 2; k > 0 {
+		rr, err := db.Query(`SELECT id FROM radio_mailbag WHERE aired_at IS NOT NULL AND deleted_at IS NULL
+			ORDER BY aired_at DESC, id LIMIT ?`, k)
+		if err != nil {
+			return nil, nil, err
+		}
+		for rr.Next() {
+			var id string
+			if err := rr.Scan(&id); err != nil {
+				rr.Close()
+				return nil, nil, err
+			}
+			recent[id] = true
+		}
+		err = rr.Err()
+		rr.Close()
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	rows, err := db.Query(`SELECT id, plays FROM radio_mailbag WHERE deleted_at IS NULL ORDER BY plays, id`)
 	if err != nil {
@@ -452,15 +474,15 @@ func radioMailbagCandidates() ([]string, map[string]int, error) {
 	var out []string
 	for _, lv := range levels {
 		radioMailbagShuffle(lv)
-		if last.Valid && len(lv) > 1 {
-			for i, id := range lv {
-				if id == last.String {
-					lv = append(append(lv[:i:i], lv[i+1:]...), id)
-					break
-				}
+		var late []string
+		for _, id := range lv {
+			if !recent[id] {
+				out = append(out, id)
+			} else {
+				late = append(late, id)
 			}
 		}
-		out = append(out, lv...)
+		out = append(out, late...)
 	}
 	return out, plays, nil
 }
