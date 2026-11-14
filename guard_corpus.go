@@ -29,22 +29,20 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // Per-field byte cap — a full chart+lenses fact basis is a few KB; this bounds
 // a pathological or abusive row without truncating a legitimate one.
 const maxCorpusFieldBytes = 120000
 
-// Rows older than this are purged opportunistically (see maybePurgeCorpus).
-const corpusRetentionDays = 90
+// Retention (90 days on the server) is NOT done here: rows older than 90 days are
+// archived (gdrive-crypt + Elements, sha-verified) and only then deleted by the
+// insta-agent archiver (owner 14.11.2026, A88 step 7). An in-process DELETE would
+// drop rows without a copy.
 
 var (
 	corpusTableOnce sync.Once
 	corpusTableErr  error
-
-	corpusPurgeMu   sync.Mutex
-	corpusLastPurge time.Time
 )
 
 // ensureCorpusTable creates ai_guard_corpus + indexes on first use. Lazy so
@@ -81,31 +79,6 @@ func ensureCorpusTable() error {
 		addAnswerIDColumn("ai_guard_corpus")
 	})
 	return corpusTableErr
-}
-
-// maybePurgeCorpus deletes rows past the retention window, at most once every
-// 6 hours per process. Cheap (indexed on created_at); keeps the corpus a
-// rolling debugging window rather than an ever-growing store.
-func maybePurgeCorpus() {
-	corpusPurgeMu.Lock()
-	due := time.Since(corpusLastPurge) > 6*time.Hour
-	if due {
-		corpusLastPurge = time.Now()
-	}
-	corpusPurgeMu.Unlock()
-	if !due || analyticsDB == nil {
-		return
-	}
-	res, err := analyticsDB.Exec(
-		`DELETE FROM ai_guard_corpus WHERE created_at < datetime('now', ?)`,
-		fmt.Sprintf("-%d days", corpusRetentionDays))
-	if err != nil {
-		log.Printf("⚠️ ai_guard_corpus purge failed: %v", err)
-		return
-	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		log.Printf("🧹 ai_guard_corpus: purged %d row(s) older than %d days", n, corpusRetentionDays)
-	}
 }
 
 func clampCorpusField(s string) string {
@@ -184,7 +157,6 @@ func guardCorpusReport(w http.ResponseWriter, r *http.Request) {
 		); err != nil {
 			log.Printf("⚠️ ai_guard_corpus insert failed: %v", err)
 		}
-		maybePurgeCorpus()
 	}()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
