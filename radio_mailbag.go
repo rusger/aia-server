@@ -13,6 +13,9 @@ package main
 // starts. A new episode joins the CURRENT round (it starts at the current minimum of plays, so it is shuffled in with
 // the ones not yet aired this round rather than jumping the queue). The episode that aired last never opens the next
 // round when another one is available. Honest format: «a voice message in our mailbox», never «on the line now».
+// Only heard airings count (owner 15.11.2026, A48): with RADIO_MAILBAG_MIN_LISTENERS=0 an episode also airs to
+// nobody; such an airing still sets aired_at (the gap and «recent ones last» hold) but does not add to plays, so
+// the episode stays in the current round until somebody actually hears it.
 //
 // Env: RADIO_MAILBAG=1 (scheduler on; default off), RADIO_MAILBAG_MIN_LISTENERS (1), RADIO_MAILBAG_GAP_MIN (30),
 // RADIO_ACCESS_LOG (/var/log/nginx/access.log). Switches (DB, Stellar Vault): calls_off, mailbag_off.
@@ -488,7 +491,8 @@ func radioMailbagCandidates() ([]string, map[string]int, error) {
 }
 
 // radioMailbagAir takes the free line and publishes the episode; the row is marked aired first (plays+1, guarded by
-// the plays value it was picked with, so two ticks can never count one airing twice).
+// the plays value it was picked with, so two ticks can never count one airing twice). An airing with no listeners
+// is not counted (plays unchanged, aired_at still set — owner 15.11.2026).
 func radioMailbagAir(m *radioMailbagManifest, plays int, now time.Time, listeners int) bool {
 	radioLine.Lock()
 	defer radioLine.Unlock()
@@ -496,8 +500,12 @@ func radioMailbagAir(m *radioMailbagManifest, plays int, now time.Time, listener
 	if radioLine.call != nil {
 		return false
 	}
-	res, err := db.Exec(`UPDATE radio_mailbag SET aired_at = ?, plays = plays + 1
-		WHERE id = ? AND plays = ? AND deleted_at IS NULL`, now.UTC().Format("2006-01-02 15:04:05"), m.ID, plays)
+	inc := 0
+	if listeners >= 1 {
+		inc = 1
+	}
+	res, err := db.Exec(`UPDATE radio_mailbag SET aired_at = ?, plays = plays + ?
+		WHERE id = ? AND plays = ? AND deleted_at IS NULL`, now.UTC().Format("2006-01-02 15:04:05"), inc, m.ID, plays)
 	if err != nil {
 		log.Printf("⚠️ radio mailbag %s mark aired: %v", m.ID, err)
 		return false
@@ -524,7 +532,11 @@ func radioMailbagAir(m *radioMailbagManifest, plays int, now time.Time, listener
 	c.Until = radioCallNow().Add(time.Duration(total*float64(time.Second)) + time.Duration(radioMailbagSlack.Load()))
 	radioLine.call = c
 	radioWriteNow(c)
-	log.Printf("📮 radio mailbag %s on air (%s, %s, %.0f s, play %d, %d listeners)", m.ID, m.Name, m.Lang, total, plays+1, listeners)
+	if inc == 1 {
+		log.Printf("📮 radio mailbag %s on air (%s, %s, %.0f s, play %d, %d listeners)", m.ID, m.Name, m.Lang, total, plays+1, listeners)
+	} else {
+		log.Printf("📮 radio mailbag %s on air (%s, %s, %.0f s, no listeners — not counted, plays stay %d)", m.ID, m.Name, m.Lang, total, plays)
+	}
 	go radioMailbagRelease(c)
 	return true
 }

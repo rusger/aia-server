@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -331,6 +332,55 @@ func TestRadioMailbagConditions(t *testing.T) {
 	radioLine.Unlock()
 	if radioMailbagTick() != "ep1" {
 		t.Fatal("all conditions met")
+	}
+}
+
+// Owner 15.11.2026 (A48): with MIN_LISTENERS=0 an episode airs to nobody, but only a heard airing counts —
+// an unheard one sets aired_at (gap, «recent ones last») and leaves plays, so the round does not move on.
+func TestRadioMailbagCountsOnlyHeardAirings(t *testing.T) {
+	_, root := setupMailbag(t)
+	t.Setenv("RADIO_MAILBAG_MIN_LISTENERS", "0")
+	t.Setenv("RADIO_MAILBAG_GAP_MIN", "0")
+	radioMailbagShuffle = func(ids []string) { sort.Strings(ids) }
+	t.Cleanup(func() { radioMailbagShuffle = radioMailbagShuffleRandom })
+	for _, id := range []string{"ep1", "ep2", "ep3", "ep4"} {
+		radioMailbagEpisode(t, root, id, id, "2026-10-13T10:00:00Z", nil)
+	}
+	state := func(id string) (int, string) {
+		var p int
+		var a sql.NullString
+		if err := db.QueryRow(`SELECT plays, aired_at FROM radio_mailbag WHERE id = ?`, id).Scan(&p, &a); err != nil {
+			t.Fatal(err)
+		}
+		return p, a.String
+	}
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	radioMailbagNow = func() time.Time { return now }
+	radioListenersFn = func(now time.Time) (int, error) { return 0, nil }
+	if got := radioMailbagTick(); got != "ep1" {
+		t.Fatalf("airs to nobody when MIN_LISTENERS=0, got %q", got)
+	}
+	waitFor(t, radioLineFree)
+	if p, a := state("ep1"); p != 0 || a != "2026-11-15 12:00:00" {
+		t.Fatalf("unheard airing: plays %d (want 0), aired_at %q (want set)", p, a)
+	}
+	now = now.Add(time.Minute)
+	if got := radioMailbagTick(); got == "ep1" || got == "" {
+		t.Fatalf("the episode that just aired unheard is not picked again next, got %q", got)
+	}
+	waitFor(t, radioLineFree)
+	radioListenersFn = func(now time.Time) (int, error) { return 1, nil }
+	now = now.Add(time.Minute)
+	id := radioMailbagTick()
+	if id == "" {
+		t.Fatal("heard airing: nothing aired")
+	}
+	waitFor(t, radioLineFree)
+	if p, _ := state(id); p != 1 {
+		t.Fatalf("heard airing of %s: plays %d, want 1", id, p)
+	}
+	if p, _ := state("ep1"); p != 0 {
+		t.Fatalf("ep1 still owes a heard airing this round: plays %d", p)
 	}
 }
 
