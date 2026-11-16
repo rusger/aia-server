@@ -249,13 +249,18 @@ func googleRTDNTriggersReverify(notificationType int) bool {
 
 var rtdnWatchdogLastAlertDay string // UTC yyyy-mm-dd of the last alert (in memory)
 
+// rtdnAlertSend is the alert transport (swapped in tests).
+var rtdnAlertSend = sendPlainEmail
+
 // rtdnSilent reports whether RTDN looks dead: there were events that must
 // have produced RTDN (signals > 0) but no notification row since `since`.
 func rtdnSilent(signals int, lastNotif time.Time, since time.Time) bool {
 	return signals > 0 && lastNotif.Before(since)
 }
 
-func checkRTDNSilence(now time.Time) {
+// checkRTDNSilence returns whether RTDN looked silent and whether an alert
+// was sent on this call (at most one per UTC day).
+func checkRTDNSilence(now time.Time) (silent, alerted bool) {
 	ensureGoogleNotificationsTable()
 	since := now.Add(-rtdnSilenceWindow)
 	sinceStr := since.UTC().Format("2006-01-02 15:04:05")
@@ -265,7 +270,7 @@ func checkRTDNSilence(now time.Time) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM purchase_history
 		WHERE store = 'google' AND created_at >= ? AND created_at <= ?`, sinceStr, graceStr).Scan(&purchases); err != nil {
 		log.Printf("⚠️ %s purchase count failed: %v", rtdnWatchdogTag, err)
-		return
+		return false, false
 	}
 	googleRenewalsSeen.Lock()
 	renewals := 0
@@ -284,7 +289,7 @@ func checkRTDNSilence(now time.Time) {
 	var lastStr sql.NullString
 	if err := db.QueryRow(`SELECT MAX(created_at) FROM google_notifications`).Scan(&lastStr); err != nil {
 		log.Printf("⚠️ %s last notification lookup failed: %v", rtdnWatchdogTag, err)
-		return
+		return false, false
 	}
 	var lastNotif time.Time
 	if lastStr.Valid && lastStr.String != "" {
@@ -296,7 +301,7 @@ func checkRTDNSilence(now time.Time) {
 	}
 
 	if !rtdnSilent(purchases+renewals, lastNotif, since) {
-		return
+		return false, false
 	}
 	last := "never"
 	if !lastNotif.IsZero() {
@@ -307,7 +312,7 @@ func checkRTDNSilence(now time.Time) {
 
 	day := now.UTC().Format("2006-01-02")
 	if rtdnWatchdogLastAlertDay == day {
-		return
+		return true, false
 	}
 	rtdnWatchdogLastAlertDay = day
 	subject := "Astrolytix: Google Play RTDN молчит"
@@ -321,10 +326,11 @@ func checkRTDNSilence(now time.Time) {
 Продления подписок сервер всё равно подтягивает перепроверкой Play раз в 6 ч.
 Письмо — не чаще раза в сутки.`, purchases, renewals, last)
 	for _, to := range ADMIN_EMAILS {
-		if err := sendPlainEmail(to, subject, body); err != nil {
+		if err := rtdnAlertSend(to, subject, body); err != nil {
 			log.Printf("⚠️ %s alert email failed: %v", rtdnWatchdogTag, err)
 		} else {
 			log.Printf("📧 %s alert emailed to owner", rtdnWatchdogTag)
 		}
 	}
+	return true, true
 }

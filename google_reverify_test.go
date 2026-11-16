@@ -213,3 +213,86 @@ func TestGoogleReverifyCandidatesSelection(t *testing.T) {
 		t.Fatalf("superseded token must not be selected: %+v err=%v", cands, err)
 	}
 }
+
+func TestCheckRTDNSilenceDBPath(t *testing.T) {
+	setupGoogleReverifyDB(t)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS google_notifications (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT UNIQUE,
+		notification_type INTEGER, notification_name TEXT, subscription_id TEXT,
+		purchase_token TEXT, package_name TEXT, event_time_millis INTEGER,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+	sent := 0
+	origSend, origDay := rtdnAlertSend, rtdnWatchdogLastAlertDay
+	rtdnAlertSend = func(to, subject, body string) error { sent++; return nil }
+	rtdnWatchdogLastAlertDay = ""
+	googleRenewalsSeen.Lock()
+	origRenewals := googleRenewalsSeen.times
+	googleRenewalsSeen.times = nil
+	googleRenewalsSeen.Unlock()
+	t.Cleanup(func() {
+		rtdnAlertSend, rtdnWatchdogLastAlertDay = origSend, origDay
+		googleRenewalsSeen.Lock()
+		googleRenewalsSeen.times = origRenewals
+		googleRenewalsSeen.Unlock()
+	})
+	ts := func(t0 time.Time) string { return t0.UTC().Format("2006-01-02 15:04:05") }
+	now := time.Now().UTC()
+
+	// Only a fresh purchase (inside the 1 h grace) → not a signal yet.
+	if _, err := db.Exec(`INSERT INTO purchase_history (email, product_id, store, purchase_token, created_at)
+		VALUES ('a@test', 'astrolytix_monthly', 'google', 'tok-a-0000000000', ?)`, ts(now.Add(-10*time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	if silent, _ := checkRTDNSilence(now); silent {
+		t.Fatal("purchase inside grace must not count")
+	}
+	// A purchase 1 day old and no notifications at all → silent, one alert.
+	if _, err := db.Exec(`INSERT INTO purchase_history (email, product_id, store, purchase_token, created_at)
+		VALUES ('b@test', 'astrolytix_monthly', 'google', 'tok-b-0000000000', ?)`, ts(now.Add(-24*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	silent, alerted := checkRTDNSilence(now)
+	if !silent || !alerted || sent != len(ADMIN_EMAILS) {
+		t.Fatalf("want silent+alert, got silent=%v alerted=%v sent=%d", silent, alerted, sent)
+	}
+	// Same UTC day again → still silent, no second alert.
+	silent, alerted = checkRTDNSilence(now.Add(time.Minute))
+	if !silent || alerted || sent != len(ADMIN_EMAILS) {
+		t.Fatalf("second call same day: silent=%v alerted=%v sent=%d", silent, alerted, sent)
+	}
+	// A stale notification (4 days old) does not count as alive.
+	if _, err := db.Exec(`INSERT INTO google_notifications (message_id, created_at) VALUES ('m1', ?)`, ts(now.Add(-4*24*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if silent, _ := checkRTDNSilence(now); !silent {
+		t.Fatal("stale notification must not suppress the watchdog")
+	}
+	// A recent notification → alive.
+	if _, err := db.Exec(`INSERT INTO google_notifications (message_id, created_at) VALUES ('m2', ?)`, ts(now.Add(-2*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if silent, _ := checkRTDNSilence(now); silent {
+		t.Fatal("recent notification must suppress the watchdog")
+	}
+	// Renewal signals: pruned when older than the window, counted after grace.
+	if _, err := db.Exec(`DELETE FROM purchase_history; DELETE FROM google_notifications`); err != nil {
+		t.Fatal(err)
+	}
+	googleRenewalsSeen.Lock()
+	googleRenewalsSeen.times = []time.Time{now.Add(-5 * 24 * time.Hour), now.Add(-10 * time.Minute)}
+	googleRenewalsSeen.Unlock()
+	if silent, _ := checkRTDNSilence(now); silent {
+		t.Fatal("only an expired and an in-grace renewal → not a signal")
+	}
+	googleRenewalsSeen.Lock()
+	n := len(googleRenewalsSeen.times)
+	googleRenewalsSeen.Unlock()
+	if n != 1 {
+		t.Fatalf("old renewal must be pruned, %d left", n)
+	}
+	if silent, _ := checkRTDNSilence(now.Add(2 * time.Hour)); !silent {
+		t.Fatal("renewal past grace with no notifications → silent")
+	}
+}
