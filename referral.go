@@ -868,9 +868,11 @@ func reverifyGoogleTrials() {
 		}
 		log.Printf("💰 [referral] Google trial converted to paid: %s (%s)", t.email, t.productID)
 		// Keep the subscription window current — RTDN can't do it for us.
+		// Forward-only (A105): never shortens a later window.
 		if expiry != nil && time.Now().Before(*expiry) {
-			db.Exec(`UPDATE users SET subscription_type = 'paid', subscription_expiry = ?,
-				updated_at = CURRENT_TIMESTAMP WHERE email = ?`, *expiry, t.email)
+			if _, err := applyGoogleVerifiedExpiry(t.email, t.productID, expiry, time.Now()); err != nil {
+				log.Printf("⚠️ [referral] trial→paid window update failed for %s: %v", t.email, err)
+			}
 		}
 		maybeSendFirstPurchaseEmail(t.email)
 		maybeGrantReferralPaidReward(t.email, t.deviceID)
