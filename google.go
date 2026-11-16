@@ -163,6 +163,11 @@ func googlePlayNotification(w http.ResponseWriter, r *http.Request) {
 		} else {
 			log.Printf("RTDN: stored %s (sub=%s)", name, sn.SubscriptionID)
 		}
+		// A105: a renewal/recovery moves the entitlement window — re-verify
+		// that token against Play right away (forward-only, fail-closed).
+		if googleRTDNTriggersReverify(sn.NotificationType) && sn.PurchaseToken != "" && GOOGLE_PLAY_CREDENTIALS_FILE != "" {
+			go reverifyGoogleSubscriptions(sn.PurchaseToken)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

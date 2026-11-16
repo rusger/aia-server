@@ -9817,6 +9817,9 @@ func main() {
     // conversions RTDN can't attribute). See referral.go.
     ensureReferralSchema()
     startGoogleTrialReverifier()
+    // A105: re-verify every Google subscription near its window end + RTDN
+    // silence watchdog. See google_reverify.go.
+    startGoogleSubscriptionReverifier()
 
     // Initialize analytics database
     if err := initAnalyticsDB(); err != nil {
