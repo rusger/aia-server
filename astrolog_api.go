@@ -3520,6 +3520,10 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         log.Printf("🤖 o1 model detected - converted %d messages (system→user)", len(messages))
     }
 
+    // A117: optional per-call-type floor for the client's max_tokens
+    // (ai_token_floor.go). Off by default — then nothing here changes.
+    req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.MaxTokens)
+
     // Prepare OpenAI API request
     openAIRequest := map[string]interface{}{
         "model":    req.Model,
