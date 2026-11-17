@@ -121,6 +121,8 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	if req.MaxTokens > 0 {
 		openAIRequest["max_tokens"] = req.MaxTokens
 	}
+	// A118: optional swap to the replacement model (model_remap.go); off by default.
+	upstreamModel := applyModelRemap(modelRemap, openAIRequest, req.Model, callType)
 	body, err := json.Marshal(openAIRequest)
 	if err != nil {
 		streamJSONError(w, http.StatusInternalServerError, "Failed to prepare request", "")
@@ -173,7 +175,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	streamSSEHeaders(w)
-	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, req.Model, req.AnswerID, crisisHit, crisisLang, crisisID)
+	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, upstreamModel, req.AnswerID, crisisHit, crisisLang, crisisID)
 	streamFollow(r.Context(), w, flusher, buf, -1, true)
 }
 

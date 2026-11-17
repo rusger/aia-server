@@ -3540,6 +3540,10 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         }
     }
 
+    // A118: optional swap to the replacement model right before the call
+    // (model_remap.go). Off by default — then nothing here changes.
+    upstreamModel := applyModelRemap(modelRemap, openAIRequest, req.Model, callType)
+
     requestBody, err := json.Marshal(openAIRequest)
     if err != nil {
         json.NewEncoder(w).Encode(ChatGPTProxyResponse{
@@ -3670,7 +3674,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // against the allowlist before the quota checks — overhead passes
     // (grounding_fix / claim_audit / barnum_*) stay separable in the usage
     // reports, unknown client-supplied tags have been clamped to "chatgpt".
-    logAPICallForAnswer(deviceID, callType, req.Model, req.AnswerID, promptTokens, completionTokens, totalTokens, cachedTokens)
+    logAPICallForAnswer(deviceID, callType, upstreamModel, req.AnswerID, promptTokens, completionTokens, totalTokens, cachedTokens)
 
     // Crisis screen hit: hand the hotline block to the user ABOVE the normal
     // answer, as ordinary message text — old clients render it with no change.
@@ -8062,6 +8066,8 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
                 }
                 var estimatedCost float64
                 switch model {
+                case "gpt-6-luna":
+                    estimatedCost = (float64(regularInput)*0.10 + float64(cachedToks)*0.01) / 1000000 + float64(completionToks)*0.50/1000000
                 case "gpt-4.1":
                     estimatedCost = (float64(regularInput)*2.00 + float64(cachedToks)*0.50) / 1000000 + float64(completionToks)*8.00/1000000
                 case "gpt-4.1-mini":
@@ -9154,6 +9160,8 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 			regularInput = 0
 		}
 		switch model {
+		case "gpt-6-luna":
+			return (float64(regularInput)*0.10 + float64(cachedToks)*0.01) / 1000000 + float64(completionToks)*0.50/1000000
 		case "gpt-4.1":
 			return (float64(regularInput)*2.00 + float64(cachedToks)*0.50) / 1000000 + float64(completionToks)*8.00/1000000
 		case "gpt-4.1-mini":
@@ -9654,6 +9662,8 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 		cacF := float64(cachedToks) / 1000000.0
 		outF := float64(outputToks) / 1000000.0
 		switch {
+		case strings.Contains(model, "gpt-6-luna"):
+			return regF*0.10 + cacF*0.01 + outF*0.50
 		case strings.Contains(model, "gpt-4.1-nano"):
 			return regF*0.10 + cacF*0.025 + outF*0.40
 		case strings.Contains(model, "gpt-4.1-mini"):
