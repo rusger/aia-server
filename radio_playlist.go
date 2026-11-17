@@ -910,7 +910,9 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 			a, z := c[0], c[1]
 			ts := b.find(func(t *radioLibTrack) bool {
 				g := t.Tags
-				return g.House == 0 && len(g.Planets) == 2 &&
+				// g.Flag == "": a pair track with a verdict in it ("moon-rahu-afflicted") claims more
+				// than the facts prove — out of the wave until the verdict is derived from facts (A120).
+				return g.House == 0 && g.Flag == "" && len(g.Planets) == 2 &&
 					((g.Planets[0] == a && g.Planets[1] == z) || (g.Planets[0] == z && g.Planets[1] == a))
 			})
 			if isNode(a) != isNode(z) {

@@ -295,7 +295,8 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubYogas, "lang_note", "yoga-name/sasha-yoga", "insert_yoga_Sasha Yoga", "yoga-name/adhi-yoga", "insert_yoga_Adhi Yoga")
 	// Moon, Saturn and Rahu stand in the 7th: saturn-7th, houses/07, grahas/<maha>.
 	check(rubPlanetHouse, "breakdowns/26-saturn-7th", "houses/07-seventh-house", "grahas/08-rahu")
-	check(rubConjunction, "breakdowns/02-moon-saturn", "breakdowns/03-moon-rahu-afflicted", "breakdowns/23-saturn-rahu")
+	// A120: 03-moon-rahu-afflicted (flag afflicted) is a verdict the facts do not prove — not played.
+	check(rubConjunction, "breakdowns/02-moon-saturn", "breakdowns/23-saturn-rahu")
 	check(rubNakshatra, "nakshatras/21-uttara-ashadha")
 	check(rubTopic, "topics/01-love")
 	check(rubYear, "year-2027/10-capricorn")
@@ -1208,6 +1209,9 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 		g, ok := tags[it.ID]
 		if !ok {
 			continue
+		}
+		if g.Flag != "" && g.Flag != "nodes" {
+			t.Errorf("%s: flag %q is a verdict not derived from the facts", it.ID, g.Flag)
 		}
 		switch {
 		case g.House > 0 && len(g.Planets) > 0:
