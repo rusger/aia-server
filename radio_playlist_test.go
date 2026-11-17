@@ -240,7 +240,7 @@ func TestRadioPlaylistFixture(t *testing.T) {
 
 	// Sade Sati is not active for the fixture (Saturn in Pisces, Moon in Capricorn).
 	want := []string{rubIdent, rubSkyToday, rubTithi, rubLagna, rubMonth, rubTransits, rubDasha, rubYogas,
-		rubPlanetHouse, rubConjunction, rubNakshatra, rubTopic, rubYear, rubRelease, rubEvent, rubClosing}
+		rubPlanetHouse, rubConjunction, rubNakshatra, rubTopic, rubYear, rubEvent, rubClosing}
 	// The blocks are shuffled (radioCheckOrder): ident first, closing last,
 	// every rubric exactly once in between.
 	got := radioRubrics(pl)
@@ -299,9 +299,16 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubNakshatra, "nakshatras/21-uttara-ashadha")
 	check(rubTopic, "topics/01-love")
 	check(rubYear, "year-2027/10-capricorn")
-	// A116: one sign's episodes (lagna-01-aries — someone else's; lagna-04-cancer — own, already a lens above)
-	// stay out of the wave.
-	check(rubRelease, "release_series-2-nakshatras-02-bharani-yaml", "release_series-3-breakdowns-05-sun-saturn-yaml")
+	// A120: station releases never enter the wave (the fixture schedule has four, incl. "sun-saturn" and
+	// sign episodes) — nothing but sky_news comes from the station of the day.
+	for _, it := range pl.Items {
+		if it.Kind == "release" || strings.HasPrefix(it.ID, "release_") || strings.HasPrefix(it.Src, "/radio/rel/") {
+			t.Errorf("station release in the wave: %s %s", it.ID, it.Src)
+		}
+		if strings.HasPrefix(it.Src, "/radio/mars/") && it.Kind != "sky_news" && it.Kind != "music" {
+			t.Errorf("station item of kind %s in the wave: %s", it.Kind, it.ID)
+		}
+	}
 	check(rubEvent, "events/retrograde-start_2026-10-24")
 
 	// Catalog insert: en src/dur, every language in durs; timeline uses the longer ru.
@@ -323,9 +330,6 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	// Station sources are absolute under the station day folder.
 	if s := radioByRubric(pl, rubSkyToday)[1].Src; s != "/radio/mars/2026-10-13/seg/sky_news.m4a" {
 		t.Errorf("sky_news src = %s", s)
-	}
-	if s := radioByRubric(pl, rubRelease)[1].Src; s != "/radio/rel/series-2-nakshatras-02-bharani-yaml.m4a" {
-		t.Errorf("release src = %s", s)
 	}
 	if s := radioByRubric(pl, rubLagna)[1].Src; s != "/radio/lib/signs-04-cancer.m4a" {
 		t.Errorf("lib src = %s", s)
@@ -397,7 +401,7 @@ func TestRadioPlaylistExpiryAndMonth(t *testing.T) {
 	if got := radioIDs(radioByRubric(pl, rubTransits)); !reflect.DeepEqual(got[1:], []string{"transit-combo/10-saturn-for-capricorn-moon"}) {
 		t.Errorf("transits 2027-02 = %v", got)
 	}
-	for _, r := range []string{rubMonth, rubSkyToday, rubRelease, rubEvent} {
+	for _, r := range []string{rubMonth, rubSkyToday, rubEvent} {
 		if items := radioByRubric(pl, r); len(items) != 0 {
 			t.Errorf("%s must be skipped on 2027-02-01, got %v", r, radioIDs(items))
 		}
@@ -1145,18 +1149,92 @@ func TestRadioHTTPShuffleFields(t *testing.T) {
 	}
 }
 
-func TestRadioSignRelease(t *testing.T) {
-	for id, want := range map[string]bool{
-		"release_series-2-transit-lens-q4-lagna-01-aries-yaml":     true,
-		"release_series-2-transit-lens-q4-moon-11-aquarius-yaml":   true,
-		"release_series-2-transit-lens-q4-sun-09-sagittarius-yaml": true,
-		"release_series-2-nakshatras-02-bharani-yaml":              false,
-		"release_series-3-breakdowns-40-mars-1st-yaml":             false,
-		"release_month-month-2026-11-lagna-yaml":                   false,
-		"release_new-moon-2026-11-09":                              false,
-	} {
-		if got := radioSignRelease(id); got != want {
-			t.Errorf("radioSignRelease(%s) = %v, want %v", id, got, want)
+// A120 (17.11.2026): the owner heard "Mars in the 1st house" in his own wave —
+// Aquarius lagna, empty 1st house, Mars in Sagittarius in the 11th. The wave
+// must carry nothing about a placement the chart does not have: no station
+// release, and every library track tagged with a placement matches the facts.
+func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13")
+	f := fixtureFacts(t)
+	lagna := chartFactsSignIndex("aquarius")
+	f.Lagna.Sign = "aquarius"
+	sign := map[string]string{}
+	house := map[string]int{}
+	count := map[int]int{}
+	for i := range f.Planets {
+		p := &f.Planets[i]
+		if p.Planet == "mars" {
+			p.Sign = "sagittarius"
 		}
+		p.House = (chartFactsSignIndex(p.Sign)-lagna+12)%12 + 1
+		sign[p.Planet], house[p.Planet] = p.Sign, p.House
+		count[p.House]++
+	}
+	if house["mars"] != 11 || count[1] != 0 {
+		t.Fatalf("fixture: mars house %d, planets in the 1st %d", house["mars"], count[1])
+	}
+	f.Conjunctions = [][2]string{}
+	for i, a := range f.Planets {
+		for _, z := range f.Planets[i+1:] {
+			if a.Sign == z.Sign {
+				f.Conjunctions = append(f.Conjunctions, [2]string{a.Planet, z.Planet})
+			}
+		}
+	}
+	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "en", &radioFixtureBirth, nil)
+	t.Logf("playlist:\n%s", radioCompact(pl))
+
+	b, err := os.ReadFile(filepath.Join(dir, "lib", "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	libV, err := parseRadioLib(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tags := map[string]radioLibTags{}
+	for _, tr := range libV.(*radioLib).Tracks {
+		tags[tr.Key] = tr.Tags
+	}
+	ref := map[string]string{"lagna": f.Lagna.Sign, "moon": f.Moon.Sign, "sun": sign["sun"]}
+	checked := 0
+	for _, it := range pl.Items {
+		if it.Kind == "release" || strings.HasPrefix(it.ID, "release_") || strings.HasPrefix(it.Src, "/radio/rel/") {
+			t.Errorf("station release in the wave: %s (%s)", it.ID, it.Title)
+		}
+		if strings.Contains(it.ID, "mars-1st") || strings.Contains(strings.ToLower(it.Title), "mars in the 1st") {
+			t.Errorf("Mars in the 1st house played for Mars in the 11th: %s (%s)", it.ID, it.Title)
+		}
+		g, ok := tags[it.ID]
+		if !ok {
+			continue
+		}
+		switch {
+		case g.House > 0 && len(g.Planets) > 0:
+			checked++
+			for _, p := range g.Planets {
+				if house[p] != g.House {
+					t.Errorf("%s: %s is in house %d, the track says %d", it.ID, p, house[p], g.House)
+				}
+			}
+		case g.House > 0 && g.Topic == "":
+			checked++
+			if count[g.House] == 0 {
+				t.Errorf("%s: house %d is empty in the chart", it.ID, g.House)
+			}
+		case len(g.Planets) == 2:
+			checked++
+			if sign[g.Planets[0]] != sign[g.Planets[1]] {
+				t.Errorf("%s: %v are not conjunct", it.ID, g.Planets)
+			}
+		case g.Ref != "" && g.Sign != "":
+			checked++
+			if ref[g.Ref] != g.Sign {
+				t.Errorf("%s: %s sign is %s, the track is for %s", it.ID, g.Ref, ref[g.Ref], g.Sign)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no placement-tagged tracks in the wave — the invariant checked nothing")
 	}
 }
