@@ -135,8 +135,59 @@ def test_vacuum_local():
         db, arc = Path(d) / "a.db", Path(d) / "arc"
         make_db(db)
         assert aj.main(["--apply", "--local-db", str(db), "--archive-dir", str(arc), "--remote", ""]) == 0
-        assert aj.main(["--vacuum", "--local-db", str(db)]) == 0
+        assert aj.main(["--vacuum", "--local-db", str(db), "--radio-root", d]) == 0
         assert counts(db) == {"ai_arbiter_events": 2, "ai_guard_corpus": 2}
+
+
+def _vac(db, *extra):
+    import subprocess
+    return subprocess.run([sys.executable, str(aj.HELPER), "vacuum", str(db), *extra], capture_output=True, text=True)
+
+
+def test_vacuum_waits_for_live_radio_call_and_gives_up():
+    import time
+    with tempfile.TemporaryDirectory() as d:
+        db = Path(d) / "a.db"
+        make_db(db)
+        (Path(d) / "call").mkdir()
+        (Path(d) / "call" / "now.json").write_text(json.dumps({"state": "live", "updated": time.time()}))
+        size = db.stat().st_size
+        p = _vac(db, "--radio-root", d, "--until", "00:00", "--retry-s", "1")
+        assert p.returncode != 0 and "live radio call" in p.stderr and "no VACUUM" in p.stderr
+        assert db.stat().st_size == size
+
+
+def test_vacuum_waits_for_recent_voice_request():
+    with tempfile.TemporaryDirectory() as d:
+        db = Path(d) / "a.db"
+        make_db(db)
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE speech_usage (id INTEGER PRIMARY KEY, created_at DATETIME)")
+        con.execute("INSERT INTO speech_usage (created_at) VALUES (datetime('now', '-2 minutes'))")
+        con.commit()
+        con.close()
+        p = _vac(db, "--radio-root", d, "--until", "00:00", "--retry-s", "1")
+        assert p.returncode != 0 and "voice requests" in p.stderr
+
+
+def test_vacuum_watchdog_interrupts_and_leaves_db_unchanged():
+    with tempfile.TemporaryDirectory() as d:
+        db = Path(d) / "a.db"
+        make_db(db)
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE pad (x TEXT)")
+        con.executemany("INSERT INTO pad VALUES (?)", [("x" * 2000,)] * 5000)
+        con.execute("DELETE FROM pad WHERE rowid > 2500")   # whole pages go to the freelist
+        con.commit()
+        con.close()
+        before = counts(db)
+        p = _vac(db, "--radio-root", d, "--max-s", "0")
+        assert p.returncode != 0 and "database unchanged" in p.stderr, p.stderr
+        assert counts(db) == before
+        con = sqlite3.connect(db)
+        assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert con.execute("PRAGMA freelist_count").fetchone()[0] > 0      # not vacuumed
+        con.close()
 
 
 def test_invalid_utf8_rows_are_archived_byte_exact():
