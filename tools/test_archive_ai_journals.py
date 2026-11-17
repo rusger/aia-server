@@ -139,6 +139,22 @@ def test_vacuum_local():
         assert counts(db) == {"ai_arbiter_events": 2, "ai_guard_corpus": 2}
 
 
+def test_invalid_utf8_rows_are_archived_byte_exact():
+    with tempfile.TemporaryDirectory() as d:
+        db, arc = Path(d) / "a.db", Path(d) / "arc"
+        make_db(db)
+        raw = "VIM: Ra/Ma ".encode() + "дек".encode()[:-1]          # cut mid-character
+        con = sqlite3.connect(db)
+        con.execute("UPDATE ai_arbiter_events SET feature = CAST(? AS TEXT) WHERE id = 1", (raw,))
+        con.commit()
+        con.close()
+        assert aj.main(["--apply", "--local-db", str(db), "--archive-dir", str(arc), "--remote", ""]) == 0
+        f = next(arc.glob("ai_arbiter_events-*.jsonl.gz"))
+        first = json.loads(gzip.open(f, "rt", encoding="ascii").readline())
+        assert first["feature"].encode("utf-8", "surrogateescape") == raw
+        assert counts(db) == {"ai_arbiter_events": 2, "ai_guard_corpus": 2}
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
