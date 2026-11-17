@@ -13,7 +13,8 @@ Order per table (any mismatch = stop, nothing deleted):
   2. export exactly `created_at < cutoff AND id <= max_id` as gzip JSONL straight to Elements
      (<archive>/<table>-before-<cutoff date>.jsonl.gz, never overwritten) + .sha256.
   3. read the file back from Elements: line count and id sum must equal the stat.
-  4. rclone copyto gdrive-crypt:ai-journals/<name>; remote size must equal the local size.
+  4. rclone copyto gdrive-crypt:ai-journals/<name>; remote size must equal the local size and
+     rclone cryptcheck must confirm the content hash.
   5. DELETE on the box with the same condition; the helper re-checks n/id sum before deleting.
 
 Without VACUUM the freed pages are reused by new rows, so the file stops growing; VACUUM gives the
@@ -107,6 +108,11 @@ def cloud_copy(path: Path, remote: str) -> None:
     meta = json.loads(p.stdout or "[]") if p.returncode == 0 else []
     if not meta or int(meta[0]["Size"]) != path.stat().st_size:
         raise Stop(f"STOP: {dest} size differs from {path.stat().st_size}")
+    # Content check of the encrypted copy against the local file's hash (rclone re-encrypts with the remote nonce).
+    p = subprocess.run(["rclone", "cryptcheck", str(path.parent), remote, "--one-way", "--include", path.name],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        raise Stop(f"STOP: rclone cryptcheck {dest} failed: {p.stderr.strip()[-500:]}")
 
 
 def archive_table(box: Box, table: str, st: dict, cutoff: str, archive: Path, remote: str) -> None:
