@@ -16,8 +16,17 @@ import (
 // unaudited. Raising the limit for builds already in users' hands is only
 // possible here.
 //
-//	AI_MAX_TOKENS_FLOOR  "call_type=N,call_type=N" (e.g. "claim_audit=2500").
+//	AI_MAX_TOKENS_FLOOR  "call_type=N,call_type:M=N" (e.g.
+//	                     "claim_audit=2500,chatgpt:1000=2000").
 //	                     Empty (default) = OFF: nothing is changed.
+//
+// "call_type=N" raises every smaller limit of that call type. "call_type:M=N"
+// raises ONLY a request that asked for exactly M. The exact form exists for
+// "chatgpt": the proxy logs translations (500), the short forecast (500),
+// highlights (900) and the marathon report (900, a deliberate cost guard on
+// the super model) under that same call type, so a blanket chatgpt floor
+// would lift all of them — while the truncated chat answers ask for exactly
+// 1000 or 1500.
 const aiMaxTokensFloorCeiling = 8000 // typo guard
 
 var aiMaxTokensFloor = loadMaxTokensFloor(os.Getenv("AI_MAX_TOKENS_FLOOR"))
@@ -38,6 +47,17 @@ func loadMaxTokensFloor(pairs string) map[string]int {
 			log.Printf("⚠️ AI_MAX_TOKENS_FLOOR: ignoring malformed pair %q", pair)
 			continue
 		}
+		// "call_type:M" — the exact-value form; M must be a positive number
+		// below the new limit, otherwise the pair is malformed.
+		if name, exact, has := strings.Cut(callType, ":"); has {
+			m, err := strconv.Atoi(strings.TrimSpace(exact))
+			name = strings.TrimSpace(name)
+			if name == "" || err != nil || m <= 0 || m >= n {
+				log.Printf("⚠️ AI_MAX_TOKENS_FLOOR: ignoring malformed pair %q", pair)
+				continue
+			}
+			callType = name + ":" + strconv.Itoa(m)
+		}
 		floors[callType] = n
 	}
 	if len(floors) > 0 {
@@ -49,8 +69,20 @@ func loadMaxTokensFloor(pairs string) map[string]int {
 // applyMaxTokensFloor returns the max_tokens to send upstream. A client value
 // of 0 means "not set" and stays 0 — the floor only ever raises a limit the
 // client did set.
-func applyMaxTokensFloor(floors map[string]int, callType string, maxTokens int) int {
-	if floor, ok := floors[callType]; ok && maxTokens > 0 && maxTokens < floor {
+//
+// [rawCallType] is the tag exactly as the app sent it. A tag the proxy
+// clamped to another call type ("highlights", "marathon_report" → "chatgpt")
+// marks a feature with its own deliberate limit — the marathon report's 900
+// is a cost guard on the super model — and is never raised, whatever the
+// setting says.
+func applyMaxTokensFloor(floors map[string]int, callType, rawCallType string, maxTokens int) int {
+	if maxTokens <= 0 || (rawCallType != "" && rawCallType != callType) {
+		return maxTokens
+	}
+	if floor, ok := floors[callType+":"+strconv.Itoa(maxTokens)]; ok {
+		return floor
+	}
+	if floor, ok := floors[callType]; ok && maxTokens < floor {
 		return floor
 	}
 	return maxTokens

@@ -3522,7 +3522,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 
     // A117: optional per-call-type floor for the client's max_tokens
     // (ai_token_floor.go). Off by default — then nothing here changes.
-    req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.MaxTokens)
+    req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.CallType, req.MaxTokens)
 
     // Prepare OpenAI API request
     openAIRequest := map[string]interface{}{
@@ -3546,7 +3546,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 
     // A118: optional swap to the replacement model right before the call
     // (model_remap.go). Off by default — then nothing here changes.
-    upstreamModel := applyModelRemap(modelRemap, openAIRequest, req.Model, callType)
+    upstreamModel := applyModelRemap(modelRemap, openAIRequest, req.Model, callType, req.CallType)
 
     requestBody, err := json.Marshal(openAIRequest)
     if err != nil {

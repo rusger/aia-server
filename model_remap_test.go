@@ -30,7 +30,7 @@ func TestModelRemapOffIsByteIdentical(t *testing.T) {
 	for _, callType := range []string{"chatgpt", "grounding_fix", "claim_audit"} {
 		req := remapRequest()
 		before := mustJSON(t, req)
-		if got := applyModelRemap(cfg, req, "gpt-4.1-mini", callType); got != "gpt-4.1-mini" {
+		if got := applyModelRemap(cfg, req, "gpt-4.1-mini", callType, ""); got != "gpt-4.1-mini" {
 			t.Fatalf("%s: logged model = %q, want the requested one", callType, got)
 		}
 		if after := mustJSON(t, req); after != before {
@@ -42,7 +42,7 @@ func TestModelRemapOffIsByteIdentical(t *testing.T) {
 func TestModelRemapOnRewritesRequest(t *testing.T) {
 	cfg := loadModelRemap("gpt-4.1-mini=gpt-6-luna, gpt-4o-mini=gpt-6-luna", "", "")
 	req := remapRequest()
-	if got := applyModelRemap(cfg, req, "gpt-4.1-mini", "chatgpt"); got != "gpt-6-luna" {
+	if got := applyModelRemap(cfg, req, "gpt-4.1-mini", "chatgpt", ""); got != "gpt-6-luna" {
 		t.Fatalf("logged model = %q, want gpt-6-luna", got)
 	}
 	want := `{"max_completion_tokens":2500,"messages":[{"content":"hi","role":"user"}],"model":"gpt-6-luna","reasoning_effort":"none"}`
@@ -56,7 +56,7 @@ func TestModelRemapKeepsStreamOptions(t *testing.T) {
 	cfg := loadModelRemap("gpt-4o-mini=gpt-6-luna", "", "low")
 	req := map[string]interface{}{"model": "gpt-4o-mini", "messages": []map[string]string{}, "stream": true,
 		"stream_options": map[string]interface{}{"include_usage": true}}
-	applyModelRemap(cfg, req, "gpt-4o-mini", "chatgpt")
+	applyModelRemap(cfg, req, "gpt-4o-mini", "chatgpt", "")
 	want := `{"messages":[],"model":"gpt-6-luna","reasoning_effort":"low","stream":true,"stream_options":{"include_usage":true}}`
 	if got := mustJSON(t, req); got != want {
 		t.Fatalf("body =\n%s\nwant\n%s", got, want)
@@ -70,7 +70,7 @@ func TestModelRemapSkipsAuditAndJudgeByDefault(t *testing.T) {
 		req := remapRequest()
 		req["model"] = "gpt-4o-mini"
 		before := mustJSON(t, req)
-		if got := applyModelRemap(cfg, req, "gpt-4o-mini", callType); got != "gpt-4o-mini" {
+		if got := applyModelRemap(cfg, req, "gpt-4o-mini", callType, ""); got != "gpt-4o-mini" {
 			t.Fatalf("%s was remapped to %q", callType, got)
 		}
 		if after := mustJSON(t, req); after != before {
@@ -80,7 +80,7 @@ func TestModelRemapSkipsAuditAndJudgeByDefault(t *testing.T) {
 	// An explicit skip list replaces the default one.
 	cfg = loadModelRemap("gpt-4o-mini=gpt-6-luna", "yoga_fix", "")
 	req := remapRequest()
-	if got := applyModelRemap(cfg, req, "gpt-4o-mini", "claim_audit"); got != "gpt-6-luna" {
+	if got := applyModelRemap(cfg, req, "gpt-4o-mini", "claim_audit", ""); got != "gpt-6-luna" {
 		t.Fatalf("explicit skip list: claim_audit not remapped (%q)", got)
 	}
 }
@@ -93,10 +93,33 @@ func TestModelRemapUnknownModelAndGarbage(t *testing.T) {
 	req := remapRequest()
 	req["model"] = "o1"
 	before := mustJSON(t, req)
-	if got := applyModelRemap(cfg, req, "o1", "chatgpt"); got != "o1" {
+	if got := applyModelRemap(cfg, req, "o1", "chatgpt", ""); got != "o1" {
 		t.Fatalf("unmapped model changed to %q", got)
 	}
 	if after := mustJSON(t, req); after != before {
 		t.Fatal("unmapped model: body changed")
+	}
+}
+
+// The proxy clamps unknown tags to "chatgpt"; the skip list must still see
+// the tag the app sent.
+func TestModelRemapSkipsByRawCallType(t *testing.T) {
+	cfg := loadModelRemap("gpt-4.1-mini=gpt-6-luna", "claim_audit,highlights,marathon_report", "")
+	for _, raw := range []string{"highlights", "marathon_report"} {
+		req := remapRequest()
+		before := mustJSON(t, req)
+		if got := applyModelRemap(cfg, req, "gpt-4.1-mini", "chatgpt", raw); got != "gpt-4.1-mini" {
+			t.Fatalf("raw tag %q was remapped to %q", raw, got)
+		}
+		if after := mustJSON(t, req); after != before {
+			t.Fatalf("raw tag %q: body changed", raw)
+		}
+	}
+	// A plain answer (no tag, or a tag outside the skip list) is remapped.
+	for _, raw := range []string{"", "something_else"} {
+		req := remapRequest()
+		if got := applyModelRemap(cfg, req, "gpt-4.1-mini", "chatgpt", raw); got != "gpt-6-luna" {
+			t.Fatalf("raw tag %q: got %q, want gpt-6-luna", raw, got)
+		}
 	}
 }
