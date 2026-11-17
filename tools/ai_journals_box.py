@@ -125,7 +125,10 @@ def vacuum(db, *opts):
     ap.add_argument("--until", default="03:15")
     ap.add_argument("--radio-root", default="/var/www/html/radio")
     ap.add_argument("--retry-s", type=float, default=RETRY_S)
+    ap.add_argument("--free-factor", type=float, default=2.0, help="need free >= factor x (db + wal)")
     a = ap.parse_args(opts)
+    if not os.path.isdir(a.radio_root):   # a wrong path would read "no live call" — fail closed instead
+        sys.exit(f"STOP: radio root {a.radio_root} not found — cannot check for a live call; no VACUUM")
     hh, mm = map(int, a.until.split(":"))
     deadline = datetime.now(timezone.utc).replace(hour=hh, minute=mm, second=0, microsecond=0).timestamp()
     con = sqlite3.connect(db, timeout=60, isolation_level=None)
@@ -139,9 +142,9 @@ def vacuum(db, *opts):
         print(json.dumps({"wait": why, "retry_s": a.retry_s}), flush=True)
         time.sleep(a.retry_s)
     before = _sizes(db)
-    if before["free"] < 2 * (before["db"] + before["wal"]):
+    if before["free"] < a.free_factor * (before["db"] + before["wal"]):
         con.close()
-        sys.exit(f"STOP: free {before['free']} B below 2x (db + wal) — no VACUUM")
+        sys.exit(f"STOP: free {before['free']} B below {a.free_factor:g}x (db + wal) — no VACUUM")
     print(json.dumps({"before": before}), flush=True)
     t0 = time.monotonic()
     con.set_progress_handler(lambda: 1 if time.monotonic() - t0 > a.max_s else 0, 1000)

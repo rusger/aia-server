@@ -234,6 +234,18 @@ def test_cloud_copy_cryptcheck_failure_stops():
         assert calls == ["copyto", "lsjson", "cryptcheck"]
 
 
+def test_vacuum_stops_without_headroom_or_radio_root():
+    with tempfile.TemporaryDirectory() as d:
+        db = Path(d) / "a.db"
+        make_db(db)
+        size = db.stat().st_size
+        p = _vac(db, "--radio-root", d, "--free-factor", "1e12")
+        assert p.returncode != 0 and "below 1e+12x" in p.stderr and "no VACUUM" in p.stderr, p.stderr
+        p = _vac(db, "--radio-root", str(Path(d) / "missing"))
+        assert p.returncode != 0 and "radio root" in p.stderr
+        assert db.stat().st_size == size
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
