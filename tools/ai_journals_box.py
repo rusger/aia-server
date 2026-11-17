@@ -54,10 +54,13 @@ def stat(db, cutoff):
 def export(db, table, cutoff, max_id):
     con = _ro(db)
     con.row_factory = sqlite3.Row
+    # Some rows hold invalid UTF-8 (answers cut mid-character). Keep them byte-exact: undecodable bytes become
+    # lone surrogates, written as \udcXX escapes in ASCII JSON; restore with s.encode("utf-8", "surrogateescape").
+    con.text_factory = lambda b: b.decode("utf-8", "surrogateescape")
     cur = con.execute(f"SELECT * FROM {_table(table)} WHERE {WHERE} ORDER BY id", (cutoff, int(max_id)))
     with gzip.GzipFile(fileobj=sys.stdout.buffer, mode="wb", compresslevel=6) as gz:
         for row in cur:
-            gz.write(json.dumps(dict(row), ensure_ascii=False).encode() + b"\n")
+            gz.write(json.dumps(dict(row), ensure_ascii=True).encode("ascii") + b"\n")
     con.close()
 
 
