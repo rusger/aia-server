@@ -113,20 +113,27 @@ def archive_table(box: Box, table: str, st: dict, cutoff: str, archive: Path, re
     name = f"{table}-before-{cutoff[:10]}.jsonl.gz"
     path = archive / name
     if path.exists():
-        raise Stop(f"STOP: {path} already exists — not overwriting")
-    tmp = path.with_suffix(".gz.part")
-    with tmp.open("wb") as f:
-        p = box.run("export", box.db, table, cutoff, str(st["max_id"]), stdout=f)
-    if p.returncode != 0:
-        tmp.unlink(missing_ok=True)
-        raise Stop(f"STOP: export {table} failed: {p.stderr.decode().strip()}")
-    got = verify_file(tmp)
-    if got != (st["n"], st["id_sum"]):
-        raise Stop(f"STOP: {tmp} has n={got[0]} id_sum={got[1]}, box n={st['n']} id_sum={st['id_sum']}; nothing deleted")
-    tmp.rename(path)
+        # Resume after a failed cloud copy: the same-day file is reused only if it still matches the box exactly.
+        got = verify_file(path)
+        if got != (st["n"], st["id_sum"]):
+            raise Stop(f"STOP: {path} exists with n={got[0]} id_sum={got[1]}, box n={st['n']} "
+                       f"id_sum={st['id_sum']} — not overwriting, nothing deleted")
+        print(f"{table}: reusing verified {path}")
+    else:
+        tmp = path.with_suffix(".gz.part")
+        with tmp.open("wb") as f:
+            p = box.run("export", box.db, table, cutoff, str(st["max_id"]), stdout=f)
+        if p.returncode != 0:
+            tmp.unlink(missing_ok=True)
+            raise Stop(f"STOP: export {table} failed: {p.stderr.decode().strip()}")
+        got = verify_file(tmp)
+        if got != (st["n"], st["id_sum"]):
+            raise Stop(f"STOP: {tmp} has n={got[0]} id_sum={got[1]}, box n={st['n']} id_sum={st['id_sum']}; "
+                       "nothing deleted")
+        tmp.rename(path)
+        print(f"{table}: archived {st['n']} rows → {path} ({path.stat().st_size} B)")
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     (archive / (name + ".sha256")).write_text(f"{digest}  {name}\n")
-    print(f"{table}: archived {st['n']} rows → {path} ({path.stat().st_size} B)")
     if remote:
         cloud_copy(path, remote)
         print(f"{table}: copied to {remote}/{name}")
@@ -145,8 +152,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--archive-dir", type=Path, default=ARCHIVE)
     ap.add_argument("--remote", default=REMOTE, help="rclone destination; '' skips the cloud copy")
     a = ap.parse_args(argv)
-    if a.days < 7:
-        raise Stop("STOP: --days below 7 would cut into the weekly report window")
+    if a.days < 15:   # weekly_report.py compares with the previous week: reads 14 days back (+1 day margin)
+        raise Stop("STOP: --days below 15 would cut into the weekly report's previous-week window")
     box = Box(a.local_db)
     cutoff = cutoff_for(a.days)
     st = box.json("stat", box.db, cutoff)

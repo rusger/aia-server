@@ -83,10 +83,60 @@ def test_delete_helper_refuses_changed_rows():
 
 def test_days_floor():
     try:
-        aj.main(["--days", "3", "--local-db", "/nonexistent"])
+        aj.main(["--days", "14", "--local-db", "/nonexistent"])
         raise AssertionError("expected Stop")
     except aj.Stop:
         pass
+
+
+def test_resume_after_cloud_failure_reuses_verified_file():
+    with tempfile.TemporaryDirectory() as d:
+        db, arc = Path(d) / "a.db", Path(d) / "arc"
+        make_db(db)
+        real = aj.cloud_copy
+        aj.cloud_copy = lambda p, r: (_ for _ in ()).throw(aj.Stop("STOP: rclone failed"))
+        try:
+            aj.main(["--apply", "--local-db", str(db), "--archive-dir", str(arc), "--remote", "x:"])
+            raise AssertionError("expected Stop")
+        except aj.Stop:
+            pass
+        finally:
+            aj.cloud_copy = real
+        assert counts(db) == {"ai_arbiter_events": 5, "ai_guard_corpus": 5}
+        sent = []
+        aj.cloud_copy = lambda p, r: sent.append(p.name)
+        try:
+            assert aj.main(["--apply", "--local-db", str(db), "--archive-dir", str(arc), "--remote", "x:"]) == 0
+        finally:
+            aj.cloud_copy = real
+        assert len(sent) == 2 and counts(db) == {"ai_arbiter_events": 2, "ai_guard_corpus": 2}
+
+
+def test_cloud_copy_size_mismatch_stops():
+    class P:
+        def __init__(self, rc, out=""):
+            self.returncode, self.stdout = rc, out
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "x.jsonl.gz"
+        f.write_bytes(b"12345")
+        real = aj.subprocess.run
+        aj.subprocess.run = lambda cmd, **kw: P(0) if cmd[1] == "copyto" else P(0, json.dumps([{"Size": 4}]))
+        try:
+            aj.cloud_copy(f, "r:")
+            raise AssertionError("expected Stop")
+        except aj.Stop as e:
+            assert "size differs" in str(e)
+        finally:
+            aj.subprocess.run = real
+
+
+def test_vacuum_local():
+    with tempfile.TemporaryDirectory() as d:
+        db, arc = Path(d) / "a.db", Path(d) / "arc"
+        make_db(db)
+        assert aj.main(["--apply", "--local-db", str(db), "--archive-dir", str(arc), "--remote", ""]) == 0
+        assert aj.main(["--vacuum", "--local-db", str(db)]) == 0
+        assert counts(db) == {"ai_arbiter_events": 2, "ai_guard_corpus": 2}
 
 
 if __name__ == "__main__":
