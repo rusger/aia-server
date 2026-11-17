@@ -76,9 +76,14 @@ func loadModelRemap(pairs, skip, effort string) modelRemapConfig {
 //
 // The replacement family rejects `temperature` and takes
 // `max_completion_tokens` instead of `max_tokens`.
-func applyModelRemap(cfg modelRemapConfig, openAIRequest map[string]interface{}, model, callType string) string {
+//
+// [rawCallType] is the tag exactly as the app sent it. The proxy clamps every
+// tag outside its overhead allowlist to "chatgpt" (quota accounting), which
+// would hide app features that are NOT plain answers — "highlights" (strict
+// JSON), "marathon_report" — from the skip list. Skipping looks at both.
+func applyModelRemap(cfg modelRemapConfig, openAIRequest map[string]interface{}, model, callType, rawCallType string) string {
 	to, ok := cfg.models[model]
-	if !ok || cfg.skip[callType] {
+	if !ok || cfg.skip[callType] || (rawCallType != "" && cfg.skip[rawCallType]) {
 		return model
 	}
 	openAIRequest["model"] = to

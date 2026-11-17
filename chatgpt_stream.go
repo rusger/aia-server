@@ -110,7 +110,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A117: optional per-call-type max_tokens floor (ai_token_floor.go); off by default.
-	req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.MaxTokens)
+	req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.CallType, req.MaxTokens)
 	openAIRequest := map[string]interface{}{
 		"model":          req.Model,
 		"messages":       req.Messages,
@@ -124,7 +124,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 		openAIRequest["max_tokens"] = req.MaxTokens
 	}
 	// A118: optional swap to the replacement model (model_remap.go); off by default.
-	upstreamModel := applyModelRemap(modelRemap, openAIRequest, req.Model, callType)
+	upstreamModel := applyModelRemap(modelRemap, openAIRequest, req.Model, callType, req.CallType)
 	body, err := json.Marshal(openAIRequest)
 	if err != nil {
 		streamJSONError(w, http.StatusInternalServerError, "Failed to prepare request", "")
