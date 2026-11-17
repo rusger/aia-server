@@ -109,6 +109,8 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A117: optional per-call-type max_tokens floor (ai_token_floor.go); off by default.
+	req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.MaxTokens)
 	openAIRequest := map[string]interface{}{
 		"model":          req.Model,
 		"messages":       req.Messages,
