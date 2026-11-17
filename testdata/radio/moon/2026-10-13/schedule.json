@@ -275,6 +275,22 @@
    "title": "From our channels: Bharani: the star that carries life and death"
   },
   {
+   "start": 24200,
+   "dur": 105.4,
+   "kind": "release",
+   "id": "release_series-2-transit-lens-q4-lagna-01-aries-yaml",
+   "src": "../../rel/series-2-transit-lens-q4-lagna-01-aries-yaml.m4a",
+   "title": "From our channels: Aries rising: Jupiter in Leo lights house 5, Saturn turns direct"
+  },
+  {
+   "start": 24400,
+   "dur": 100.0,
+   "kind": "release",
+   "id": "release_series-2-transit-lens-q4-lagna-04-cancer-yaml",
+   "src": "../../rel/series-2-transit-lens-q4-lagna-04-cancer-yaml.m4a",
+   "title": "From our channels: Cancer rising: the listener's own sign, already in the lens rubric"
+  },
+  {
    "start": 24600,
    "dur": 87.4,
    "kind": "banter",
