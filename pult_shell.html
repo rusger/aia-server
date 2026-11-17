@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Пульт владельца</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+/* A124: оболочка пульта на astrolytix.com. Данных в файле нет — всё приходит из /api/admin/pult/* после входа. */
+:root{
+  --bg:#f4f4f8;--card:#ffffff;--fg:#1b1a2b;--mut:#615e78;--line:#e0deec;
+  --accent:#5b4bc4;--ok:#2e7d4f;--warn:#a5620c;--chip:#ecebf7;
+  --display:"Space Grotesk",system-ui,sans-serif;--body:"Inter",system-ui,-apple-system,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111019;--card:#1b1a27;--fg:#ecebf5;--mut:#a29fba;--line:#2d2b40;
+  --accent:#9d90ff;--ok:#7fd3a0;--warn:#f0b35c;--chip:#262438;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111019;--card:#1b1a27;--fg:#ecebf5;--mut:#a29fba;--line:#2d2b40;
+  --accent:#9d90ff;--ok:#7fd3a0;--warn:#f0b35c;--chip:#262438;color-scheme:dark}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--body);overflow-x:hidden}
+.w{max-width:820px;margin:0 auto;padding-block:24px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px;box-sizing:border-box}
+.w.wide{max-width:1200px}
+[hidden]{display:none!important}
+h1{font:600 26px/1.2 var(--display);margin:0;text-wrap:balance;overflow-wrap:anywhere}
+.sub{color:var(--mut);font-size:14px;margin:4px 0 0}
+.top{display:flex;gap:12px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+.stat{display:flex;gap:8px;flex-wrap:wrap;font-size:13px}
+.pill{background:var(--chip);border-radius:999px;padding:3px 10px;color:var(--mut)}
+.pill b{color:var(--fg)}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.item.done{opacity:.72}
+.head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tag{font:600 12px/1 var(--body);letter-spacing:.04em;text-transform:uppercase;color:var(--accent)}
+.item h2{font:600 19px/1.3 var(--display);margin:0;flex:1 1 260px;text-wrap:balance;overflow-wrap:anywhere}
+.body{white-space:pre-wrap;margin:0;overflow-wrap:anywhere}
+.q{border-left:3px solid var(--accent);padding-left:10px;margin:0;font-weight:500;overflow-wrap:anywhere}
+.links{display:flex;flex-wrap:wrap;gap:8px}
+.links a{color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:14px;overflow-wrap:anywhere}
+.links a:hover,.links a:focus-visible{border-color:var(--accent)}
+.prev{width:100%;max-width:100%;background:#000;border-radius:8px;border:1px solid var(--line);display:block}
+.gal{display:flex;flex-wrap:wrap;gap:12px}
+.gal figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:4px;max-width:100%}
+.gal video{max-width:100%;border-radius:8px;background:#0e0d18}
+.gal figcaption{font-size:13px;color:var(--mut)}
+.fig{margin:0;display:flex;flex-direction:column;gap:4px}.fig figcaption{font-size:13px;color:var(--mut)}
+.ans{display:flex;flex-direction:column;gap:8px;border-top:1px dashed var(--line);padding-top:10px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+label.ck{display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:500}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok)}
+textarea,input[type=email],input[type=password]{width:100%;box-sizing:border-box;font:15px/1.45 var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+textarea{min-height:70px;resize:vertical}
+textarea:focus-visible,input:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font:600 14px/1 var(--body);background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+button[disabled]{opacity:.5;cursor:default}
+.st{font-size:13px;color:var(--mut)}
+.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}
+.empty{color:var(--mut);text-align:center;padding:32px 0}
+.foot h2{font:600 17px/1.3 var(--display);margin:0}
+.login{max-width:420px}
+.login label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--mut)}
+.plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.plist a{color:var(--accent);text-decoration:none;font-weight:500;overflow-wrap:anywhere}
+.plist .st{display:block}
+.frame{width:100%;height:75vh;min-height:420px;border:1px solid var(--line);border-radius:12px;background:#fff;display:block;box-sizing:border-box}
+@media (prefers-reduced-motion:no-preference){.item{transition:opacity .2s}}
+</style>
+</head>
+<body>
+
+<!-- Вход: почта администратора + секрет -->
+<div class="w" id="loginView" hidden>
+  <header><h1>Пульт владельца</h1><p class="sub">Войдите почтой администратора и секретом (как в панели администратора).</p></header>
+  <form class="item login" id="loginForm" autocomplete="on">
+    <label>Почта администратора<input type="email" id="lEmail" autocomplete="username" required></label>
+    <label>Секрет<input type="password" id="lSecret" autocomplete="current-password" required></label>
+    <div class="row"><button type="submit">Войти</button><span class="st" id="lStat"></span></div>
+  </form>
+</div>
+
+<!-- Пульт -->
+<div class="w" id="mainView" hidden>
+  <header>
+    <div class="top"><h1>Пульт владельца</h1><button class="ghost" type="button" id="logout">Выйти</button></div>
+    <p class="sub">Единственный пульт. Здесь только то, что ждёт вашего просмотра или ответа. Отметьте «Ок» или напишите комментарий и нажмите «Отправить». Координатор забирает ответы и передаёт сессиям дословно. Когда вопрос закрыт, блок исчезает; если по нему появилось новое, блок возвращается наверх.</p>
+  </header>
+  <div class="stat" id="stat"><span class="pill">Загружаю…</span></div>
+  <main id="list"><p class="empty">Загружаю вопросы…</p></main>
+  <section class="item foot" aria-labelledby="gh">
+    <h2 id="gh">Общий комментарий</h2>
+    <p class="sub" style="margin:0">Всё, что не относится к блокам выше: новые идеи, поручения, замечания.</p>
+    <textarea id="gen" aria-label="Общий комментарий"></textarea>
+    <div class="row"><button id="genb" type="button">Отправить</button><span class="st" id="gens"></span></div>
+  </section>
+  <section class="item foot" aria-labelledby="ph">
+    <h2 id="ph">Страницы сессий</h2>
+    <ul class="plist" id="plist"><li class="st">Загружаю…</li></ul>
+  </section>
+</div>
+
+<!-- Страница сессии внутри оболочки -->
+<div class="w wide" id="pageView" hidden>
+  <div class="row"><button class="ghost" type="button" id="back">← Назад к пульту</button></div>
+  <header><h1 id="pTitle"></h1><p class="sub" id="pMeta"></p></header>
+  <iframe class="frame" id="pFrame" sandbox="allow-scripts" title="Страница сессии"></iframe>
+  <section class="item foot" aria-labelledby="pch">
+    <h2 id="pch">Комментарий к странице</h2>
+    <textarea id="pgen" aria-label="Комментарий к странице"></textarea>
+    <div class="row"><button id="pgenb" type="button">Отправить</button><span class="st" id="pgens"></span></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  // Ключи входа. Панель администратора (stellar-vault) держит почту и секрет только в памяти вкладки,
+  // в localStorage она их не пишет — поэтому у пульта свои ключи; передача та же: admin_email и
+  // admin_secret в строке запроса к /api/admin/*. Секрет в адрес самой страницы не попадает.
+  const K_EMAIL='pult-admin-email', K_SECRET='pult-admin-secret';
+  const API='/api/admin/pult/';
+  const POLL_MS=20000;
+  const $=id=>document.getElementById(id);
+  const lsGet=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
+  const lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+  const lsDel=k=>{try{localStorage.removeItem(k)}catch(e){}};
+  let email=lsGet(K_EMAIL), secret=lsGet(K_SECRET);
+
+  function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+  const fmt=t=>{try{return t?new Date(t).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}catch(e){return ''}};
+
+  class ApiError extends Error{constructor(status,msg){super(msg);this.status=status}}
+  async function api(method,path,body){
+    const qs='?admin_email='+encodeURIComponent(email)+'&admin_secret='+encodeURIComponent(secret);
+    const opt={method,headers:{},cache:'no-store'};
+    if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}
+    let res;
+    try{res=await fetch(API+path+qs,opt)}catch(e){throw new ApiError(0,'Нет связи с сервером.')}
+    let data=null;try{data=await res.json()}catch(e){}
+    if(res.status===403||res.status===401){toLogin('Почта или секрет не подошли. Войдите заново.');throw new ApiError(res.status,'Нет доступа.')}
+    if(res.status===429)throw new ApiError(429,'Слишком много запросов, подождите минуту.');
+    if(res.status===503)throw new ApiError(503,'Хранилище пульта на сервере недоступно.');
+    if(res.status===404)throw new ApiError(404,'Не найдено.');
+    if(!res.ok||!data||data.success===false)throw new ApiError(res.status,'Ошибка сервера ('+res.status+').');
+    return data;
+  }
+
+  // ---------- вход ----------
+  function toLogin(msg){
+    secret='';lsDel(K_SECRET);
+    stopPoll();
+    $('mainView').hidden=true;$('pageView').hidden=true;$('loginView').hidden=false;
+    $('lEmail').value=email;$('lSecret').value='';
+    const s=$('lStat');s.textContent=msg||'';s.className='st'+(msg?' warn':'');
+  }
+  $('loginForm').addEventListener('submit',ev=>{
+    ev.preventDefault();
+    email=$('lEmail').value.trim();secret=$('lSecret').value;
+    if(!email||!secret)return;
+    lsSet(K_EMAIL,email);lsSet(K_SECRET,secret);
+    $('lStat').textContent='Проверяю…';$('lStat').className='st';
+    route();
+  });
+  $('logout').onclick=()=>toLogin('');
+
+  // ---------- пульт ----------
+  const list=$('list'), stat=$('stat');
+  let items=[], replies={}, pages=[], drafts={}, oks={}, held=false, loaded=false;
+  const LS='hub-drafts-v1';
+  try{const o=JSON.parse(lsGet(LS)||'{}');drafts=o.d||{};oks=o.k||{}}catch(e){}
+  const saveLS=()=>lsSet(LS,JSON.stringify({d:drafts,k:oks}));
+  // пока владелец печатает в блоке — список не перерисовываем
+  const busy=()=>{const a=document.activeElement;return !!(a&&list.contains(a)&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'))};
+  function schedule(){if(busy()){held=true;showHeld();return}held=false;render()}
+  function showHeld(){let p=$('held');if(!p){p=el('span','pill');p.id='held';p.textContent='Есть обновления — покажу, когда закончите писать';stat.append(p)}}
+  list.addEventListener('focusout',()=>setTimeout(()=>{if(held&&!busy())schedule()},400));
+
+  function render(){
+    const act=items.filter(i=>i.active!==false);
+    const pending=act.filter(i=>{const r=replies[i.id];return !r||(r.rev||0)<(i.rev||0)});
+    stat.innerHTML='';
+    const p1=el('span','pill');p1.append('Ждут вас: ',el('b',null,String(pending.length)));
+    const p2=el('span','pill');p2.append('Всего открыто: ',el('b',null,String(act.length)));
+    stat.append(p1,p2);
+    list.querySelectorAll('textarea[data-id]').forEach(t=>{drafts[t.dataset.id]=t.value});
+    list.querySelectorAll('input[data-id]').forEach(x=>{oks[x.dataset.id]=x.checked});
+    list.innerHTML='';
+    if(!act.length){list.append(el('p','empty','Сейчас от вас ничего не ждут.'))}
+    else{
+      act.sort((a,b)=>{const pa=pending.includes(a)?0:1,pb=pending.includes(b)?0:1;return pa-pb||(a.order||0)-(b.order||0)});
+      act.forEach(i=>list.append(card(i,!pending.includes(i))));
+    }
+    renderPages();
+  }
+
+  function pageHref(slug){return '#p/'+encodeURIComponent(slug)}
+  function linkEl(x){
+    const url=String(x.url||'');
+    const a=el('a',null,x.label||'Открыть');
+    if(url.startsWith('pult:')){a.href=pageHref(url.slice(5))}
+    else if(/^https?:\/\//i.test(url)){a.href=url;a.target='_blank';a.rel='noopener noreferrer'}
+    else{a.href='#';a.onclick=e=>e.preventDefault();a.title='Неподдерживаемая ссылка'}
+    return a;
+  }
+  const safeSrc=u=>/^(https?:\/\/|\/)/i.test(String(u||''))?String(u):'';
+
+  function card(i,answered){
+    const c=el('article','item'+(answered?' done':''));
+    const h=el('div','head');
+    h.append(el('span','tag',i.task||''),el('h2',null,i.title||''));
+    c.append(h);
+    if(i.video&&safeSrc(i.video)){const v=el('video','prev');v.src=safeSrc(i.video);v.controls=true;v.playsInline=true;v.preload='metadata';if(i.loop){v.loop=true;v.muted=true}c.append(v)}
+    if(i.gallery&&i.gallery.length){const g=el('div','gal');i.gallery.forEach(x=>{if(!safeSrc(x.video))return;const f=el('figure');const v=el('video');v.src=safeSrc(x.video);v.autoplay=true;v.loop=true;v.muted=true;v.playsInline=true;v.preload='metadata';if(x.w)v.style.width=Math.min(+x.w||0,2000)+'px';f.append(v,el('figcaption',null,x.label||''));g.append(f)});c.append(g)}
+    if(i.image&&safeSrc(i.image)){const im=el('img','prev');im.src=safeSrc(i.image);im.alt=i.title||'';im.loading='lazy';c.append(im)}
+    if(i.images&&i.images.length)i.images.forEach(x=>{if(!safeSrc(x.src))return;const f=el('figure','fig');const a=el('a');a.href=safeSrc(x.src);a.target='_blank';a.rel='noopener noreferrer';const im=el('img','prev');im.src=safeSrc(x.src);im.alt=x.label||'';im.loading='lazy';a.append(im);f.append(a,el('figcaption',null,x.label||''));c.append(f)});
+    if(i.body)c.append(el('p','body',i.body));
+    if(i.links&&i.links.length){const l=el('div','links');i.links.forEach(x=>l.append(linkEl(x)));c.append(l)}
+    if(i.question)c.append(el('p','q',i.question));
+    const r=replies[i.id]||{};
+    const ans=el('div','ans');
+    const row=el('div','row');
+    const lab=el('label','ck');const cb=el('input');cb.type='checkbox';cb.dataset.id=i.id;cb.checked=oks[i.id]!=null?oks[i.id]:!!(answered&&r.ok);cb.onchange=()=>{oks[i.id]=cb.checked;saveLS()};lab.append(cb,i.ack||'Ок, утверждаю');row.append(lab);
+    const ta=el('textarea');ta.dataset.id=i.id;ta.setAttribute('aria-label','Комментарий к «'+(i.title||'')+'»');
+    ta.value=drafts[i.id]!=null?drafts[i.id]:(answered?(r.text||''):'');ta.oninput=()=>{drafts[i.id]=ta.value;saveLS()};
+    const r2=el('div','row');const b=el('button',null,'Отправить');b.type='button';const s=el('span','st');
+    if(answered){s.textContent='Ответ отправлен '+fmt(r.at)+'. Ждёт сессию.';s.className='st ok'}
+    else if(r.at){s.textContent='Есть обновление после вашего ответа '+fmt(r.at)+'.';s.className='st warn'}
+    b.onclick=async()=>{
+      if(!cb.checked&&!ta.value.trim()){s.textContent='Отметьте «Ок» или напишите комментарий.';s.className='st warn';return}
+      b.disabled=true;s.textContent='Сохраняю…';s.className='st';
+      try{
+        await api('POST','reply',{id:i.id,ok:cb.checked,text:ta.value.trim(),rev:i.rev||0,title:i.title||'',task:i.task||''});
+        delete drafts[i.id];delete oks[i.id];saveLS();
+        s.textContent='Отправлено.';s.className='st ok';
+        ta.blur();
+        load();
+      }catch(e){if(e.status!==403&&e.status!==401){s.textContent='Не сохранилось: '+e.message+' Попробуйте ещё раз.';s.className='st warn'}}
+      b.disabled=false;
+    };
+    r2.append(b,s);ans.append(row,ta,r2);c.append(ans);
+    return c;
+  }
+
+  function renderPages(){
+    const ul=$('plist');ul.innerHTML='';
+    const last=pages.slice(0,30);
+    if(!last.length){ul.append(el('li','st','Страниц пока нет.'));return}
+    last.forEach(p=>{
+      const li=el('li');const a=el('a',null,p.title||p.slug);a.href=pageHref(p.slug);
+      li.append(a,el('span','st',[p.session,fmt(p.updated_at)].filter(Boolean).join(' · ')));ul.append(li);
+    });
+  }
+
+  let timer=null, inflight=false;
+  async function load(){
+    if(inflight||!secret)return;
+    inflight=true;
+    try{
+      const d=await api('GET','state');
+      items=Array.isArray(d.items)?d.items:[];replies=d.replies||{};pages=Array.isArray(d.pages)?d.pages:[];
+      loaded=true;schedule();
+    }catch(e){
+      if(e.status!==403&&e.status!==401){
+        if(!loaded){list.innerHTML='';list.append(el('p','empty',e.message+' Повторю через 20 секунд.'))}
+        else{const p=el('span','pill');p.textContent=e.message;stat.append(p)}
+      }
+    }finally{inflight=false}
+  }
+  function startPoll(){if(!timer)timer=setInterval(()=>{if(!document.hidden)load()},POLL_MS)}
+  function stopPoll(){if(timer){clearInterval(timer);timer=null}}
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&secret)load()});
+
+  // общий комментарий
+  async function sendGeneral(ta,btn,st,lsKey,extra){
+    const t=ta.value.trim();if(!t){st.textContent='Напишите текст.';st.className='st warn';return}
+    btn.disabled=true;st.textContent='Сохраняю…';st.className='st';
+    try{await api('POST','general',Object.assign({text:t},extra||{}));ta.value='';lsDel(lsKey);st.textContent='Отправлено.';st.className='st ok'}
+    catch(e){if(e.status!==403&&e.status!==401){st.textContent='Не сохранилось: '+e.message+' Попробуйте ещё раз.';st.className='st warn'}}
+    btn.disabled=false;
+  }
+  const gen=$('gen');gen.value=lsGet('hub-gen-v1');gen.oninput=()=>lsSet('hub-gen-v1',gen.value);
+  $('genb').onclick=()=>sendGeneral(gen,$('genb'),$('gens'),'hub-gen-v1');
+
+  // ---------- страница сессии ----------
+  let curSlug='', curTitle='';
+  const pgen=$('pgen');
+  const pKey=()=>'pult-page-gen-v1:'+curSlug;
+  pgen.oninput=()=>lsSet(pKey(),pgen.value);
+  $('pgenb').onclick=()=>sendGeneral(pgen,$('pgenb'),$('pgens'),pKey(),{page:curSlug,title:curTitle});
+  $('back').onclick=()=>{location.hash=''};
+
+  async function showPage(slug){
+    $('loginView').hidden=true;$('mainView').hidden=true;$('pageView').hidden=false;
+    curSlug=slug;curTitle='';
+    $('pTitle').textContent='Загружаю…';$('pMeta').textContent='';$('pFrame').srcdoc='';
+    pgen.value=lsGet(pKey());$('pgens').textContent='';
+    window.scrollTo(0,0);
+    try{
+      const d=await api('GET','page/'+encodeURIComponent(slug));
+      if(curSlug!==slug)return;
+      curTitle=d.title||slug;
+      $('pTitle').textContent=curTitle;
+      $('pMeta').textContent=[d.session,fmt(d.updated_at)].filter(Boolean).join(' · ');
+      $('pFrame').srcdoc=d.html||'';
+    }catch(e){if(curSlug===slug&&e.status!==403&&e.status!==401){$('pTitle').textContent=e.status===404?'Страница не найдена':'Не открылась: '+e.message}}
+  }
+
+  function route(){
+    if(!email||!secret){toLogin('');return}
+    const m=/^#p\/(.+)$/.exec(location.hash);
+    if(m){let slug='';try{slug=decodeURIComponent(m[1])}catch(e){}showPage(slug)}
+    else{$('loginView').hidden=true;$('pageView').hidden=true;$('mainView').hidden=false;curSlug=''}
+    load();startPoll();
+  }
+  window.addEventListener('hashchange',route);
+  route();
+})();
+</script>
+</body>
+</html>

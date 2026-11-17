@@ -9843,6 +9843,10 @@ func main() {
         defer analyticsDB.Close()
     }
 
+    // Owner's pult (A124, pult.go): own pult.db next to analytics.db; a failure
+    // only disables /api/admin/pult/* (503), the server still starts.
+    initPultDB()
+
     // Load Apple Root CA for App Store Server Notification signature verification
     initAppleRootCA()
 
@@ -9928,6 +9932,8 @@ func main() {
     router.HandleFunc("/api/admin/radio/mailbag", adminGuardMiddleware(adminRadioMailbag)).Methods("GET")
     router.HandleFunc("/api/admin/radio/mailbag/{id}/delete", adminGuardMiddleware(adminRadioMailbagDelete)).Methods("POST")
     router.HandleFunc("/api/admin/radio/switches", adminGuardMiddleware(adminRadioSwitches)).Methods("GET", "POST")
+    // owner's pult (A124, pult.go): shell page without auth, data under the admin guard
+    registerPultRoutes(router)
     router.HandleFunc("/api/chatgpt-stream", jwtAuthMiddleware(formerSubscriberGate(chatGPTStreamProxy))).Methods("POST")
     // resume replays a buffer — no model call, so no formerSubscriberGate (the
     // gate's pinned route list is "handlers that reach a paid model").
