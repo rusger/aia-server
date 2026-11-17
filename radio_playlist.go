@@ -85,24 +85,12 @@ const (
 	rubNakshatra   = "nakshatra"
 	rubTopic       = "topic"
 	rubYear        = "year"
-	rubRelease     = "release"
 	rubEvent       = "event"
 	rubClosing     = "closing"
 )
 
 // radioWeekdayStation: the station of the day (vara), Sunday first.
 var radioWeekdayStation = [7]string{"sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn"}
-
-// radioSignReleaseRe: a release built from one sign's episode of a series (key
-// series:<n>:<series>/<lagna|moon|sun>/<NN>-<sign>.yaml -> id release_series-2-transit-lens-q4-lagna-01-aries-yaml).
-var radioSignReleaseRe = regexp.MustCompile(`-(lagna|moon|sun)-\d{2}-(aries|taurus|gemini|cancer|leo|virgo|libra|scorpio|sagittarius|capricorn|aquarius|pisces)-yaml$`)
-
-// radioSignRelease: the release speaks to one lagna/Moon/Sun sign. The station
-// air keeps it (it is the channel's public release), but the "Your chart" wave
-// never takes it: for every other sign it is someone else's chart (A116,
-// 17.11.2026: "Aries rising" titled in CarPlay for an Aquarius lagna), and the
-// listener's own sign already comes from the library lens in step 5.
-func radioSignRelease(id string) bool { return radioSignReleaseRe.MatchString(id) }
 
 // radioSignLord: lagna sign -> its lord's station.
 var radioSignLord = map[string]string{
@@ -988,24 +976,10 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 		}
 	}
 
-	// 14. Releases of the station of the day (their release_lead is not
-	// used: the wave has its own).
-	if sched != nil {
-		var items []radioItem
-		for _, s := range sched.Items {
-			if s.Kind != "release" {
-				continue
-			}
-			if radioSignRelease(s.ID) {
-				continue // one sign's episode: someone else's sign is wrong, the own one comes in step 5
-			}
-			if u, ok := radioStationURL(day, b.atStr, s.Src); ok {
-				items = append(items, radioItem{Dur: s.Dur, span: s.Dur, Kind: "release", ID: s.ID,
-					Title: s.Title, Src: u, Rubric: rubRelease, station: day})
-			}
-		}
-		b.add(rubRelease, items)
-	}
+	// 14. (removed, A120 17.11.2026) Station releases ("From our channels") never
+	// enter the wave: each is a statement about SOMEONE's chart ("Mars in the 1st
+	// house", "Aries rising") voiced right after "this is your chart". Only what
+	// is derived from the listener's facts, or is about today's sky, plays here.
 
 	// 15. The nearest sky event within radioEventWindow days.
 	{
