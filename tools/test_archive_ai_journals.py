@@ -155,6 +155,34 @@ def test_invalid_utf8_rows_are_archived_byte_exact():
         assert counts(db) == {"ai_arbiter_events": 2, "ai_guard_corpus": 2}
 
 
+def test_cloud_copy_cryptcheck_failure_stops():
+    class P:
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "x.jsonl.gz"
+        f.write_bytes(b"12345")
+        calls = []
+
+        def fake(cmd, **kw):
+            calls.append(cmd[1])
+            if cmd[1] == "lsjson":
+                return P(0, json.dumps([{"Size": 5}]))
+            if cmd[1] == "cryptcheck":
+                return P(1, err="1 differences found")
+            return P(0)
+        real = aj.subprocess.run
+        aj.subprocess.run = fake
+        try:
+            aj.cloud_copy(f, "r:")
+            raise AssertionError("expected Stop")
+        except aj.Stop as e:
+            assert "cryptcheck" in str(e)
+        finally:
+            aj.subprocess.run = real
+        assert calls == ["copyto", "lsjson", "cryptcheck"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
