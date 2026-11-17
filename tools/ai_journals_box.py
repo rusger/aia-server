@@ -10,7 +10,8 @@ directly against a local copy in tests). Stdlib only. Commands:
   delete <db> <table> <cutoff> <max_id> <expect_n> <expect_sum>
                                         -> deletes exactly those rows in small batches; refuses if the
                                            pre-count/id-sum differ from what was archived
-  vacuum <db>                           -> VACUUM (caller checks free space first); prints size before/after
+  vacuum <db> [--max-s S] [--until HH:MM] [--radio-root P]
+                                        -> quiet-moment VACUUM under a watchdog; JSON lines before/after
 
 Row selection is always `created_at < cutoff AND id <= max_id`, so rows written
 after the stat call are never touched.
@@ -24,6 +25,8 @@ import sys
 TABLES = ("ai_arbiter_events", "ai_guard_corpus")
 WHERE = "created_at < ? AND id <= ?"
 BATCH = 500
+CALL_STALE_S = 900      # as scripts/radio_feeder.py in insta-agent: an older live call is abandoned
+RETRY_S = 900
 
 
 def _table(name):
@@ -87,13 +90,74 @@ def delete(db, table, cutoff, max_id, expect_n, expect_sum):
         sys.exit(f"STOP {t}: deleted {deleted}, expected {expect_n}")
 
 
-def vacuum(db):
-    before = os.path.getsize(db)
+def _air_busy(con, radio_root, now):
+    """Why VACUUM should wait now, or '' — live radio call (as radio_restart.call_live sees it) or voice in chats."""
+    try:
+        doc = json.loads(open(os.path.join(radio_root, "call", "now.json")).read())
+        if doc.get("state") == "live" and now - float(doc.get("updated", 0)) <= CALL_STALE_S:
+            return "live radio call"
+    except (OSError, ValueError, TypeError):
+        pass
+    try:
+        n = con.execute("SELECT count(*) FROM speech_usage WHERE created_at >= datetime(?, 'unixepoch', '-10 minutes')",
+                        (int(now),)).fetchone()[0]
+    except sqlite3.OperationalError:          # no speech_usage table yet
+        n = 0
+    return f"{n} voice requests in the last 10 min" if n else ""
+
+
+def _sizes(db):
+    st = os.statvfs(os.path.dirname(os.path.abspath(db)))
+    wal = db + "-wal"
+    return {"free": st.f_bavail * st.f_frsize, "db": os.path.getsize(db),
+            "wal": os.path.getsize(wal) if os.path.exists(wal) else 0}
+
+
+def vacuum(db, *opts):
+    """VACUUM in a quiet moment, under a watchdog (A88 step 7, coordinator 17.11):
+    waits (RETRY_S) while a radio call is live or voice was used in the last 10 min, gives up after --until (UTC
+    HH:MM, today); needs free ≥ 2× (db + wal); a VACUUM longer than --max-s is interrupted (SQLite rolls back)."""
+    import argparse
+    import time
+    from datetime import datetime, timezone
+    ap = argparse.ArgumentParser(prog="vacuum")
+    ap.add_argument("--max-s", type=float, default=300)
+    ap.add_argument("--until", default="03:15")
+    ap.add_argument("--radio-root", default="/var/www/html/radio")
+    ap.add_argument("--retry-s", type=float, default=RETRY_S)
+    ap.add_argument("--free-factor", type=float, default=2.0, help="need free >= factor x (db + wal)")
+    a = ap.parse_args(opts)
+    if not os.path.isdir(a.radio_root):   # a wrong path would read "no live call" — fail closed instead
+        sys.exit(f"STOP: radio root {a.radio_root} not found — cannot check for a live call; no VACUUM")
+    hh, mm = map(int, a.until.split(":"))
+    deadline = datetime.now(timezone.utc).replace(hour=hh, minute=mm, second=0, microsecond=0).timestamp()
     con = sqlite3.connect(db, timeout=60, isolation_level=None)
-    con.execute("VACUUM")
+    while True:
+        why = _air_busy(con, a.radio_root, time.time())
+        if not why:
+            break
+        if time.time() + a.retry_s > deadline:
+            con.close()
+            sys.exit(f"STOP: {why}; next try would pass {a.until} UTC — no VACUUM")
+        print(json.dumps({"wait": why, "retry_s": a.retry_s}), flush=True)
+        time.sleep(a.retry_s)
+    before = _sizes(db)
+    if before["free"] < a.free_factor * (before["db"] + before["wal"]):
+        con.close()
+        sys.exit(f"STOP: free {before['free']} B below {a.free_factor:g}x (db + wal) — no VACUUM")
+    print(json.dumps({"before": before}), flush=True)
+    t0 = time.monotonic()
+    con.set_progress_handler(lambda: 1 if time.monotonic() - t0 > a.max_s else 0, 1000)
+    try:
+        con.execute("VACUUM")
+    except sqlite3.OperationalError as e:      # "interrupted": the watchdog fired, SQLite rolled the VACUUM back
+        con.close()
+        sys.exit(f"STOP: VACUUM stopped after {time.monotonic() - t0:.1f} s ({e}); database unchanged")
+    took = time.monotonic() - t0
+    con.set_progress_handler(None, 0)
     con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     con.close()
-    print(json.dumps({"before": before, "after": os.path.getsize(db)}))
+    print(json.dumps({"after": _sizes(db), "vacuum_s": round(took, 1)}), flush=True)
 
 
 if __name__ == "__main__":

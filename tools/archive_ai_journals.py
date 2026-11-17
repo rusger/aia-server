@@ -6,7 +6,7 @@ Runs on the Mac; the box is reached over ssh and every box command runs under ni
     python3 tools/archive_ai_journals.py                      # dry run: what would go, nothing written
     python3 tools/archive_ai_journals.py --days 60            # dry run with another retention
     python3 tools/archive_ai_journals.py --apply --days 30    # export → verify → Elements + gdrive-crypt → DELETE
-    python3 tools/archive_ai_journals.py --vacuum             # VACUUM only (quiet hour; needs free ≥ 2× db)
+    python3 tools/archive_ai_journals.py --vacuum             # VACUUM only: quiet moment, free ≥ 2× (db+wal), 5-min watchdog
 
 Order per table (any mismatch = stop, nothing deleted):
   1. stat on the box: rows with created_at < cutoff → n, max(id), sum(id).
@@ -154,6 +154,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--days", type=int, default=30, help="keep this many days on the box (default 30, owner 17.11.2026)")
     ap.add_argument("--apply", action="store_true", help="export, verify, copy and DELETE (default: dry run)")
     ap.add_argument("--vacuum", action="store_true", help="VACUUM only (quiet hour)")
+    ap.add_argument("--max-s", type=float, default=300, help="--vacuum: interrupt VACUUM after this many seconds")
+    ap.add_argument("--until", default="03:15", help="--vacuum: give up waiting for a quiet moment after HH:MM UTC")
+    ap.add_argument("--radio-root", default="", help="--vacuum: radio dir with call/now.json (box default)")
     ap.add_argument("--local-db", help="test mode: a local SQLite file instead of the box")
     ap.add_argument("--archive-dir", type=Path, default=ARCHIVE)
     ap.add_argument("--remote", default=REMOTE, help="rclone destination; '' skips the cloud copy")
@@ -168,10 +171,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {t}: {s['n']} of {s['total']} rows older than cutoff (oldest {s['oldest']}), max_id {s['max_id']}")
 
     if a.vacuum:
-        if st["free_bytes"] < 2 * st["db_bytes"]:
-            raise Stop("STOP: free space below 2× db size — no VACUUM")
-        r = box.json("vacuum", box.db)
-        print(f"VACUUM: {r['before'] / 2**20:.0f} → {r['after'] / 2**20:.0f} MiB")
+        # The helper waits for a quiet moment, checks free ≥ 2× (db + wal) and interrupts a VACUUM over --max-s.
+        args = ["vacuum", box.db, "--max-s", str(a.max_s), "--until", a.until]
+        if a.radio_root:
+            args += ["--radio-root", a.radio_root]
+        p = box.run(*args)
+        sys.stdout.write(p.stdout.decode())
+        if p.returncode != 0:
+            raise Stop(p.stderr.decode().strip() or f"STOP: vacuum exited {p.returncode}")
         return 0
     if not a.apply:
         print("dry run — nothing written (add --apply)")
