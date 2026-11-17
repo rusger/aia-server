@@ -93,6 +93,17 @@ const (
 // radioWeekdayStation: the station of the day (vara), Sunday first.
 var radioWeekdayStation = [7]string{"sun", "moon", "mars", "mercury", "jupiter", "venus", "saturn"}
 
+// radioSignReleaseRe: a release built from one sign's episode of a series (key
+// series:<n>:<series>/<lagna|moon|sun>/<NN>-<sign>.yaml -> id release_series-2-transit-lens-q4-lagna-01-aries-yaml).
+var radioSignReleaseRe = regexp.MustCompile(`-(lagna|moon|sun)-\d{2}-(aries|taurus|gemini|cancer|leo|virgo|libra|scorpio|sagittarius|capricorn|aquarius|pisces)-yaml$`)
+
+// radioSignRelease: the release speaks to one lagna/Moon/Sun sign. The station
+// air keeps it (it is the channel's public release), but the "Your chart" wave
+// never takes it: for every other sign it is someone else's chart (A116,
+// 17.11.2026: "Aries rising" titled in CarPlay for an Aquarius lagna), and the
+// listener's own sign already comes from the library lens in step 5.
+func radioSignRelease(id string) bool { return radioSignReleaseRe.MatchString(id) }
+
 // radioSignLord: lagna sign -> its lord's station.
 var radioSignLord = map[string]string{
 	"aries": "mars", "scorpio": "mars", "taurus": "venus", "libra": "venus",
@@ -984,6 +995,9 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 		for _, s := range sched.Items {
 			if s.Kind != "release" {
 				continue
+			}
+			if radioSignRelease(s.ID) {
+				continue // one sign's episode: someone else's sign is wrong, the own one comes in step 5
 			}
 			if u, ok := radioStationURL(day, b.atStr, s.Src); ok {
 				items = append(items, radioItem{Dur: s.Dur, span: s.Dur, Kind: "release", ID: s.ID,

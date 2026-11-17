@@ -299,6 +299,8 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubNakshatra, "nakshatras/21-uttara-ashadha")
 	check(rubTopic, "topics/01-love")
 	check(rubYear, "year-2027/10-capricorn")
+	// A116: one sign's episodes (lagna-01-aries — someone else's; lagna-04-cancer — own, already a lens above)
+	// stay out of the wave.
 	check(rubRelease, "release_series-2-nakshatras-02-bharani-yaml", "release_series-3-breakdowns-05-sun-saturn-yaml")
 	check(rubEvent, "events/retrograde-start_2026-10-24")
 
@@ -1140,5 +1142,21 @@ func TestRadioHTTPShuffleFields(t *testing.T) {
 	ok := base + `,"heard":["` + strings.Repeat(strings.Repeat("a", 64)+`","`, radioMaxHeard-1) + strings.Repeat("a", 64) + `"]}`
 	if w := post(ok); w.Code != http.StatusOK {
 		t.Errorf("200 heard ids: status %d body %.200s", w.Code, w.Body)
+	}
+}
+
+func TestRadioSignRelease(t *testing.T) {
+	for id, want := range map[string]bool{
+		"release_series-2-transit-lens-q4-lagna-01-aries-yaml":     true,
+		"release_series-2-transit-lens-q4-moon-11-aquarius-yaml":   true,
+		"release_series-2-transit-lens-q4-sun-09-sagittarius-yaml": true,
+		"release_series-2-nakshatras-02-bharani-yaml":              false,
+		"release_series-3-breakdowns-40-mars-1st-yaml":             false,
+		"release_month-month-2026-11-lagna-yaml":                   false,
+		"release_new-moon-2026-11-09":                              false,
+	} {
+		if got := radioSignRelease(id); got != want {
+			t.Errorf("radioSignRelease(%s) = %v, want %v", id, got, want)
+		}
 	}
 }
