@@ -300,6 +300,8 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 		// Radio calls (radio_call.go) log the clip's MILLISECONDS of audio as prompt tokens;
 		// gpt-4o-mini-transcribe list price ≈ $0.003 per audio minute (estimate, not reconciled yet).
 		return float64(promptToks) / 60000.0 * 0.003
+	case strings.Contains(model, "gpt-6-luna"):
+		return regF*0.10 + cacF*0.01 + outF*0.50
 	case strings.Contains(model, "gpt-4.1-nano"):
 		return regF*0.10 + cacF*0.025 + outF*0.40
 	case strings.Contains(model, "gpt-4.1-mini"):
