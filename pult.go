@@ -11,6 +11,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
 	"encoding/hex"
@@ -51,7 +52,8 @@ func openPultDB(path string) (*sql.DB, error) {
 	CREATE TABLE IF NOT EXISTS replies (id TEXT PRIMARY KEY, data TEXT, version INTEGER, updated_at TEXT);
 	CREATE TABLE IF NOT EXISTS general (id TEXT PRIMARY KEY, data TEXT, version INTEGER, updated_at TEXT);
 	CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, title TEXT, session TEXT, html TEXT, updated_at TEXT);
-	CREATE TABLE IF NOT EXISTS reply_log (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, data TEXT, at TEXT);`)
+	CREATE TABLE IF NOT EXISTS reply_log (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, data TEXT, at TEXT);
+	CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, label TEXT, created_at TEXT, revoked INTEGER DEFAULT 0);`)
 	if err != nil {
 		if cerr := d.Close(); cerr != nil {
 			log.Printf("⚠️ pult db close: %v", cerr)
@@ -80,17 +82,41 @@ func registerPultRoutes(router *mux.Router) {
 	router.HandleFunc("/api/admin/pult/page/{slug}", adminGuardMiddleware(pultPage)).Methods("GET")
 }
 
-// Same check as adminRadioMailbag / adminGetSpeechUsage: admin email + secret in
-// the query string; an empty ADMIN_SECRET_KEY refuses everyone. Then 503 when
-// the store is down (only after auth, so the state of the box is not leaked).
+// Auth is a pult-only token (header X-Pult-Token), NOT the main
+// ADMIN_SECRET_KEY: that key opens every /api/admin/* and must not live in a
+// browser's localStorage or in URLs. Tokens are minted on the box by
+// tools/pult.sh new-token; pult.db keeps only sha256(token) hex. admin_email /
+// admin_secret are deliberately not accepted here. A 403 is counted by
+// adminGuardMiddleware, so guessing gets locked out.
+const pultTokenHeader = "X-Pult-Token"
+
+func pultTokenHash(tok string) string {
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:])
+}
+
 func pultGate(w http.ResponseWriter, r *http.Request) bool {
-	if !isAdminEmail(r.URL.Query().Get("admin_email")) || ADMIN_SECRET_KEY == "" ||
-		r.URL.Query().Get("admin_secret") != ADMIN_SECRET_KEY {
+	deny := func() bool {
 		radioJSON(w, http.StatusForbidden, map[string]interface{}{"success": false, "error": "Unauthorized"})
 		return false
 	}
+	tok := strings.TrimSpace(r.Header.Get(pultTokenHeader))
+	if tok == "" || len(tok) > 256 {
+		return deny()
+	}
 	if pultDB == nil {
+		// tokens live in pult.db: cannot verify → 503 (initPultDB already logged why)
 		radioJSON(w, http.StatusServiceUnavailable, map[string]interface{}{"success": false, "error": "pult db unavailable"})
+		return false
+	}
+	// lookup by the hash (PRIMARY KEY): the secret itself is never compared byte-by-byte
+	var revoked int
+	err := pultDB.QueryRow(`SELECT COALESCE(revoked,0) FROM tokens WHERE hash = ?`, pultTokenHash(tok)).Scan(&revoked)
+	if err == sql.ErrNoRows || (err == nil && revoked != 0) {
+		return deny()
+	}
+	if err != nil {
+		pultFail(w, "token check", err)
 		return false
 	}
 	return true

@@ -50,7 +50,7 @@ h1{font:600 26px/1.2 var(--display);margin:0;text-wrap:balance;overflow-wrap:any
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 label.ck{display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:500}
 input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok)}
-textarea,input[type=email],input[type=password]{width:100%;box-sizing:border-box;font:15px/1.45 var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+textarea,input[type=password]{width:100%;box-sizing:border-box;font:15px/1.45 var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 textarea{min-height:70px;resize:vertical}
 textarea:focus-visible,input:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button{font:600 14px/1 var(--body);background:var(--accent);color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer}
@@ -71,12 +71,11 @@ button[disabled]{opacity:.5;cursor:default}
 </head>
 <body>
 
-<!-- Вход: почта администратора + секрет -->
+<!-- Нет доступа: вход только по личной ссылке с токеном пульта -->
 <div class="w" id="loginView" hidden>
-  <header><h1>Пульт владельца</h1><p class="sub">Войдите почтой администратора и секретом (как в панели администратора).</p></header>
-  <form class="item login" id="loginForm" autocomplete="on">
-    <label>Почта администратора<input type="email" id="lEmail" autocomplete="username" required></label>
-    <label>Секрет<input type="password" id="lSecret" autocomplete="current-password" required></label>
+  <header><h1>Пульт владельца</h1><p class="sub">Нет доступа. Откройте пульт по личной ссылке от координатора.</p></header>
+  <form class="item login" id="loginForm" autocomplete="off">
+    <label>Запасной вход: вставьте личную ссылку или токен<input type="password" id="lToken" autocomplete="off" required></label>
     <div class="row"><button type="submit">Войти</button><span class="st" id="lStat"></span></div>
   </form>
 </div>
@@ -116,30 +115,44 @@ button[disabled]{opacity:.5;cursor:default}
 <script>
 (function(){
   'use strict';
-  // Ключи входа. Панель администратора (stellar-vault) держит почту и секрет только в памяти вкладки,
-  // в localStorage она их не пишет — поэтому у пульта свои ключи; передача та же: admin_email и
-  // admin_secret в строке запроса к /api/admin/*. Секрет в адрес самой страницы не попадает.
-  const K_EMAIL='pult-admin-email', K_SECRET='pult-admin-secret';
+  // Вход — отдельный токен пульта (не главный секрет администратора). Личная ссылка …/pult/#k=<токен>:
+  // токен сохраняется в localStorage и сразу убирается из адреса; в запросах — заголовок X-Pult-Token,
+  // в URL секретов нет. Страницы сессий открываются в iframe с sandbox только на скрипты (без общего origin) — токен им недоступен.
+  const K_TOKEN='pult-token';
   const API='/api/admin/pult/';
   const POLL_MS=20000;
   const $=id=>document.getElementById(id);
   const lsGet=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
   const lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
   const lsDel=k=>{try{localStorage.removeItem(k)}catch(e){}};
-  let email=lsGet(K_EMAIL), secret=lsGet(K_SECRET);
+  // токен из ссылки: #k=<токен> → localStorage, фрагмент стираем из адреса и истории
+  function takeTokenFrom(str){
+    const m=/(?:^|#|[?&])k=([^&#\s]+)/.exec(str||'');
+    if(!m)return '';
+    let t='';try{t=decodeURIComponent(m[1]).trim()}catch(e){}
+    return t;
+  }
+  let token='';
+  function captureHashToken(){
+    if(!location.hash.startsWith('#k='))return;
+    const t=takeTokenFrom(location.hash);
+    if(t){token=t;lsSet(K_TOKEN,t)}
+    try{history.replaceState(null,'',location.pathname+location.search)}catch(e){location.hash=''}
+  }
+  captureHashToken();
+  if(!token)token=lsGet(K_TOKEN);
 
   function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
   const fmt=t=>{try{return t?new Date(t).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}catch(e){return ''}};
 
   class ApiError extends Error{constructor(status,msg){super(msg);this.status=status}}
   async function api(method,path,body){
-    const qs='?admin_email='+encodeURIComponent(email)+'&admin_secret='+encodeURIComponent(secret);
-    const opt={method,headers:{},cache:'no-store'};
+    const opt={method,headers:{'X-Pult-Token':token},cache:'no-store',credentials:'omit'};
     if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}
     let res;
-    try{res=await fetch(API+path+qs,opt)}catch(e){throw new ApiError(0,'Нет связи с сервером.')}
+    try{res=await fetch(API+path,opt)}catch(e){throw new ApiError(0,'Нет связи с сервером.')}
     let data=null;try{data=await res.json()}catch(e){}
-    if(res.status===403||res.status===401){toLogin('Почта или секрет не подошли. Войдите заново.');throw new ApiError(res.status,'Нет доступа.')}
+    if(res.status===403||res.status===401){toLogin('Ссылка не действует (неверная или отозвана). Попросите у координатора новую.');throw new ApiError(res.status,'Нет доступа.')}
     if(res.status===429)throw new ApiError(429,'Слишком много запросов, подождите минуту.');
     if(res.status===503)throw new ApiError(503,'Хранилище пульта на сервере недоступно.');
     if(res.status===404)throw new ApiError(404,'Не найдено.');
@@ -149,17 +162,18 @@ button[disabled]{opacity:.5;cursor:default}
 
   // ---------- вход ----------
   function toLogin(msg){
-    secret='';lsDel(K_SECRET);
+    token='';lsDel(K_TOKEN);
     stopPoll();
     $('mainView').hidden=true;$('pageView').hidden=true;$('loginView').hidden=false;
-    $('lEmail').value=email;$('lSecret').value='';
+    $('lToken').value='';
     const s=$('lStat');s.textContent=msg||'';s.className='st'+(msg?' warn':'');
   }
   $('loginForm').addEventListener('submit',ev=>{
     ev.preventDefault();
-    email=$('lEmail').value.trim();secret=$('lSecret').value;
-    if(!email||!secret)return;
-    lsSet(K_EMAIL,email);lsSet(K_SECRET,secret);
+    const v=$('lToken').value.trim();$('lToken').value='';
+    const t=takeTokenFrom(v)||(/^[^\s#?&=\/]+$/.test(v)?v:'');
+    if(!t){$('lStat').textContent='Не похоже на ссылку или токен.';$('lStat').className='st warn';return}
+    token=t;lsSet(K_TOKEN,t);
     $('lStat').textContent='Проверяю…';$('lStat').className='st';
     route();
   });
@@ -255,7 +269,7 @@ button[disabled]{opacity:.5;cursor:default}
 
   let timer=null, inflight=false;
   async function load(){
-    if(inflight||!secret)return;
+    if(inflight||!token)return;
     inflight=true;
     try{
       const d=await api('GET','state');
@@ -270,7 +284,7 @@ button[disabled]{opacity:.5;cursor:default}
   }
   function startPoll(){if(!timer)timer=setInterval(()=>{if(!document.hidden)load()},POLL_MS)}
   function stopPoll(){if(timer){clearInterval(timer);timer=null}}
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&secret)load()});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&token)load()});
 
   // общий комментарий
   async function sendGeneral(ta,btn,st,lsKey,extra){
@@ -308,7 +322,8 @@ button[disabled]{opacity:.5;cursor:default}
   }
 
   function route(){
-    if(!email||!secret){toLogin('');return}
+    captureHashToken();
+    if(!token){toLogin('');return}
     const m=/^#p\/(.+)$/.exec(location.hash);
     if(m){let slug='';try{slug=decodeURIComponent(m[1])}catch(e){}showPage(slug)}
     else{$('loginView').hidden=true;$('pageView').hidden=true;$('mainView').hidden=false;curSlug=''}

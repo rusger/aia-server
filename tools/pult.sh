@@ -13,6 +13,12 @@
 #   pult.sh put-page   <slug> <title> <session> <html-file>
 #   pult.sh pages
 #   pult.sh reply-log  [N]                 # last N sends (default 20)
+#   pult.sh new-token  <label>             # mint a pult token, print it ONCE (only sha256 is stored)
+#   pult.sh tokens                         # label, created_at, revoked, hash prefix
+#   pult.sh revoke-token <hash-prefix>     # 8+ hex chars of the hash, must match exactly one token
+#
+# The owner opens the pult by a personal link https://astrolytix.com/api/admin/pult/#k=<token>;
+# the shell keeps the token in localStorage and sends it as X-Pult-Token.
 #
 # DB path: $PULT_DB, default = the file the server opens (./pult.db in the
 # server dir, i.e. one level above this tools/ directory).
@@ -42,6 +48,7 @@ CREATE TABLE IF NOT EXISTS replies (id TEXT PRIMARY KEY, data TEXT, version INTE
 CREATE TABLE IF NOT EXISTS general (id TEXT PRIMARY KEY, data TEXT, version INTEGER, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, title TEXT, session TEXT, html TEXT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS reply_log (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, data TEXT, at TEXT);
+CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, label TEXT, created_at TEXT, revoked INTEGER DEFAULT 0);
 $1
 SQL
 }
@@ -122,8 +129,34 @@ reply-log)
 	q "SELECT json_object('n',n,'id',id,'at',at,'data',json(data)) FROM
 (SELECT * FROM reply_log ORDER BY n DESC LIMIT $lim) ORDER BY n;"
 	;;
+new-token)
+	[ $# -eq 1 ] && [ -n "$1" ] || die "usage: new-token <label>"
+	tok=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+	[[ "$tok" =~ ^[0-9a-f]{64}$ ]] || die "random token generation failed"
+	if command -v sha256sum >/dev/null 2>&1; then
+		h=$(printf '%s' "$tok" | sha256sum | cut -d' ' -f1)
+	else
+		h=$(printf '%s' "$tok" | shasum -a 256 | cut -d' ' -f1)
+	fi
+	[[ "$h" =~ ^[0-9a-f]{64}$ ]] || die "sha256 failed"
+	lb=$(vf "$1")
+	q "INSERT INTO tokens(hash, label, created_at, revoked) VALUES('$h', $(rf "$lb"), $NOW, 0);"
+	# the only time the token is shown; it is not stored anywhere
+	echo "{\"token\":\"$tok\",\"hash8\":\"${h:0:8}\",\"link\":\"https://astrolytix.com/api/admin/pult/#k=$tok\"}"
+	;;
+tokens)
+	q "SELECT json_object('hash8',substr(hash,1,8),'label',label,'created_at',created_at,'revoked',revoked)
+FROM tokens ORDER BY created_at, hash;"
+	;;
+revoke-token)
+	[ $# -eq 1 ] || die "usage: revoke-token <hash-prefix>"
+	[[ "$1" =~ ^[0-9a-f]{8,64}$ ]] || die "hash prefix: 8..64 lowercase hex chars"
+	cnt=$(q "SELECT COUNT(*) FROM tokens WHERE substr(hash,1,${#1}) = '$1';")
+	[ "$cnt" = "1" ] || die "prefix $1 matches $cnt tokens (need exactly 1)"
+	must_change "UPDATE tokens SET revoked = 1 WHERE substr(hash,1,${#1}) = '$1';" "revoke failed: $1"
+	;;
 *)
-	sed -n '2,19p' "$0" >&2
+	sed -n '2,25p' "$0" >&2
 	exit 2
 	;;
 esac
