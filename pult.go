@@ -10,12 +10,14 @@ package main
 // endpoints answer 503. No background loops here.
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,6 +34,8 @@ var pultShellHTML []byte
 var pultDB *sql.DB
 
 var pultSlugRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,120}$`)
+
+var pultAnswerKeyRe = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
 
 const pultMaxBody = 64 << 10
 
@@ -53,7 +57,8 @@ func openPultDB(path string) (*sql.DB, error) {
 	CREATE TABLE IF NOT EXISTS general (id TEXT PRIMARY KEY, data TEXT, version INTEGER, updated_at TEXT);
 	CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, title TEXT, session TEXT, html TEXT, updated_at TEXT);
 	CREATE TABLE IF NOT EXISTS reply_log (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, data TEXT, at TEXT);
-	CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, label TEXT, created_at TEXT, revoked INTEGER DEFAULT 0);`)
+	CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, label TEXT, created_at TEXT, revoked INTEGER DEFAULT 0);
+	CREATE TABLE IF NOT EXISTS page_answers (slug TEXT, key TEXT, data TEXT, version INTEGER, updated_at TEXT, PRIMARY KEY(slug, key));`)
 	if err != nil {
 		if cerr := d.Close(); cerr != nil {
 			log.Printf("⚠️ pult db close: %v", cerr)
@@ -80,6 +85,8 @@ func registerPultRoutes(router *mux.Router) {
 	router.HandleFunc("/api/admin/pult/reply", adminGuardMiddleware(pultReply)).Methods("POST")
 	router.HandleFunc("/api/admin/pult/general", adminGuardMiddleware(pultGeneral)).Methods("POST")
 	router.HandleFunc("/api/admin/pult/page/{slug}", adminGuardMiddleware(pultPage)).Methods("GET")
+	router.HandleFunc("/api/admin/pult/page-answers/{slug}", adminGuardMiddleware(pultPageAnswers)).Methods("GET")
+	router.HandleFunc("/api/admin/pult/page-answer", adminGuardMiddleware(pultPageAnswer)).Methods("POST")
 }
 
 // Auth is a pult-only token (header X-Pult-Token), NOT the main
@@ -361,4 +368,128 @@ func pultPage(w http.ResponseWriter, r *http.Request) {
 	}
 	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "slug": slug, "title": title.String,
 		"session": session.String, "html": html.String, "updated_at": at.String})
+}
+
+// A128 — the owner's answers INSIDE a session page (checkmarks, comments per
+// row). The page lives in a sandboxed iframe without the token; the shell
+// relays its postMessage to the two endpoints below.
+
+// GET /api/admin/pult/page-answers/{slug} → {slug, answers:{<key>:{...data, at, version}}}
+// No "page must exist" check: an unknown slug simply has no answers.
+func pultPageAnswers(w http.ResponseWriter, r *http.Request) {
+	if !pultGate(w, r) {
+		return
+	}
+	slug := mux.Vars(r)["slug"]
+	if !pultSlugRe.MatchString(slug) {
+		radioJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "bad slug"})
+		return
+	}
+	answers := map[string]interface{}{}
+	rows, err := pultDB.Query(`SELECT key, COALESCE(data,''), COALESCE(version,0), COALESCE(updated_at,'')
+		FROM page_answers WHERE slug = ?`, slug)
+	if err != nil {
+		pultFail(w, "page answers", err)
+		return
+	}
+	for rows.Next() {
+		var key, data, at string
+		var version int64
+		if err := rows.Scan(&key, &data, &version, &at); err != nil {
+			rows.Close()
+			pultFail(w, "page answers", err)
+			return
+		}
+		m := map[string]interface{}{}
+		if err := json.Unmarshal([]byte(data), &m); err != nil || m == nil {
+			log.Printf("⚠️ pult page answers: %s/%s has bad JSON: %v", slug, key, err)
+			m = map[string]interface{}{}
+		}
+		m["at"] = at
+		m["version"] = version
+		answers[key] = m
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		pultFail(w, "page answers", err)
+		return
+	}
+	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "slug": slug, "answers": answers})
+}
+
+// POST /api/admin/pult/page-answer {slug, key, data} — data is the JSON object
+// the page sent (free-form fields), stored as is; version+1; journaled in
+// reply_log as "page:<slug>:<key>".
+func pultPageAnswer(w http.ResponseWriter, r *http.Request) {
+	if !pultGate(w, r) {
+		return
+	}
+	var req struct {
+		Slug string          `json:"slug"`
+		Key  string          `json:"key"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, pultMaxBody)).Decode(&req); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			radioJSON(w, http.StatusRequestEntityTooLarge, map[string]interface{}{"success": false, "error": "too large"})
+			return
+		}
+		radioJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "bad json"})
+		return
+	}
+	if !pultSlugRe.MatchString(req.Slug) {
+		radioJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "bad slug"})
+		return
+	}
+	if !pultAnswerKeyRe.MatchString(req.Key) {
+		radioJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "bad key"})
+		return
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(req.Data, &obj); err != nil || obj == nil {
+		radioJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "data must be a JSON object"})
+		return
+	}
+	var data bytes.Buffer
+	if err := json.Compact(&data, req.Data); err != nil {
+		pultFail(w, "page answer compact", err)
+		return
+	}
+	at := pultNow()
+	tx, err := pultDB.Begin()
+	if err != nil {
+		pultFail(w, "page answer begin", err)
+		return
+	}
+	var one int
+	if err := tx.QueryRow(`SELECT 1 FROM pages WHERE slug = ?`, req.Slug).Scan(&one); err != nil {
+		pultRollback(tx)
+		if err == sql.ErrNoRows {
+			radioJSON(w, http.StatusNotFound, map[string]interface{}{"success": false, "error": "not found"})
+			return
+		}
+		pultFail(w, "page answer page", err)
+		return
+	}
+	var version int64
+	if err := tx.QueryRow(`INSERT INTO page_answers(slug, key, data, version, updated_at) VALUES(?, ?, ?, 1, ?)
+		ON CONFLICT(slug, key) DO UPDATE SET data = excluded.data, version = COALESCE(page_answers.version,0) + 1,
+		updated_at = excluded.updated_at RETURNING version`, req.Slug, req.Key, data.String(), at).Scan(&version); err != nil {
+		pultRollback(tx)
+		pultFail(w, "page answer upsert", err)
+		return
+	}
+	if _, err := tx.Exec(`INSERT INTO reply_log(id, data, at) VALUES(?, ?, ?)`,
+		"page:"+req.Slug+":"+req.Key, data.String(), at); err != nil {
+		pultRollback(tx)
+		pultFail(w, "page answer log", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		pultFail(w, "page answer commit", err)
+		return
+	}
+	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "slug": req.Slug, "key": req.Key, "at": at, "version": version})
 }
