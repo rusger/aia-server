@@ -509,24 +509,117 @@ func (b *radioBuilder) langNote(rubric string, topics []radioItem) (radioItem, b
 
 // add appends a rubric: its lead (when rubric != ""), the language note and
 // the topic items. Nothing is added when there is nothing to play.
+//
+// Every unit of the rubric is its own block (owner 2026-11-18, sampling
+// without replacement inside a rubric too): a topic item, with an item that
+// has a pause (a yoga name) bound to the item after it. The lead and the
+// language note get their block ids in order(), once the units are shuffled.
 func (b *radioBuilder) add(rubric string, topics []radioItem) {
 	if len(topics) == 0 {
 		return
 	}
-	if note, ok := b.langNote(rubric, topics); ok {
-		topics = append([]radioItem{note}, topics...)
-	}
-	group := topics
+	var group []radioItem
 	if lead := b.you("lead", rubric); lead != nil {
 		if li, ok := b.libItem(lead, "lead", rubric, topics[0].station); ok {
-			group = append([]radioItem{li}, topics...)
+			group = append(group, li)
 		}
 	}
-	id := radioBlockID(rubric, group)
-	for i := range group {
-		group[i].Block = id
+	if note, ok := b.langNote(rubric, topics); ok {
+		group = append(group, note)
+	}
+	for _, u := range radioUnits(topics) {
+		id := radioBlockID(rubric, u)
+		for i := range u {
+			u[i].Block = id
+		}
+		group = append(group, u...)
 	}
 	b.groups = append(b.groups, group)
+}
+
+// radioUnits splits a rubric's topic items into its shuffle units: an item
+// with a pause (a yoga name before its insert) stays with the item after it.
+func radioUnits(topics []radioItem) [][]radioItem {
+	var units [][]radioItem
+	var cur []radioItem
+	for i, it := range topics {
+		cur = append(cur, it)
+		if it.pause > 0 && i+1 < len(topics) {
+			continue
+		}
+		units = append(units, cur)
+		cur = nil
+	}
+	return units
+}
+
+// shuffleUnits reorders the units of one rubric group: the units not in heard
+// first, then the heard ones, each part shuffled by rng. The lead opens the
+// rubric and the language note stands before the first unit with a catalog
+// insert voiced in the listener's language; both take the block id (and the
+// music station) of the unit they precede. It reports whether every unit has
+// been heard. Groups without units (ident, closing) come back unchanged.
+func (b *radioBuilder) shuffleUnits(g []radioItem, rng *mrand.Rand) ([]radioItem, bool) {
+	var lead, note *radioItem
+	var units [][]radioItem
+	for i := range g {
+		it := g[i]
+		switch {
+		case it.Kind == "lead" && it.Block == "":
+			lead = &it
+		case it.Kind == "lang_note" && it.Block == "":
+			note = &it
+		case len(units) > 0 && units[len(units)-1][0].Block == it.Block:
+			units[len(units)-1] = append(units[len(units)-1], it)
+		default:
+			units = append(units, []radioItem{it})
+		}
+	}
+	if len(units) == 0 {
+		return g, false
+	}
+	var unheard, heard [][]radioItem
+	for _, u := range units {
+		if b.in.heard[u[0].Block] {
+			heard = append(heard, u)
+		} else {
+			unheard = append(unheard, u)
+		}
+	}
+	for _, part := range [][][]radioItem{unheard, heard} {
+		rng.Shuffle(len(part), func(i, j int) { part[i], part[j] = part[j], part[i] })
+	}
+	units = append(unheard, heard...)
+	localized := func(u []radioItem) bool {
+		for _, it := range u {
+			if _, ok := it.Durs[b.in.lang]; ok && it.Kind == "insert" {
+				return true
+			}
+		}
+		return false
+	}
+	out := make([]radioItem, 0, len(g))
+	if lead != nil {
+		lead.Block, lead.station = units[0][0].Block, units[0][0].station
+		out = append(out, *lead)
+	}
+	for _, u := range units {
+		if note != nil && localized(u) {
+			note.Block, note.station = u[0].Block, u[0].station
+			out = append(out, *note)
+			note = nil
+		}
+		out = append(out, u...)
+	}
+	if note != nil { // langNote found a localized insert, so this cannot happen; keep the line anyway
+		note.Block, note.station = units[0][0].Block, units[0][0].station
+		at := 0
+		if lead != nil {
+			at = 1
+		}
+		out = append(out[:at], append([]radioItem{*note}, out[at:]...)...)
+	}
+	return out, len(unheard) == 0
 }
 
 // radioBlockID names a rubric block by its content: the rubric plus a hash of
@@ -548,8 +641,9 @@ func radioBlockID(rubric string, items []radioItem) string {
 }
 
 // order shuffles the rubric blocks between the ident (first) and the closing
-// (last): the blocks not in heard first, then the heard ones, each part in a
-// random order seeded by (facts, at, nonce). Two blocks under the same music
+// (last): inside each rubric its units go unheard first, then heard (see
+// shuffleUnits); the rubrics not fully heard come first, then the fully heard
+// ones, each part in a random order seeded by (facts, at, nonce). Two blocks under the same music
 // station do not follow each other when that can be avoided (one block per
 // rubric, so the rubric itself never repeats), and the first block after the
 // ident is not lastFirst when another unheard block can open.
@@ -565,7 +659,8 @@ func (b *radioBuilder) order() {
 	rng := mrand.New(mrand.NewSource(int64(binary.BigEndian.Uint64(h[:8]))))
 	var unheard, heard [][]radioItem
 	for _, g := range b.groups[head:tail] {
-		if b.in.heard[g[0].Block] {
+		g, all := b.shuffleUnits(g, rng)
+		if all {
 			heard = append(heard, g)
 		} else {
 			unheard = append(unheard, g)
