@@ -12,6 +12,8 @@
 #   pult.sh handled    <general-id>        # general[id].handled = true
 #   pult.sh put-page   <slug> <title> <session> <html-file>
 #   pult.sh pages
+#   pult.sh page-answers <slug> [--since ISO]   # owner's answers inside a page (A128): {slug,key,version,updated_at,data}
+#   pult.sh page-answers-all [--since ISO]      # the same over all pages
 #   pult.sh reply-log  [N]                 # last N sends (default 20)
 #   pult.sh new-token  <label>             # mint a pult token, print it ONCE (only sha256 is stored)
 #   pult.sh tokens                         # label, created_at, revoked, hash prefix
@@ -49,6 +51,7 @@ CREATE TABLE IF NOT EXISTS general (id TEXT PRIMARY KEY, data TEXT, version INTE
 CREATE TABLE IF NOT EXISTS pages (slug TEXT PRIMARY KEY, title TEXT, session TEXT, html TEXT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS reply_log (n INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT, data TEXT, at TEXT);
 CREATE TABLE IF NOT EXISTS tokens (hash TEXT PRIMARY KEY, label TEXT, created_at TEXT, revoked INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS page_answers (slug TEXT, key TEXT, data TEXT, version INTEGER, updated_at TEXT, PRIMARY KEY(slug, key));
 $1
 SQL
 }
@@ -123,6 +126,21 @@ pages)
 	q "SELECT json_object('slug',slug,'title',title,'session',session,'updated_at',updated_at,'bytes',length(html))
 FROM pages ORDER BY updated_at DESC, slug;"
 	;;
+page-answers | page-answers-all)
+	cond="1=1"
+	if [ "$cmd" = "page-answers" ]; then
+		[ $# -ge 1 ] && [ -n "$1" ] || die "usage: page-answers <slug> [--since ISO]"
+		sl=$(vf "$1"); shift
+		cond="slug = $(rf "$sl")"
+	fi
+	if [ $# -gt 0 ]; then
+		[ "$1" = "--since" ] && [ $# -eq 2 ] && [ -n "$2" ] || die "usage: $cmd${sl:+ <slug>} [--since ISO]"
+		s=$(vf "$2")
+		cond="$cond AND updated_at >= $(rf "$s")"
+	fi
+	q "SELECT json_object('slug',slug,'key',key,'version',version,'updated_at',updated_at,'data',json(data)) FROM page_answers
+WHERE $cond ORDER BY slug, updated_at, key;"
+	;;
 reply-log)
 	lim="${1:-20}"
 	[[ "$lim" =~ ^[0-9]{1,6}$ ]] || die "N must be a number"
@@ -156,7 +174,7 @@ revoke-token)
 	must_change "UPDATE tokens SET revoked = 1 WHERE substr(hash,1,${#1}) = '$1';" "revoke failed: $1"
 	;;
 *)
-	sed -n '2,25p' "$0" >&2
+	sed -n '2,27p' "$0" >&2
 	exit 2
 	;;
 esac

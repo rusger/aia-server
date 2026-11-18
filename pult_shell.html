@@ -305,10 +305,41 @@ button[disabled]{opacity:.5;cursor:default}
   $('pgenb').onclick=()=>sendGeneral(pgen,$('pgenb'),$('pgens'),pKey(),{page:curSlug,title:curTitle});
   $('back').onclick=()=>{location.hash=''};
 
+  // A128: ответы владельца внутри страницы. Страница (iframe без токена) шлёт оболочке postMessage:
+  //   {pult:1,op:"get"}              → {pult:1,op:"answers",ok,answers}
+  //   {pult:1,op:"save",key,data,n}  → {pult:1,op:"saved",key,n,ok,at}
+  // Других операций нет. Slug — только открытая сейчас страница (curSlug), из сообщения не берётся.
+  // На каждое открытие iframe создаётся заново: у новой страницы новый contentWindow, и сообщения
+  // прежней страницы (ещё не выгруженной) не запишутся под чужим slug.
+  let pFrame=$('pFrame');
+  function freshFrame(){
+    const f=el('iframe','frame');f.id='pFrame';f.setAttribute('sandbox','allow-scripts');f.title='Страница сессии';
+    pFrame.replaceWith(f);pFrame=f;
+  }
+  window.addEventListener('message',async ev=>{
+    if(!ev.source||ev.source!==pFrame.contentWindow)return;
+    const m=ev.data, src=ev.source, slug=curSlug;
+    if(!m||typeof m!=='object'||m.pult!==1||!slug||!token)return;
+    // у sandbox-iframe origin null → targetOrigin "*"; в ответе только ответы этой же страницы
+    const send=o=>{if(src===pFrame.contentWindow)src.postMessage(Object.assign({pult:1},o),'*')};
+    if(m.op==='get'){
+      try{const d=await api('GET','page-answers/'+encodeURIComponent(slug));send({op:'answers',ok:true,answers:d.answers||{}})}
+      catch(e){send({op:'answers',ok:false,answers:{}})}
+    }else if(m.op==='save'){
+      const n=(typeof m.n==='number'||typeof m.n==='string')?m.n:null;
+      const key=typeof m.key==='string'?m.key:'';
+      try{
+        if(!key||!m.data||typeof m.data!=='object'||Array.isArray(m.data))throw new Error('bad save');
+        const d=await api('POST','page-answer',{slug:slug,key:key,data:m.data});
+        send({op:'saved',key:key,n:n,ok:true,at:d.at});
+      }catch(e){send({op:'saved',key:key,n:n,ok:false,at:''})}
+    }
+  });
+
   async function showPage(slug){
     $('loginView').hidden=true;$('mainView').hidden=true;$('pageView').hidden=false;
     curSlug=slug;curTitle='';
-    $('pTitle').textContent='Загружаю…';$('pMeta').textContent='';$('pFrame').srcdoc='';
+    $('pTitle').textContent='Загружаю…';$('pMeta').textContent='';freshFrame();
     pgen.value=lsGet(pKey());$('pgens').textContent='';
     window.scrollTo(0,0);
     try{
@@ -317,7 +348,7 @@ button[disabled]{opacity:.5;cursor:default}
       curTitle=d.title||slug;
       $('pTitle').textContent=curTitle;
       $('pMeta').textContent=[d.session,fmt(d.updated_at)].filter(Boolean).join(' · ');
-      $('pFrame').srcdoc=d.html||'';
+      pFrame.srcdoc=d.html||'';
     }catch(e){if(curSlug===slug&&e.status!==403&&e.status!==401){$('pTitle').textContent=e.status===404?'Страница не найдена':'Не открылась: '+e.message}}
   }
 
