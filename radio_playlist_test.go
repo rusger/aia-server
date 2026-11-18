@@ -1362,3 +1362,79 @@ func TestRadioWithoutReplacementAcrossStarts(t *testing.T) {
 		t.Errorf("planet_house: 12 nonces gave %d unit orders, want the units shuffled", len(orders))
 	}
 }
+
+// Stage 2 of the placements bank (owner 2026-11-18 «полный набор … для любой
+// натальной карты»): every planet plays its own sign (Rahu by the sign axis),
+// a planet-in-sign track never plays as the ascendant, and a difficult yoga
+// without a catalog insert plays its library track once, by name or alias.
+func TestRadioPlanetSignAndLibYogas(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13")
+	f := fixtureFacts(t)
+	at := map[string]string{}
+	for _, p := range f.Planets {
+		at[p.Planet] = p.Sign
+	}
+	other := "aries"
+	if at["sun"] == other {
+		other = "taurus"
+	}
+	idxPath := filepath.Join(dir, "lib", "index.json")
+	raw, err := os.ReadFile(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var idx map[string]any
+	if err := json.Unmarshal(raw, &idx); err != nil {
+		t.Fatal(err)
+	}
+	track := func(key string, tags map[string]any) map[string]any {
+		return map[string]any{"key": key, "file": strings.ReplaceAll(key, "/", "-") + ".m4a", "title": key,
+			"tags": tags, "voice": "af_heart", "dur": 100.0, "text_hash": "x"}
+	}
+	add := []any{
+		track("placements/sun-in-"+at["sun"], map[string]any{"planets": []string{"sun"}, "sign": at["sun"]}),
+		track("placements/sun-in-"+other, map[string]any{"planets": []string{"sun"}, "sign": other}),
+		track("placements/moon-in-"+f.Lagna.Sign, map[string]any{"planets": []string{"moon"}, "sign": f.Lagna.Sign}),
+		track("placements/rahu-in-"+at["rahu"]+"-axis", map[string]any{"planets": []string{"rahu"}, "sign": at["rahu"], "flag": "axis"}),
+		track("placements/yoga-shakata", map[string]any{"yoga": "Shakata Yoga", "aliases": []string{"Sakata Yoga"}}),
+	}
+	idx["tracks"] = append(idx["tracks"].([]any), add...)
+	if raw, err = json.Marshal(idx); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(idxPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "en", &radioFixtureBirth, []string{"Sakata Yoga", "Shakata Yoga"})
+	radioCheckOrder(t, pl, nil)
+	got := map[string]string{}
+	for _, it := range pl.Items {
+		if strings.HasPrefix(it.ID, "placements/") {
+			got[it.ID] = it.Rubric
+		}
+	}
+	want := map[string]string{
+		"placements/sun-in-" + at["sun"]:            rubPlanetSign,
+		"placements/rahu-in-" + at["rahu"] + "-axis": rubPlanetSign,
+		"placements/yoga-shakata":                    rubYogas,
+	}
+	if at["moon"] == f.Lagna.Sign {
+		want["placements/moon-in-"+f.Lagna.Sign] = rubPlanetSign
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("placements played = %v\nwant %v (another sign, or a planet as the ascendant, must not play)", got, want)
+	}
+	n := 0
+	for _, y := range pl.FactsUsed.Yogas {
+		if y == "Sakata Yoga" || y == "Shakata Yoga" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("Shakata under two detector names must play once: facts_used.yogas = %v", pl.FactsUsed.Yogas)
+	}
+	if items := radioByRubric(pl, rubLagna); len(items) == 0 {
+		t.Error("the lagna rubric must still play its sign track")
+	}
+}
