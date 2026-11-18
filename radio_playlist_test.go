@@ -1254,6 +1254,36 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 			}
 		}
 	}
+	// planet-in-sign tracks (A134 stage 2): the listener's own Sun sign and Rahu axis, plus a Sun sign
+	// that is not theirs — the invariant below must see the own ones and never the foreign one
+	otherSun := "aries"
+	if sign["sun"] == otherSun {
+		otherSun = "taurus"
+	}
+	idxPath := filepath.Join(dir, "lib", "index.json")
+	raw, err := os.ReadFile(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var idx map[string]any
+	if err := json.Unmarshal(raw, &idx); err != nil {
+		t.Fatal(err)
+	}
+	signTrack := func(key string, tags map[string]any) map[string]any {
+		return map[string]any{"key": key, "file": strings.ReplaceAll(key, "/", "-") + ".m4a", "title": key,
+			"tags": tags, "voice": "af_heart", "dur": 100.0, "text_hash": "x"}
+	}
+	idx["tracks"] = append(idx["tracks"].([]any),
+		signTrack("placements/sun-in-"+sign["sun"], map[string]any{"planets": []string{"sun"}, "sign": sign["sun"]}),
+		signTrack("placements/sun-in-"+otherSun, map[string]any{"planets": []string{"sun"}, "sign": otherSun}),
+		signTrack("placements/rahu-in-"+sign["rahu"]+"-axis", map[string]any{"planets": []string{"rahu"}, "sign": sign["rahu"], "flag": "axis"}))
+	if raw, err = json.Marshal(idx); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(idxPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "en", &radioFixtureBirth, nil)
 	t.Logf("playlist:\n%s", radioCompact(pl))
 
@@ -1270,7 +1300,7 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 		tags[tr.Key] = tr.Tags
 	}
 	ref := map[string]string{"lagna": f.Lagna.Sign, "moon": f.Moon.Sign, "sun": sign["sun"]}
-	checked := 0
+	checked, signChecked := 0, 0
 	for _, it := range pl.Items {
 		if it.Kind == "release" || strings.HasPrefix(it.ID, "release_") || strings.HasPrefix(it.Src, "/radio/rel/") {
 			t.Errorf("station release in the wave: %s (%s)", it.ID, it.Title)
@@ -1282,7 +1312,7 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if g.Flag != "" && g.Flag != "nodes" {
+		if g.Flag != "" && g.Flag != "nodes" && g.Flag != "axis" { // axis = Rahu/Ketu pair, a fact of the chart
 			t.Errorf("%s: flag %q is a verdict not derived from the facts", it.ID, g.Flag)
 		}
 		switch {
@@ -1298,6 +1328,12 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 			if count[g.House] == 0 {
 				t.Errorf("%s: house %d is empty in the chart", it.ID, g.House)
 			}
+		case len(g.Planets) == 1 && g.House == 0 && g.Sign != "" && g.Ref == "":
+			checked++
+			signChecked++
+			if sign[g.Planets[0]] != g.Sign {
+				t.Errorf("%s: %s is in %s, the track says %s", it.ID, g.Planets[0], sign[g.Planets[0]], g.Sign)
+			}
 		case len(g.Planets) == 2:
 			checked++
 			if sign[g.Planets[0]] != sign[g.Planets[1]] {
@@ -1312,6 +1348,9 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Error("no placement-tagged tracks in the wave — the invariant checked nothing")
+	}
+	if signChecked < 2 {
+		t.Errorf("planet-in-sign tracks checked: %d, want the own Sun sign and the Rahu axis", signChecked)
 	}
 }
 
