@@ -81,6 +81,7 @@ const (
 	rubSadeSati    = "sade_sati"
 	rubYogas       = "yogas"
 	rubPlanetHouse = "planet_house"
+	rubPlanetSign  = "planet_sign"
 	rubConjunction = "conjunction"
 	rubNakshatra   = "nakshatra"
 	rubTopic       = "topic"
@@ -144,7 +145,8 @@ type radioLibTags struct {
 	Transit   string   `json:"transit"`
 	You       string   `json:"you"`
 	Rubric    string   `json:"rubric"`
-	Yoga      string   `json:"yoga"` // yoga-name/<slug>: the name as in the catalog slug yoga_<Name>
+	Yoga      string   `json:"yoga"`    // yoga-name/<slug>: the name as in the catalog slug yoga_<Name>; placements/yoga-*: the detector's name
+	Aliases   []string `json:"aliases"` // placements/yoga-*: other detector names of the same yoga (Sakata = Shakata)
 }
 
 type radioLibTrack struct {
@@ -594,6 +596,22 @@ func (b *radioBuilder) splitUnits(g []radioItem, rng *mrand.Rand) radioRubricUni
 	return r
 }
 
+// radioYogaTrackFor: t is the placements/yoga-* track of yoga y (by name or alias).
+func radioYogaTrackFor(t *radioLibTrack, y string) bool {
+	if t.Tags.Yoga == "" || t.Tags.You != "" {
+		return false
+	}
+	if t.Tags.Yoga == y {
+		return true
+	}
+	for _, a := range t.Tags.Aliases {
+		if a == y {
+			return true
+		}
+	}
+	return false
+}
+
 // radioBlockID names a rubric block by its content: the rubric plus a hash of
 // the ids of its content items. Leads, language notes and yoga names are left
 // out (their variant or language changes from day to day while the content
@@ -890,8 +908,9 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 		var items []radioItem
 		b.addLib(&items, b.find(func(t *radioLibTrack) bool {
 			g := t.Tags
+			// len(g.Planets) == 0: «Sun in Aries» (placements, planet_sign) is not the Aries ascendant (A116 class)
 			return g.Sign == f.Lagna.Sign && g.Year == 0 && g.Ref == "" && g.Month == "" &&
-				g.Transit == "" && g.Event == "" && g.Planet == ""
+				g.Transit == "" && g.Event == "" && g.Planet == "" && len(g.Planets) == 0
 		}), rubLagna, fixed(radioSignLord[f.Lagna.Sign]))
 		b.add(rubLagna, items)
 	}
@@ -966,7 +985,7 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 	// «все йоги … должны все прозвучать»; order() spreads them over the rounds).
 	{
 		var items []radioItem
-		seen := map[string]bool{}
+		seen, playedLib := map[string]bool{}, map[string]bool{}
 		for _, y := range append(append([]string{}, f.Yogas...), in.extraYogas...) {
 			if seen[y] {
 				continue
@@ -978,6 +997,17 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 				}
 				items = append(items, it)
 				pl.FactsUsed.Yogas = append(pl.FactsUsed.Yogas, y)
+				continue
+			}
+			// No catalog insert (the difficult yogas, owner 2026-11-18 «все йоги»): the English
+			// placements/yoga-* track under its name or an alias, once even if both names come.
+			for _, t := range b.find(func(t *radioLibTrack) bool { return radioYogaTrackFor(t, y) }) {
+				if !playedLib[t.Key] {
+					playedLib[t.Key] = true
+					b.addLib(&items, []*radioLibTrack{t}, rubYogas, fixed(day))
+					pl.FactsUsed.Yogas = append(pl.FactsUsed.Yogas, y)
+				}
+				break
 			}
 		}
 		b.add(rubYogas, items)
@@ -1021,6 +1051,20 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 			}), rubPlanetHouse, fixed(maha))
 		}
 		b.add(rubPlanetHouse, items)
+	}
+
+	// 9b. Planets in signs (owner 2026-11-18): placements/<planet>-in-<sign> for every
+	// planet of the chart in its own sign; Rahu by rahu-in-<sign>-axis (Ketu opposite).
+	{
+		var items []radioItem
+		for _, p := range f.Planets {
+			b.addLib(&items, b.find(func(t *radioLibTrack) bool {
+				g := t.Tags
+				return g.House == 0 && len(g.Planets) == 1 && g.Planets[0] == p.Planet && g.Sign != "" &&
+					g.Sign == p.Sign && (g.Flag == "" || g.Flag == "axis")
+			}), rubPlanetSign, fixed(p.Planet))
+		}
+		b.add(rubPlanetSign, items)
 	}
 
 	// 10. Conjunctions: breakdowns of exactly the pair (no house); a pair with
