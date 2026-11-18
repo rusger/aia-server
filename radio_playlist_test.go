@@ -241,14 +241,21 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	// Sade Sati is not active for the fixture (Saturn in Pisces, Moon in Capricorn).
 	want := []string{rubIdent, rubSkyToday, rubTithi, rubLagna, rubMonth, rubTransits, rubDasha, rubYogas,
 		rubPlanetHouse, rubConjunction, rubNakshatra, rubTopic, rubYear, rubEvent, rubClosing}
-	// The blocks are shuffled (radioCheckOrder): ident first, closing last,
-	// every rubric exactly once in between.
+	// Rounds of portions (radioCheckOrder): ident first, closing last, every
+	// rubric in between, a rubric with many units in several portions.
 	got := radioRubrics(pl)
 	radioCheckOrder(t, pl, nil)
-	if len(got) != len(want) || got[0] != rubIdent || got[len(got)-1] != rubClosing {
-		t.Fatalf("rubrics = %v\nwant a shuffle of %v", got, want)
+	if got[0] != rubIdent || got[len(got)-1] != rubClosing {
+		t.Fatalf("rubrics = %v\nwant ident first, closing last", got)
 	}
-	gotSet := append([]string{}, got...)
+	distinct := map[string]bool{}
+	for _, r := range got {
+		distinct[r] = true
+	}
+	gotSet := []string{}
+	for r := range distinct {
+		gotSet = append(gotSet, r)
+	}
 	wantSet := append([]string{}, want...)
 	sort.Strings(gotSet)
 	sort.Strings(wantSet)
@@ -276,8 +283,8 @@ func TestRadioPlaylistFixture(t *testing.T) {
 
 	check := func(rubric string, want ...string) {
 		t.Helper()
-		if got := radioNoteIDs(radioByRubric(pl, rubric))[1:]; !reflect.DeepEqual(got, want) {
-			t.Errorf("%s = %v\nwant %v", rubric, got, want)
+		if got := radioNoteIDs(radioByRubric(pl, rubric))[1:]; !radioSameUnits(got, want) {
+			t.Errorf("%s = %v\nwant a shuffle of the units %v", rubric, got, want)
 		}
 	}
 	check(rubSkyToday, "sky_news")
@@ -384,10 +391,10 @@ func TestRadioPlaylistExpiryAndMonth(t *testing.T) {
 	got := radioIDs(radioByRubric(pl, rubTransits))[1:]
 	want := []string{"transit-lens-q4/lagna/04-cancer", "transit-lens-q4/sun/02-taurus", "transit-lens-q4/moon/10-capricorn",
 		"transit-combo/10-saturn-for-capricorn-moon", "graha-watch/01-saturn", "graha-watch/03-rahu-ketu"}
-	if !reflect.DeepEqual(got, want) {
+	if !radioSameUnits(got, want) {
 		t.Errorf("transits = %v\nwant %v", got, want)
 	}
-	if got := radioIDs(radioByRubric(pl, rubMonth))[1:]; !reflect.DeepEqual(got, []string{
+	if got := radioIDs(radioByRubric(pl, rubMonth))[1:]; !radioSameUnits(got, []string{
 		"month/2026-11-moon/capricorn", "month/2026-11-sun/taurus", "month/2026-11-lagna/cancer"}) {
 		t.Errorf("month = %v", got)
 	}
@@ -417,20 +424,42 @@ func TestRadioPlaylistExpiryAndMonth(t *testing.T) {
 	}
 }
 
-func TestRadioPlaylistYogasCap(t *testing.T) {
+func TestRadioPlaylistAllYogas(t *testing.T) {
 	dir := radioTestDir(t, "2026-10-13")
 	f := fixtureFacts(t) // server: Sasha Yoga, Adhi Yoga
 	extra := []string{"Adhi Yoga", "No Such Yoga", "Gaja Kesari Yoga", "Hamsa Yoga", "Malavya Yoga", "Ruchaka Yoga", "Bhadra Yoga"}
 	pl := radioBuild(t, dir, f, radioDay("2026-10-13"), "en", nil, extra)
-	// en: no language note; a yoga without a yoga-name track plays without it.
+	// owner 2026-11-18: every yoga of the chart with a catalog insert plays (no cap of 5);
+	// en: no language note; a yoga without a yoga-name track plays without it; unknown ones are skipped.
 	got := radioIDs(radioByRubric(pl, rubYogas))[1:]
 	want := []string{"yoga-name/sasha-yoga", "insert_yoga_Sasha Yoga", "yoga-name/adhi-yoga", "insert_yoga_Adhi Yoga",
-		"insert_yoga_Gaja Kesari Yoga", "insert_yoga_Hamsa Yoga", "insert_yoga_Malavya Yoga"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("yogas = %v\nwant %v", got, want)
+		"insert_yoga_Gaja Kesari Yoga", "insert_yoga_Hamsa Yoga", "insert_yoga_Malavya Yoga",
+		"insert_yoga_Ruchaka Yoga", "insert_yoga_Bhadra Yoga"}
+	if !radioSameUnits(got, want) {
+		t.Errorf("yogas = %v\nwant a shuffle of the units %v", got, want)
 	}
-	if len(pl.FactsUsed.Yogas) != 5 {
+	if len(pl.FactsUsed.Yogas) != 7 {
 		t.Errorf("facts_used.yogas = %v", pl.FactsUsed.Yogas)
+	}
+	// 7 yogas come in portions: never more than radioPortion+1 yoga units in a row of the playlist.
+	run, maxRun := 0, 0
+	prevBlock := ""
+	for _, it := range pl.Items {
+		if it.Block == prevBlock {
+			continue
+		}
+		prevBlock = it.Block
+		if it.Rubric == rubYogas {
+			run++
+		} else {
+			run = 0
+		}
+		if run > maxRun {
+			maxRun = run
+		}
+	}
+	if maxRun > radioPortion+1 {
+		t.Errorf("%d yoga units in a row: want portions of about %d", maxRun, radioPortion)
 	}
 }
 
@@ -898,6 +927,7 @@ func radioCheckOrder(t *testing.T, pl *radioPlaylist, heard map[string]bool) []s
 		t.Errorf("blocks %v: want ident first, closing last", blocks)
 	}
 	if heard != nil {
+		// Every unheard unit plays before any heard one (rounds of portions).
 		inHeard := false
 		for _, b := range blocks[1 : len(blocks)-1] {
 			if heard[b] {
@@ -949,16 +979,27 @@ func TestRadioShuffleBag(t *testing.T) {
 	// Block ids name the content: stable across days while the texts stay
 	// (lagna, dasha, nakshatra...), new when the text changes (the lead
 	// variant is not part of the id).
-	byRubric := func(pl *radioPlaylist) map[string]string {
-		m := map[string]string{}
+	byRubric := func(pl *radioPlaylist) map[string]string { // rubric -> its sorted unit block ids
+		ids := map[string][]string{}
 		for _, it := range pl.Items {
-			m[it.Rubric] = it.Block
+			if n := len(ids[it.Rubric]); n == 0 || ids[it.Rubric][n-1] != it.Block {
+				ids[it.Rubric] = append(ids[it.Rubric], it.Block)
+			}
+		}
+		m := map[string]string{}
+		for r, v := range ids {
+			sort.Strings(v)
+			m[r] = strings.Join(v, ",")
 		}
 		return m
 	}
 	d1, d2 := byRubric(build("2026-10-13", "x", nil, "")), byRubric(build("2026-10-20", "y", nil, ""))
 	for _, r := range []string{rubLagna, rubDasha, rubNakshatra, rubYogas, rubPlanetHouse, rubConjunction, rubMonth} {
-		if d1[r] == "" || d1[r] != d2[r] || !strings.HasPrefix(d1[r], r+":") || !radioBlockReqRe.MatchString(d1[r]) {
+		ok := d1[r] != "" && d1[r] == d2[r]
+		for _, id := range strings.Split(d1[r], ",") {
+			ok = ok && strings.HasPrefix(id, r+":") && radioBlockReqRe.MatchString(id)
+		}
+		if !ok {
 			t.Errorf("%s block: %q on 13.10, %q on 20.10", r, d1[r], d2[r])
 		}
 	}
@@ -1017,6 +1058,37 @@ func TestRadioShuffleBag(t *testing.T) {
 	if got := radioCheckOrder(t, build("2026-10-13", "o", only, middle[0]), only)[1]; got != middle[0] {
 		t.Errorf("the only unheard block %s must open, got %s", middle[0], got)
 	}
+}
+
+// radioSameUnits: got and want hold the same shuffle units in any order (a
+// yoga name stays with the insert after it; the language note, when wanted,
+// stands right before a catalog insert or the yoga name that opens one).
+func radioSameUnits(got, want []string) bool {
+	units := func(ids []string) ([]string, bool) {
+		var out []string
+		note, noteOK := false, true
+		for i := 0; i < len(ids); i++ {
+			id := ids[i]
+			if id == "lang_note" {
+				note = true
+				noteOK = i+1 < len(ids) && (strings.HasPrefix(ids[i+1], "insert_") || strings.HasPrefix(ids[i+1], "yoga-name/"))
+				continue
+			}
+			if strings.HasPrefix(id, "yoga-name/") && i+1 < len(ids) {
+				id += "+" + ids[i+1]
+				i++
+			}
+			out = append(out, id)
+		}
+		sort.Strings(out)
+		if note {
+			out = append(out, "lang_note")
+		}
+		return out, noteOK
+	}
+	g, ok := units(got)
+	w, _ := units(want)
+	return ok && reflect.DeepEqual(g, w)
 }
 
 // radioTestBlocks: one-item groups with the given stations, ids b0, b1...
@@ -1240,5 +1312,53 @@ func TestRadioWaveOnlyOwnPlacements(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Error("no placement-tagged tracks in the wave — the invariant checked nothing")
+	}
+}
+
+// Owner 2026-11-18: «выборка без возврата до тех пор, пока всё не прослушает».
+// A listener who hears the first few units of every start, start after start,
+// hears every unit of the chart once before any repeats; and the units inside
+// a rubric come in a different order for different nonces.
+func TestRadioWithoutReplacementAcrossStarts(t *testing.T) {
+	dir := radioTestDir(t, "2026-10-13")
+	f := fixtureFacts(t)
+	build := func(nonce string, heard map[string]bool) *radioPlaylist {
+		return radioBuildWith(t, dir, f, radioDay("2026-10-13"), "en", &radioFixtureBirth, nil, func(in *radioInputs) {
+			in.nonce, in.heard = nonce, heard
+		})
+	}
+	all := radioCheckOrder(t, build("all", nil), nil)
+	middle := all[1 : len(all)-1]
+
+	heard := map[string]bool{}
+	const perStart = 4 // the listener stops after four units
+	for start := 0; len(heard) < len(middle); start++ {
+		if start > len(middle) {
+			t.Fatalf("not everything heard after %d starts: %d of %d", start, len(heard), len(middle))
+		}
+		blocks := radioCheckOrder(t, build(fmt.Sprintf("s%d", start), heard), heard)
+		for _, b := range blocks[1:min(1+perStart, len(blocks)-1)] {
+			if len(heard) == len(middle) { // the round is complete: a new one may begin
+				break
+			}
+			if heard[b] {
+				t.Fatalf("start %d replays %s while %d of %d units are unheard", start, b, len(middle)-len(heard), len(middle))
+			}
+			heard[b] = true
+		}
+	}
+
+	orders := map[string]bool{}
+	for i := 0; i < 12; i++ {
+		var ids []string
+		for _, it := range radioByRubric(build(fmt.Sprintf("n%d", i), nil), rubPlanetHouse) {
+			if it.Kind != "lead" {
+				ids = append(ids, it.ID)
+			}
+		}
+		orders[strings.Join(ids, ",")] = true
+	}
+	if len(orders) < 3 {
+		t.Errorf("planet_house: 12 nonces gave %d unit orders, want the units shuffled", len(orders))
 	}
 }
