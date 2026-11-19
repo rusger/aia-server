@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // setupSpeechTest gives each test a fresh ledger, fresh breakers and fake
@@ -41,6 +42,21 @@ func setupSpeechTest(t *testing.T, azure, groq http.HandlerFunc) {
 	speechAzureSTTURL = func(string) string { return az.URL + "/stt" }
 	speechGroqURL = gq.URL + "/groq"
 	speechToWav = func(in []byte) ([]byte, error) { return in, nil }
+	// the live provider switch: never the cwd file, never a value cached by
+	// an earlier test
+	t.Setenv("SPEECH_TTS_PROVIDER_FILE", filepath.Join(t.TempDir(), "no-speech-tts-provider"))
+	speechTTSProviderVal, speechTTSProviderRead = "", time.Time{}
+	t.Cleanup(func() { speechTTSProviderVal, speechTTSProviderRead = "", time.Time{} })
+	// never a real OpenAI call or a background api_calls write from a test
+	oldFetch, oldLog := speechOpenAIFetch, speechLogAPICall
+	speechOpenAIFetch = func(model, voice, instructions, text string) ([]byte, error) {
+		t.Errorf("OpenAI must not be called")
+		return nil, io.ErrUnexpectedEOF
+	}
+	speechLogAPICall = func(deviceID, callType, model string, p, c, tot, cached int) {}
+	t.Cleanup(func() {
+		speechOpenAIFetch, speechLogAPICall = oldFetch, oldLog
+	})
 	t.Cleanup(func() {
 		az.Close()
 		gq.Close()
@@ -479,5 +495,243 @@ func TestSpeechFFmpegToWav16k(t *testing.T) {
 	}
 	if _, err := ffmpegToWav16k([]byte("not audio")); err == nil {
 		t.Error("garbage must fail to convert")
+	}
+}
+
+// --- OpenAI provider (A138, owner 19.11.2026) ---
+
+func speechOpenAIConfig() speechConfig {
+	c := speechTestConfig()
+	c.ttsProvider, c.openaiKey = speechProviderOpenAI, "sk-test"
+	return c
+}
+
+type speechFetchCall struct{ model, voice, instructions, text string }
+
+// stubOpenAI records every OpenAI call and answers with reply(text).
+func stubOpenAI(t *testing.T, reply func(text string) ([]byte, error)) (calls func() []speechFetchCall, logged func() [][2]interface{}) {
+	t.Helper()
+	var mu sync.Mutex
+	var got []speechFetchCall
+	var logs [][2]interface{}
+	speechOpenAIFetch = func(model, voice, instructions, text string) ([]byte, error) {
+		mu.Lock()
+		got = append(got, speechFetchCall{model, voice, instructions, text})
+		mu.Unlock()
+		return reply(text)
+	}
+	speechLogAPICall = func(deviceID, callType, model string, p, c, tot, cached int) {
+		mu.Lock()
+		logs = append(logs, [2]interface{}{callType + "|" + model + "|" + deviceID, p})
+		mu.Unlock()
+	}
+	return func() []speechFetchCall { mu.Lock(); defer mu.Unlock(); return append([]speechFetchCall(nil), got...) },
+		func() [][2]interface{} { mu.Lock(); defer mu.Unlock(); return append([][2]interface{}(nil), logs...) }
+}
+
+func TestSpeechOpenAISuccessBooksAndLogs(t *testing.T) {
+	setupSpeechTest(t, failHandler(t, "azure"), failHandler(t, "groq"))
+	calls, logged := stubOpenAI(t, func(string) ([]byte, error) { return []byte("MP3"), nil })
+	cfg := speechOpenAIConfig()
+	audio, why := speechSynthesize("dev1", "  Привет, Astrolytix!  ", "ru-RU", cfg, time.Now())
+	if why != "" || string(audio) != "MP3" {
+		t.Fatalf("got %q / %q", audio, why)
+	}
+	c := calls()
+	if len(c) != 1 || c[0].model != ttsModel || c[0].voice != "nova" || c[0].instructions != ttsInstructions {
+		t.Fatalf("calls: %+v", c)
+	}
+	if strings.Contains(c[0].text, "Astrolytix") || !strings.Contains(c[0].text, "Привет") {
+		t.Errorf("ru text must carry the brand in Cyrillic (radioSayBrand): %q", c[0].text)
+	}
+	chars := len([]rune("Привет, Astrolytix!"))
+	n, units := speechRows(t, `kind='tts' AND provider='openai' AND ok=1 AND device_id='dev1' AND lang='ru'`)
+	if n != 1 || units != chars {
+		t.Errorf("ledger: %d rows, %d units, want 1/%d", n, units, chars)
+	}
+	if n, _ := speechRows(t, `provider='azure'`); n != 0 {
+		t.Errorf("azure rows: %d", n)
+	}
+	l := logged()
+	if len(l) != 1 || l[0][0] != speechOpenAICallType+"|"+ttsModel+"|dev1" || l[0][1] != len([]rune(c[0].text)) {
+		t.Errorf("api_calls log: %+v", l)
+	}
+}
+
+func TestSpeechOpenAIVoices(t *testing.T) {
+	setupSpeechTest(t, failHandler(t, "azure"), failHandler(t, "groq"))
+	calls, _ := stubOpenAI(t, func(string) ([]byte, error) { return []byte("MP3"), nil })
+	cfg := speechOpenAIConfig()
+	now := time.Now()
+	for _, tc := range []struct{ lang, gender, voice string }{
+		{"ru", "", "nova"}, {"ru", "m", "onyx"}, {"de", "f", "nova"}, {"hi", "male", "onyx"},
+		{"en", "", "shimmer"}, {"en-US", "m", "ash"},
+	} {
+		if _, why := speechSynthesizeAs("d-"+tc.lang+tc.gender, "hello", tc.lang, tc.gender, cfg, now); why != "" {
+			t.Fatalf("%+v: %s", tc, why)
+		}
+		c := calls()
+		if got := c[len(c)-1].voice; got != tc.voice {
+			t.Errorf("%s/%q → %s, want %s", tc.lang, tc.gender, got, tc.voice)
+		}
+	}
+}
+
+func TestSpeechOpenAIRefusals(t *testing.T) {
+	setupSpeechTest(t, failHandler(t, "azure"), failHandler(t, "groq"))
+	now := time.Now()
+	noKey := speechOpenAIConfig()
+	noKey.openaiKey = ""
+	if _, why := speechSynthesize("d", "hi", "en", noKey, now); why != "openai_no_key" {
+		t.Errorf("no key: %q", why)
+	}
+	// the Azure-only F0 rule does not gate OpenAI, the shared validation does
+	s0 := speechOpenAIConfig()
+	s0.tier = "S0"
+	calls, _ := stubOpenAI(t, func(string) ([]byte, error) { return []byte("MP3"), nil })
+	if _, why := speechSynthesize("d", "hi", "en", s0, now); why != "" {
+		t.Errorf("openai with azure S0: %q", why)
+	}
+	if _, why := speechSynthesize("d", "hi", "tr", s0, now); why != "unsupported_lang" {
+		t.Errorf("lang: %q", why)
+	}
+	if len(calls()) != 1 {
+		t.Errorf("calls: %d", len(calls()))
+	}
+}
+
+func TestSpeechOpenAIMonthCapSeparateFromAzure(t *testing.T) {
+	setupSpeechTest(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("AZ")) }, failHandler(t, "groq"))
+	stubOpenAI(t, func(string) ([]byte, error) { return []byte("MP3"), nil })
+	now := time.Now()
+	az := speechTestConfig()
+	az.ttsMonth = 5
+	if _, why := speechSynthesize("a", "hello", "en", az, now); why != "" { // azure uses its 5
+		t.Fatalf("azure: %q", why)
+	}
+	oa := speechOpenAIConfig()
+	oa.ttsMonth = 5
+	if _, why := speechSynthesize("b", "hello", "en", oa, now); why != "" {
+		t.Fatalf("openai must have its own month: %q", why)
+	}
+	if _, why := speechSynthesize("c", "hello", "en", oa, now); why != "openai_month_limit" {
+		t.Errorf("openai over its month: %q", why)
+	}
+	day := speechOpenAIConfig()
+	day.ttsDevDay = 7 // device day counts across providers: "a" spent 5 on azure
+	if _, why := speechSynthesize("a", "hey", "en", day, now); why != "device_day_limit" {
+		t.Errorf("device day across providers: %q", why)
+	}
+}
+
+func TestSpeechOpenAIErrorKeepsReservation(t *testing.T) {
+	setupSpeechTest(t, failHandler(t, "azure"), failHandler(t, "groq"))
+	_, logged := stubOpenAI(t, func(string) ([]byte, error) { return nil, io.ErrUnexpectedEOF })
+	if _, why := speechSynthesize("d", "hello", "en", speechOpenAIConfig(), time.Now()); why != "openai_error" {
+		t.Fatalf("got %q", why)
+	}
+	if n, units := speechRows(t, `provider='openai' AND ok=0 AND reason='openai_error'`); n != 1 || units != 5 {
+		t.Errorf("reservation must stay booked: %d rows %d units", n, units)
+	}
+	if l := logged(); len(l) != 0 {
+		t.Errorf("nothing billed, nothing logged: %+v", l)
+	}
+}
+
+func TestSpeechOpenAILongTextInPieces(t *testing.T) {
+	setupSpeechTest(t, failHandler(t, "azure"), failHandler(t, "groq"))
+	calls, logged := stubOpenAI(t, func(text string) ([]byte, error) {
+		// pieces 2.. carry an ID3 tag that must be stripped when joined
+		return append([]byte("ID3\x04\x00\x00\x00\x00\x00\x02TT"), []byte("<"+strings.Fields(text)[0]+">")...), nil
+	})
+	var b strings.Builder
+	for i := 0; utf8.RuneCountInString(b.String()) < 4800; i++ {
+		b.WriteString("Фраза" + string(rune('A'+i%26)) + " про Сатурн и Луну в доме. ")
+	}
+	text := strings.TrimSpace(b.String())
+	if utf8len := len([]rune(text)); utf8len <= speechOpenAIChunkRunes || utf8len > speechTTSMaxRunes {
+		t.Fatalf("test text %d runes", utf8len)
+	}
+	audio, why := speechSynthesize("d", text, "ru", speechOpenAIConfig(), time.Now())
+	if why != "" {
+		t.Fatalf("got %q", why)
+	}
+	c := calls()
+	if len(c) != 2 {
+		t.Fatalf("want 2 pieces, got %d", len(c))
+	}
+	sum := 0
+	for _, x := range c {
+		if len([]rune(x.text)) > speechOpenAIChunkRunes || !strings.HasSuffix(x.text, ".") {
+			t.Errorf("piece of %d runes, must end on a sentence: …%q", len([]rune(x.text)), x.text[len(x.text)-10:])
+		}
+		sum += len([]rune(x.text))
+	}
+	if strings.Count(string(audio), "ID3") != 1 || !strings.HasPrefix(string(audio), "ID3") {
+		t.Errorf("only the first piece keeps its ID3 tag: %q", audio)
+	}
+	if l := logged(); len(l) != 1 || l[0][1] != sum {
+		t.Errorf("api_calls: %+v, want %d chars", l, sum)
+	}
+}
+
+func TestSpeechChunks(t *testing.T) {
+	if got := speechChunks("Short.", 10); len(got) != 1 || got[0] != "Short." {
+		t.Errorf("short: %q", got)
+	}
+	got := speechChunks("aaaa bbbb cccc dddd", 10) // no sentence end → spaces
+	if strings.Join(got, " ") != "aaaa bbbb cccc dddd" {
+		t.Errorf("space cut lost text: %q", got)
+	}
+	for _, p := range got {
+		if len([]rune(p)) > 10 {
+			t.Errorf("piece too long: %q", p)
+		}
+	}
+	got = speechChunks(strings.Repeat("я", 25), 10) // no space → hard cut
+	if len(got) != 3 || strings.Join(got, "") != strings.Repeat("я", 25) {
+		t.Errorf("hard cut: %q", got)
+	}
+	got = speechChunks("一二三。四五六。七八九十", 5)
+	if strings.Join(got, "") != "一二三。四五六。七八九十" || got[0] != "一二三。" {
+		t.Errorf("CJK: %q", got)
+	}
+}
+
+func TestSpeechTTSProviderSwitchLive(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "speech-tts-provider")
+	t.Setenv("SPEECH_TTS_PROVIDER_FILE", f)
+	reset := func() { speechTTSProviderVal, speechTTSProviderRead = "", time.Time{} }
+	reset()
+	t.Cleanup(reset)
+	now := time.Now()
+	if got := speechTTSProviderNow(now); got != "azure" {
+		t.Fatalf("no file: %s", got)
+	}
+	if err := os.WriteFile(f, []byte(" OpenAI\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := speechTTSProviderNow(now.Add(10 * time.Second)); got != "azure" {
+		t.Errorf("cached for 30 s: %s", got)
+	}
+	if got := speechTTSProviderNow(now.Add(31 * time.Second)); got != "openai" {
+		t.Errorf("after ttl: %s", got)
+	}
+	os.WriteFile(f, []byte("elevenlabs"), 0o644)
+	if got := speechTTSProviderNow(now.Add(62 * time.Second)); got != "azure" {
+		t.Errorf("garbage: %s", got)
+	}
+	os.WriteFile(f, []byte("openai"), 0o644)
+	speechTTSProviderNow(now.Add(93 * time.Second))
+	os.Remove(f)
+	if got := speechTTSProviderNow(now.Add(124 * time.Second)); got != "azure" {
+		t.Errorf("file removed = rollback: %s", got)
+	}
+	// the request config carries it
+	reset()
+	os.WriteFile(f, []byte("openai"), 0o644)
+	if got := speechConfigFromEnv().ttsProvider; got != "openai" {
+		t.Errorf("config: %s", got)
 	}
 }
