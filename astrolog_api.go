@@ -10094,10 +10094,10 @@ func main() {
         log.Printf("🔒 Astrolog API server starting with HTTPS on port %s", PORT)
         log.Printf("   Certificate: %s", TLS_CERT_FILE)
         log.Printf("   Private Key: %s", TLS_KEY_FILE)
-        log.Fatal(http.ListenAndServeTLS(":"+PORT, TLS_CERT_FILE, TLS_KEY_FILE, handler))
+        serveGraceful(PORT, handler, TLS_CERT_FILE, TLS_KEY_FILE)   // A147: socket from systemd + drain on SIGTERM
     } else {
         log.Printf("⚠️  Astrolog API server starting with HTTP (insecure) on port %s", PORT)
         log.Printf("   Set USE_HTTPS=true, TLS_CERT_FILE, and TLS_KEY_FILE for secure HTTPS")
-        log.Fatal(http.ListenAndServe(":"+PORT, handler))
+        serveGraceful(PORT, handler, "", "")   // A147: socket from systemd + drain on SIGTERM
     }
 }
