@@ -42,6 +42,11 @@ func setupSpeechTest(t *testing.T, azure, groq http.HandlerFunc) {
 	speechAzureSTTURL = func(string) string { return az.URL + "/stt" }
 	speechGroqURL = gq.URL + "/groq"
 	speechToWav = func(in []byte) ([]byte, error) { return in, nil }
+	// the live provider switch: never the cwd file, never a value cached by
+	// an earlier test
+	t.Setenv("SPEECH_TTS_PROVIDER_FILE", filepath.Join(t.TempDir(), "no-speech-tts-provider"))
+	speechTTSProviderVal, speechTTSProviderRead = "", time.Time{}
+	t.Cleanup(func() { speechTTSProviderVal, speechTTSProviderRead = "", time.Time{} })
 	// never a real OpenAI call or a background api_calls write from a test
 	oldFetch, oldLog := speechOpenAIFetch, speechLogAPICall
 	speechOpenAIFetch = func(model, voice, instructions, text string) ([]byte, error) {
