@@ -294,8 +294,11 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 		// Speech (tts.go) is logged with the text's CHARACTERS as prompt tokens;
 		// audio output is billed per audio token, which the API does not
 		// report. Calibrated 24.09.2026 on the server: 9 sentences ≈ 520 chars
-		// → 35–47 s ≈ $0.010 at the list price ($0.015/min) → ≈ $19 per 1M chars.
-		return float64(promptToks) / 1e6 * 19.0
+		// → 35–47 s ≈ $0.010 at the list price ($0.015/min) → ≈ $19 per 1M chars;
+		// reconciled with the OpenAI bill 04.10.2026 (voice $1.64 for the
+		// period's characters) → $22 per 1M chars. Chat voice (speech.go,
+		// call_type speech_tts) is logged the same way.
+		return float64(promptToks) / 1e6 * 22.0
 	case strings.Contains(model, "transcribe"):
 		// Radio calls (radio_call.go) log the clip's MILLISECONDS of audio as prompt tokens;
 		// gpt-4o-mini-transcribe list price ≈ $0.003 per audio minute (estimate, not reconciled yet).

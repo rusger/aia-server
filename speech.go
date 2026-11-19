@@ -21,6 +21,17 @@ package main
 //     decision 27.10.2026). Runs only with GROQ_API_KEY set and under its own
 //     monthly ceiling (APP_GROQ_MONTH_SECONDS).
 //
+// Text to speech provider (owner 19.11.2026, A138): «перейдём на … генерация
+// голоса … распознавание на лазури». The chats' voice may run on OpenAI
+// gpt-4o-mini-tts (the same model, endpoint and instructions as tts.go) while
+// speech to text stays on Azure F0. The provider is a LIVE switch, no restart:
+// the file SPEECH_TTS_PROVIDER_FILE (default ./speech-tts-provider) holds
+// "openai" or "azure", re-read every 30 s; no file / anything else = azure.
+// Rollback: echo azure > speech-tts-provider. OpenAI calls are booked in
+// speech_usage (provider 'openai', its own 250k-a-month cap) BEFORE the call,
+// like Azure, and every paid character is also logged in api_calls
+// (call_type speech_tts) so finance prices it.
+//
 // The key never leaves the server and is never logged. speech_usage (source
 // 'app') is the app's ledger; the bot keeps its own (tts_usage) and the
 // weekly report adds the two up.
@@ -74,6 +85,12 @@ const (
 	speechKindSTT          = "stt"
 	speechProviderAzure    = "azure"
 	speechProviderGroq     = "groq"
+	speechProviderOpenAI   = "openai"
+	speechTTSProviderTTL   = 30 * time.Second
+	speechOpenAICallType   = "speech_tts"
+	// gpt-4o-mini-tts takes at most 4096 characters per request: a longer
+	// answer goes as sentence-cut pieces, fetched in parallel, mp3s joined.
+	speechOpenAIChunkRunes = 3500
 )
 
 // Endpoints — package vars so tests can point them at httptest servers.
@@ -87,6 +104,12 @@ var (
 	speechGroqURL = "https://api.groq.com/openai/v1/audio/transcriptions"
 	// speechToWav converts an uploaded clip to 16 kHz mono PCM WAV (ffmpeg).
 	speechToWav = ffmpegToWav16k
+	// speechOpenAIFetch / speechLogAPICall — tts.go's OpenAI call and the
+	// api_calls logger; tests swap them.
+	speechOpenAIFetch = func(model, voice, instructions, text string) ([]byte, error) {
+		return ttsFetch(model, voice, instructions, text)
+	}
+	speechLogAPICall = logAPICallWithTokens
 )
 
 // speechVoices — one female neural voice per app language (owner 27.10.2026;
@@ -127,6 +150,7 @@ func speechLang(lang string) string {
 
 type speechConfig struct {
 	key, region, tier, groqKey               string
+	ttsProvider, openaiKey                   string
 	ttsMonth, ttsDevDay, sttMonth, sttDevDay int
 	groqMonth                                int
 }
@@ -148,16 +172,62 @@ func speechEnvInt(name string, def, ceiling int) int {
 
 func speechConfigFromEnv() speechConfig {
 	return speechConfig{
-		key:       strings.TrimSpace(os.Getenv("AZURE_SPEECH_KEY")),
-		region:    strings.ToLower(strings.TrimSpace(os.Getenv("AZURE_SPEECH_REGION"))),
-		tier:      strings.TrimSpace(os.Getenv("AZURE_SPEECH_TIER")),
-		groqKey:   strings.TrimSpace(os.Getenv("GROQ_API_KEY")),
-		ttsMonth:  speechEnvInt("APP_TTS_MONTH_CHARS", speechTTSMonthDefault, speechTTSMonthCeiling),
-		ttsDevDay: speechEnvInt("APP_TTS_DEVICE_DAY_CHARS", speechTTSDeviceDay, 0),
-		sttMonth:  speechEnvInt("APP_STT_MONTH_SECONDS", speechSTTMonthDefault, speechSTTMonthCeiling),
-		sttDevDay: speechEnvInt("APP_STT_DEVICE_DAY_SECONDS", speechSTTDeviceDay, 0),
-		groqMonth: speechEnvInt("APP_GROQ_MONTH_SECONDS", speechGroqMonthDefault, 0),
+		key:         strings.TrimSpace(os.Getenv("AZURE_SPEECH_KEY")),
+		region:      strings.ToLower(strings.TrimSpace(os.Getenv("AZURE_SPEECH_REGION"))),
+		tier:        strings.TrimSpace(os.Getenv("AZURE_SPEECH_TIER")),
+		groqKey:     strings.TrimSpace(os.Getenv("GROQ_API_KEY")),
+		openaiKey:   OPENAI_API_KEY,
+		ttsProvider: speechTTSProviderNow(time.Now()),
+		ttsMonth:    speechEnvInt("APP_TTS_MONTH_CHARS", speechTTSMonthDefault, speechTTSMonthCeiling),
+		ttsDevDay:   speechEnvInt("APP_TTS_DEVICE_DAY_CHARS", speechTTSDeviceDay, 0),
+		sttMonth:    speechEnvInt("APP_STT_MONTH_SECONDS", speechSTTMonthDefault, speechSTTMonthCeiling),
+		sttDevDay:   speechEnvInt("APP_STT_DEVICE_DAY_SECONDS", speechSTTDeviceDay, 0),
+		groqMonth:   speechEnvInt("APP_GROQ_MONTH_SECONDS", speechGroqMonthDefault, 0),
 	}
+}
+
+// --- live text to speech provider switch ---
+
+var (
+	speechTTSProviderMu   sync.Mutex
+	speechTTSProviderVal  string
+	speechTTSProviderRead time.Time
+)
+
+func speechTTSProviderFile() string {
+	if f := strings.TrimSpace(os.Getenv("SPEECH_TTS_PROVIDER_FILE")); f != "" {
+		return f
+	}
+	return "./speech-tts-provider"
+}
+
+// speechTTSProviderNow — "openai" when the switch file says so, else "azure".
+// Read at most once per speechTTSProviderTTL; a missing file is the normal
+// state (azure) and is not logged, any other read error is.
+func speechTTSProviderNow(now time.Time) string {
+	speechTTSProviderMu.Lock()
+	defer speechTTSProviderMu.Unlock()
+	if speechTTSProviderVal != "" && now.Sub(speechTTSProviderRead) < speechTTSProviderTTL && !now.Before(speechTTSProviderRead) {
+		return speechTTSProviderVal
+	}
+	val := speechProviderAzure
+	b, err := os.ReadFile(speechTTSProviderFile())
+	switch {
+	case err == nil:
+		switch v := strings.ToLower(strings.TrimSpace(string(b))); v {
+		case speechProviderOpenAI, speechProviderAzure:
+			val = v
+		default:
+			log.Printf("⚠️ speech: %s holds %q — using azure", speechTTSProviderFile(), trimForLog(v))
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		log.Printf("⚠️ speech: provider switch unreadable (%v) — using azure", err)
+	}
+	if val != speechTTSProviderVal && speechTTSProviderVal != "" {
+		log.Printf("🔀 speech tts provider: %s → %s", speechTTSProviderVal, val)
+	}
+	speechTTSProviderVal, speechTTSProviderRead = val, now
+	return val
 }
 
 // azureProblem — why Azure must not be called ("" = it may).
@@ -345,6 +415,9 @@ func speechSSML(locale, voice, text string) string {
 type speechTTSRequest struct {
 	Text string `json:"text"`
 	Lang string `json:"lang"`
+	// Gender "m" | "f" picks the OpenAI voice pair of the presenters
+	// (ttsVoiceFor); optional, anything else = female. Azure ignores it.
+	Gender string `json:"gender"`
 }
 
 func speechFail(w http.ResponseWriter, status int, reason string) {
@@ -366,7 +439,7 @@ func speechTTSHandler(w http.ResponseWriter, r *http.Request) {
 		speechFail(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	audio, reason := speechSynthesize(claims.DeviceID, req.Text, req.Lang, speechConfigFromEnv(), time.Now())
+	audio, reason := speechSynthesizeAs(claims.DeviceID, req.Text, req.Lang, req.Gender, speechConfigFromEnv(), time.Now())
 	if reason != "" {
 		speechFail(w, http.StatusServiceUnavailable, reason)
 		return
@@ -376,8 +449,13 @@ func speechTTSHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(audio)
 }
 
-// speechSynthesize returns mp3 bytes or the refusal reason.
+// speechSynthesize returns mp3 bytes or the refusal reason (female voice).
 func speechSynthesize(deviceID, text, lang string, cfg speechConfig, now time.Time) ([]byte, string) {
+	return speechSynthesizeAs(deviceID, text, lang, "", cfg, now)
+}
+
+// speechSynthesizeAs is speechSynthesize with the voice gender ("m" | "f").
+func speechSynthesizeAs(deviceID, text, lang, gender string, cfg speechConfig, now time.Time) ([]byte, string) {
 	if deviceID == "" {
 		// The day caps are per device: a token without one would share a
 		// single '' bucket with every other such token.
@@ -394,6 +472,9 @@ func speechSynthesize(deviceID, text, lang string, cfg speechConfig, now time.Ti
 		return nil, "empty_text"
 	case n > speechTTSMaxRunes:
 		return nil, "text_too_long"
+	}
+	if cfg.ttsProvider == speechProviderOpenAI {
+		return speechSynthesizeOpenAI(deviceID, text, l, gender, n, cfg, now)
 	}
 	if p := cfg.azureProblem(); p != "" {
 		return nil, p
@@ -444,6 +525,142 @@ func speechSynthesize(deviceID, text, lang string, cfg speechConfig, now time.Ti
 	}
 	speechSettle(id, true, "ok")
 	return audio, ""
+}
+
+// speechSynthesizeOpenAI — the OpenAI branch of speechSynthesizeAs (text
+// already normalised and within speechTTSMaxRunes; n = its runes).
+func speechSynthesizeOpenAI(deviceID, text, l, gender string, n int, cfg speechConfig, now time.Time) ([]byte, string) {
+	if cfg.openaiKey == "" {
+		return nil, "openai_no_key"
+	}
+	if !speechTTSBreaker.takeRate(now, speechTTSPerMinute) {
+		return nil, "rate_limited"
+	}
+	id, over, err := speechReserve(deviceID, speechKindTTS, speechProviderOpenAI, l, n, cfg.ttsMonth, cfg.ttsDevDay, now)
+	if err != nil {
+		log.Printf("⚠️ speech tts reserve: %v", err)
+		return nil, "ledger_error"
+	}
+	if over != "" {
+		return nil, over
+	}
+	voice := ttsVoiceFor(gender, l)
+	chunks := speechChunks(radioSayBrand(text, l), speechOpenAIChunkRunes)
+	type part struct {
+		audio []byte
+		err   error
+	}
+	parts := make([]part, len(chunks))
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		for i, c := range chunks {
+			wg.Add(1)
+			go func(i int, c string) {
+				defer wg.Done()
+				a, err := speechOpenAIFetch(ttsModel, voice, ttsInstructions, c)
+				parts[i] = part{a, err}
+			}(i, c)
+		}
+		wg.Wait()
+		// what OpenAI billed — every piece that came back, even when another
+		// failed or the request already timed out
+		paid := 0
+		for i, p := range parts {
+			if p.err == nil && len(p.audio) > 0 {
+				paid += utf8.RuneCountInString(chunks[i])
+			}
+		}
+		if paid > 0 {
+			speechLogAPICall(deviceID, speechOpenAICallType, ttsModel, paid, 0, paid, 0)
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(speechTTSTimeout):
+		speechSettle(id, false, "openai_timeout")
+		log.Printf("⚠️ speech tts: OpenAI timeout, device=%s chars=%d parts=%d", deviceID, n, len(chunks))
+		return nil, "openai_timeout"
+	}
+	var out bytes.Buffer
+	failed := ""
+	for i, p := range parts {
+		if p.err != nil || len(p.audio) == 0 {
+			if failed == "" {
+				failed = fmt.Sprintf("part %d/%d: %v", i+1, len(parts), p.err)
+			}
+			continue
+		}
+		a := p.audio
+		if i > 0 {
+			a = speechStripID3(a)
+		}
+		out.Write(a)
+	}
+	if failed != "" {
+		speechSettle(id, false, "openai_error")
+		log.Printf("⚠️ speech tts: OpenAI %s", trimForLog(failed))
+		return nil, "openai_error"
+	}
+	if out.Len() > speechMaxAudioBytes {
+		speechSettle(id, false, "openai_bad_audio")
+		return nil, "openai_error"
+	}
+	speechSettle(id, true, "ok")
+	return out.Bytes(), ""
+}
+
+// speechSentenceEnd — where a piece may end: after . ! ? … ; or the
+// Devanagari danda followed by whitespace or the end, or right after a CJK
+// full stop (CJK text has no spaces).
+var speechSentenceEnd = regexp.MustCompile(`[.!?…;।]+["»”')\]]*(\s|$)|[。！？]+[」』”）]*`)
+
+// speechChunks cuts text into pieces of at most max runes, at a sentence end
+// when one exists in the window, else at a space, else hard.
+func speechChunks(text string, max int) []string {
+	var out []string
+	r := []rune(text)
+	for len(r) > max {
+		win := string(r[:max])
+		cut := -1
+		for _, m := range speechSentenceEnd.FindAllStringIndex(win, -1) {
+			cut = utf8.RuneCountInString(win[:m[1]])
+		}
+		if cut <= max/3 {
+			if sp := strings.LastIndex(win, " "); sp > 0 {
+				cut = utf8.RuneCountInString(win[:sp+1])
+			}
+		}
+		if cut <= 0 {
+			cut = max
+		}
+		if p := strings.TrimSpace(string(r[:cut])); p != "" {
+			out = append(out, p)
+		}
+		r = r[cut:]
+	}
+	if p := strings.TrimSpace(string(r)); p != "" {
+		out = append(out, p)
+	}
+	return out
+}
+
+// speechStripID3 drops a leading ID3v2 tag so joined mp3 pieces stay one
+// clean frame stream.
+func speechStripID3(a []byte) []byte {
+	if len(a) < 10 || string(a[:3]) != "ID3" {
+		return a
+	}
+	size := int(a[6]&0x7f)<<21 | int(a[7]&0x7f)<<14 | int(a[8]&0x7f)<<7 | int(a[9]&0x7f)
+	end := 10 + size
+	if a[5]&0x10 != 0 {
+		end += 10 // footer
+	}
+	if end > len(a) {
+		return a
+	}
+	return a[end:]
 }
 
 // --- speech to text ---
