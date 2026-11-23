@@ -889,6 +889,19 @@ func emitDeviceLimitEvent(deviceID, platform string, activeCount int) {
 }
 
 // Initialize database
+// usersDBDSN: shared connection options for users.db (server, push CLI, admin CLI).
+// _txlock=immediate makes every db.Begin() a BEGIN IMMEDIATE: the transaction takes
+// the write lock up front and waits on busy_timeout. With the default deferred
+// BEGIN a transaction that reads first and writes later (recordPurchase:
+// priorPurchaseRows then INSERT; google_reverify: SELECT then UPDATE) cannot be
+// upgraded once another writer has gone ahead, and SQLite returns SQLITE_BUSY at
+// once — busy_timeout does not cover the upgrade. Two identical record-purchase
+// requests in the same millisecond hit exactly that (A121: 500 «database is
+// locked» 17.11, 18.11, 22.11.2026).
+func usersDBDSN(path string) string {
+    return "file:" + path + "?_pragma=busy_timeout(5000)&_txlock=immediate"
+}
+
 func initDB() error {
     var err error
     // WAL + busy_timeout: database/sql runs a CONNECTION POOL, and without a
@@ -897,8 +910,7 @@ func initDB() error {
     // logging paths (verified in journal 2026-08-28). WAL lets readers run
     // alongside the single writer; busy_timeout makes contending writers
     // wait up to 5s instead of erroring. _pragma applies per new connection.
-    db, err = sql.Open("sqlite",
-        "file:./users.db?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
+    db, err = sql.Open("sqlite", usersDBDSN("./users.db")+"&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
     if err != nil {
         return fmt.Errorf("failed to open database: %v", err)
     }

@@ -47,7 +47,8 @@ func main() {
     }
 
     // Open database
-    db, err := sql.Open("sqlite", "./users.db")
+    // same options as usersDBDSN in astrolog_api.go (built separately, go:build ignore)
+    db, err := sql.Open("sqlite", "file:./users.db?_pragma=busy_timeout(5000)&_txlock=immediate")
     if err != nil {
         log.Fatalf("Failed to open database: %v", err)
     }
