@@ -233,32 +233,113 @@ func TestPultPage(t *testing.T) {
 	}
 }
 
-func TestPultStateCollectsAll(t *testing.T) {
+func TestPultStateOnlyActiveNewestFirst(t *testing.T) {
 	r, d := setupPult(t)
 	pultSeed(t, d)
-	if code, _, raw := pultDo(t, r, "POST", "/api/admin/pult/reply", `{"id":"b2","ok":true,"rev":1}`); code != 200 {
-		t.Fatalf("reply: %d %s", code, raw)
+	for _, q := range []string{
+		`INSERT INTO items VALUES('b3','{"title":"Новый","links":[{"label":"x","url":"pult:rep-1"}]}',1,'2026-11-17T12:00:00Z')`,
+		`INSERT INTO items VALUES('old','{"title":"Погашен","body":"длинное тело","active":false}',4,'` + pultNow() + `')`,
+		`INSERT INTO items VALUES('ancient','{"title":"Давно","active":false}',1,'2026-01-01T00:00:00Z')`,
+		`INSERT INTO replies VALUES('old','{"ok":true,"text":"t"}',1,'2026-11-17T12:00:00Z')`,
+	} {
+		if _, err := d.Exec(q); err != nil {
+			t.Fatal(err)
+		}
 	}
 	code, out, raw := pultDo(t, r, "GET", "/api/admin/pult/state", "")
 	if code != 200 {
 		t.Fatalf("state: %d %s", code, raw)
 	}
 	items, _ := out["items"].([]interface{})
-	if len(items) != 2 {
-		t.Fatalf("items: %s", raw)
+	var ids []string
+	for _, x := range items {
+		ids = append(ids, x.(map[string]interface{})["id"].(string))
 	}
-	b1, _ := items[0].(map[string]interface{})
-	if b1["id"] != "b1" || b1["title"] != "Секретный блок" || b1["version"] != float64(3) || b1["rev"] != float64(2) {
+	// newest first by updated_at, then id; closed blocks absent
+	if strings.Join(ids, ",") != "b3,b1,b2" {
+		t.Fatalf("items order/filter: %v", ids)
+	}
+	b1, _ := items[1].(map[string]interface{})
+	if b1["title"] != "Секретный блок" || b1["version"] != float64(3) || b1["rev"] != float64(2) || b1["updated_at"] != "2026-11-17T10:00:00Z" {
 		t.Fatalf("item b1: %v", b1)
 	}
-	replies, _ := out["replies"].(map[string]interface{})
-	if rb2, _ := replies["b2"].(map[string]interface{}); rb2 == nil || rb2["ok"] != true {
-		t.Fatalf("replies: %v", replies)
+	if rp, _ := out["replies"].(map[string]interface{}); len(rp) != 0 {
+		t.Fatalf("replies of closed blocks leaked: %v", rp)
 	}
-	pages, _ := out["pages"].([]interface{})
-	p0, _ := pages[0].(map[string]interface{})
-	if len(pages) != 1 || p0["slug"] != "rep-1" || p0["session"] != "sess-x" || p0["html"] != nil {
-		t.Fatalf("pages: %v", pages)
+	// only the closed block of the last 14 days is counted; pages are not in state at all
+	if out["archived"] != float64(1) || out["pages"] != nil {
+		t.Fatalf("archived/pages: %s", raw)
+	}
+	if strings.Contains(raw, "длинное тело") || strings.Contains(raw, "Привет") {
+		t.Fatalf("state carries closed bodies or page html: %s", raw)
+	}
+}
+
+func TestPultReplyClosesBlock(t *testing.T) {
+	r, d := setupPult(t)
+	pultSeed(t, d)
+	// b1 has rev 2: an answer to the older rev 1 (block updated while the owner looked) keeps it open
+	code, out, raw := pultDo(t, r, "POST", "/api/admin/pult/reply", `{"id":"b1","ok":true,"rev":1}`)
+	if code != 200 || out["closed"] != false {
+		t.Fatalf("stale reply: %d %s", code, raw)
+	}
+	code, out, raw = pultDo(t, r, "POST", "/api/admin/pult/reply", `{"id":"b1","ok":false,"text":"переделать фон","rev":2}`)
+	if code != 200 || out["closed"] != true {
+		t.Fatalf("reply: %d %s", code, raw)
+	}
+	var data string
+	var version int
+	if err := d.QueryRow(`SELECT data, version FROM items WHERE id='b1'`).Scan(&data, &version); err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(data), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["active"] != false || m["closed_at"] == nil || m["title"] != "Секретный блок" || version != 4 {
+		t.Fatalf("closed item: %v v%d", m, version)
+	}
+	// a second answer to a closed block is still stored, the block stays closed and is not touched again
+	code, out, _ = pultDo(t, r, "POST", "/api/admin/pult/reply", `{"id":"b1","ok":true,"rev":2}`)
+	if code != 200 || out["closed"] != false {
+		t.Fatalf("reply to closed: %d %v", code, out)
+	}
+	// a reply to an unknown id still lands (block removed while the owner typed)
+	if code, out, _ := pultDo(t, r, "POST", "/api/admin/pult/reply", `{"id":"gone","ok":true}`); code != 200 || out["closed"] != false {
+		t.Fatalf("unknown id: %d %v", code, out)
+	}
+	_, st, _ := pultDo(t, r, "GET", "/api/admin/pult/state", "")
+	items, _ := st["items"].([]interface{})
+	if len(items) != 1 || items[0].(map[string]interface{})["id"] != "b2" || st["archived"] != float64(1) {
+		t.Fatalf("state after close: %v", st)
+	}
+
+	code, arc, raw := pultDo(t, r, "GET", "/api/admin/pult/archive", "")
+	if code != 200 || arc["days"] != float64(14) {
+		t.Fatalf("archive: %d %s", code, raw)
+	}
+	xs, _ := arc["items"].([]interface{})
+	if len(xs) != 1 {
+		t.Fatalf("archive items: %s", raw)
+	}
+	a0 := xs[0].(map[string]interface{})
+	if a0["id"] != "b1" || a0["task"] != "A1" || a0["title"] != "Секретный блок" || a0["ok"] != true || a0["closed_at"] == "" {
+		t.Fatalf("archive line: %v", a0)
+	}
+	if _, has := a0["body"]; has {
+		t.Fatalf("archive carries body: %v", a0)
+	}
+	if code, _, _ := pultDoTok(t, r, "GET", "/api/admin/pult/archive", "", ""); code != 403 {
+		t.Fatalf("archive without token: %d", code)
+	}
+}
+
+func TestPultCut(t *testing.T) {
+	if got := pultCut("  один\n два  три ", 7); got != "один дв…" {
+		t.Fatalf("pultCut: %q", got)
+	}
+	if got := pultCut("коротко", 10); got != "коротко" {
+		t.Fatalf("pultCut short: %q", got)
 	}
 }
 

@@ -62,9 +62,12 @@ button[disabled]{opacity:.5;cursor:default}
 .foot h2{font:600 17px/1.3 var(--display);margin:0}
 .login{max-width:420px}
 .login label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--mut)}
-.plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.plist a{color:var(--accent);text-decoration:none;font-weight:500;overflow-wrap:anywhere}
-.plist .st{display:block}
+.llist,.alist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.llist li,.alist li{overflow-wrap:anywhere}
+.llist a{color:var(--accent);text-decoration:none;font-weight:500}
+.llist a:hover,.llist a:focus-visible{text-decoration:underline}
+.llist .t,.alist .t{font:600 12px/1 var(--body);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-right:6px}
+.alist li{font-size:14px;color:var(--mut)}.alist b{color:var(--fg);font-weight:500}
 .frame{width:100%;height:75vh;min-height:420px;border:1px solid var(--line);border-radius:12px;background:#fff;display:block;box-sizing:border-box}
 @media (prefers-reduced-motion:no-preference){.item{transition:opacity .2s}}
 </style>
@@ -84,9 +87,13 @@ button[disabled]{opacity:.5;cursor:default}
 <div class="w" id="mainView" hidden>
   <header>
     <div class="top"><h1>Пульт владельца</h1><button class="ghost" type="button" id="logout">Выйти</button></div>
-    <p class="sub">Единственный пульт. Здесь только то, что ждёт вашего просмотра или ответа. Отметьте «Ок» или напишите комментарий и нажмите «Отправить». Координатор забирает ответы и передаёт сессиям дословно. Когда вопрос закрыт, блок исчезает; если по нему появилось новое, блок возвращается наверх.</p>
+    <p class="sub">Единственный пульт. Здесь только то, что ждёт вашего просмотра или ответа. Отметьте «Ок» или напишите комментарий и нажмите «Отправить». Координатор забирает ответы и передаёт сессиям дословно. Ответили — блок сразу уходит в архив внизу страницы; если сессии понадобится новое, она положит новый блок. Новые блоки сверху.</p>
   </header>
   <div class="stat" id="stat"><span class="pill">Загружаю…</span></div>
+  <section class="item foot" id="lnk" aria-labelledby="lh" hidden>
+    <h2 id="lh">Ссылки</h2>
+    <ul class="llist" id="llist"></ul>
+  </section>
   <main id="list"><p class="empty">Загружаю вопросы…</p></main>
   <section class="item foot" aria-labelledby="gh">
     <h2 id="gh">Общий комментарий</h2>
@@ -94,9 +101,10 @@ button[disabled]{opacity:.5;cursor:default}
     <textarea id="gen" aria-label="Общий комментарий"></textarea>
     <div class="row"><button id="genb" type="button">Отправить</button><span class="st" id="gens"></span></div>
   </section>
-  <section class="item foot" aria-labelledby="ph">
-    <h2 id="ph">Страницы сессий</h2>
-    <ul class="plist" id="plist"><li class="st">Загружаю…</li></ul>
+  <section class="item foot" aria-labelledby="ah">
+    <div class="row"><h2 id="ah" style="flex:1">Архив</h2><button class="ghost" type="button" id="arcb" aria-expanded="false">Показать архив</button></div>
+    <p class="sub" style="margin:0">Закрытые блоки за 14 дней, по строке на блок. Загружается только по нажатию.</p>
+    <ul class="alist" id="alist" hidden></ul>
   </section>
 </div>
 
@@ -181,7 +189,7 @@ button[disabled]{opacity:.5;cursor:default}
 
   // ---------- пульт ----------
   const list=$('list'), stat=$('stat');
-  let items=[], replies={}, pages=[], drafts={}, oks={}, held=false, loaded=false;
+  let items=[], replies={}, archived=0, drafts={}, oks={}, held=false, loaded=false;
   const LS='hub-drafts-v1';
   try{const o=JSON.parse(lsGet(LS)||'{}');drafts=o.d||{};oks=o.k||{}}catch(e){}
   const saveLS=()=>lsSet(LS,JSON.stringify({d:drafts,k:oks}));
@@ -203,10 +211,12 @@ button[disabled]{opacity:.5;cursor:default}
     list.innerHTML='';
     if(!act.length){list.append(el('p','empty','Сейчас от вас ничего не ждут.'))}
     else{
-      act.sort((a,b)=>{const pa=pending.includes(a)?0:1,pb=pending.includes(b)?0:1;return pa-pb||(a.order||0)-(b.order||0)});
+      // новые сверху (сервер уже отдаёт по updated_at, здесь — на случай одинаковых меток)
+      act.sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||'')));
       act.forEach(i=>list.append(card(i,!pending.includes(i))));
     }
-    renderPages();
+    renderLinks(act);
+    renderArchiveCount();
   }
 
   function pageHref(slug){return '#p/'+encodeURIComponent(slug)}
@@ -245,10 +255,10 @@ button[disabled]{opacity:.5;cursor:default}
       if(!cb.checked&&!ta.value.trim()){s.textContent='Отметьте «Ок» или напишите комментарий.';s.className='st warn';return}
       b.disabled=true;s.textContent='Сохраняю…';s.className='st';
       try{
-        await api('POST','reply',{id:i.id,ok:cb.checked,text:ta.value.trim(),rev:i.rev||0,title:i.title||'',task:i.task||''});
+        const d=await api('POST','reply',{id:i.id,ok:cb.checked,text:ta.value.trim(),rev:i.rev||0,title:i.title||'',task:i.task||''});
         delete drafts[i.id];delete oks[i.id];saveLS();
-        s.textContent='Отправлено.';s.className='st ok';
-        ta.blur();
+        s.textContent=d.closed?'Отправлено — блок ушёл в архив.':'Отправлено. Блок обновили, пока вы смотрели, — он остаётся.';s.className='st ok';
+        ta.blur();if(arcOpen){arcOpen=false;$('alist').hidden=true;$('arcb').textContent='Показать архив'}
         load();
       }catch(e){if(e.status!==403&&e.status!==401){s.textContent='Не сохранилось: '+e.message+' Попробуйте ещё раз.';s.className='st warn'}}
       b.disabled=false;
@@ -257,15 +267,34 @@ button[disabled]{opacity:.5;cursor:default}
     return c;
   }
 
-  function renderPages(){
-    const ul=$('plist');ul.innerHTML='';
-    const last=pages.slice(0,30);
-    if(!last.length){ul.append(el('li','st','Страниц пока нет.'));return}
-    last.forEach(p=>{
-      const li=el('li');const a=el('a',null,p.title||p.slug);a.href=pageHref(p.slug);
-      li.append(a,el('span','st',[p.session,fmt(p.updated_at)].filter(Boolean).join(' · ')));ul.append(li);
-    });
+  // Ссылки всех открытых блоков — одним списком наверху, без повторов (по адресу)
+  function renderLinks(act){
+    const ul=$('llist');ul.innerHTML='';const seen=new Set();
+    act.forEach(i=>(i.links||[]).forEach(x=>{
+      const u=String(x.url||'');if(!u||seen.has(u))return;seen.add(u);
+      const li=el('li');if(i.task)li.append(el('span','t',i.task));
+      li.append(document.createTextNode((i.title||'')+' → '));li.append(linkEl(x));ul.append(li);
+    }));
+    $('lnk').hidden=!seen.size;
   }
+
+  // Архив: число приходит со state, сам список — только по нажатию
+  let arcOpen=false;
+  function renderArchiveCount(){$('ah').textContent='Архив ('+archived+')'}
+  $('arcb').onclick=async()=>{
+    const ul=$('alist'),b=$('arcb');
+    if(arcOpen){arcOpen=false;ul.hidden=true;b.textContent='Показать архив';b.setAttribute('aria-expanded','false');return}
+    b.disabled=true;ul.innerHTML='';ul.append(el('li',null,'Загружаю…'));ul.hidden=false;
+    try{
+      const d=await api('GET','archive');const xs=Array.isArray(d.items)?d.items:[];ul.innerHTML='';
+      if(!xs.length)ul.append(el('li',null,'За 14 дней закрытых блоков нет.'));
+      xs.forEach(x=>{const li=el('li');if(x.task)li.append(el('span','t',x.task));li.append(el('b',null,x.title||x.id));
+        const ans=[fmt(x.closed_at),x.ok?'ок':'',x.text?'«'+x.text+'»':''].filter(Boolean).join(' · ');
+        if(ans)li.append(document.createTextNode(' — '+ans));ul.append(li)});
+      arcOpen=true;b.textContent='Свернуть';b.setAttribute('aria-expanded','true');
+    }catch(e){ul.innerHTML='';if(e.status!==403&&e.status!==401)ul.append(el('li',null,'Не загрузилось: '+e.message))}
+    b.disabled=false;
+  };
 
   let timer=null, inflight=false;
   async function load(){
@@ -273,7 +302,7 @@ button[disabled]{opacity:.5;cursor:default}
     inflight=true;
     try{
       const d=await api('GET','state');
-      items=Array.isArray(d.items)?d.items:[];replies=d.replies||{};pages=Array.isArray(d.pages)?d.pages:[];
+      items=Array.isArray(d.items)?d.items:[];replies=d.replies||{};archived=+d.archived||0;
       loaded=true;schedule();
     }catch(e){
       if(e.status!==403&&e.status!==401){
