@@ -83,6 +83,7 @@ func registerPultRoutes(router *mux.Router) {
 	router.HandleFunc("/api/admin/pult/", pultShell).Methods("GET")
 	router.HandleFunc("/api/admin/pult/state", adminGuardMiddleware(pultState)).Methods("GET")
 	router.HandleFunc("/api/admin/pult/reply", adminGuardMiddleware(pultReply)).Methods("POST")
+	router.HandleFunc("/api/admin/pult/archive", adminGuardMiddleware(pultArchive)).Methods("GET")
 	router.HandleFunc("/api/admin/pult/general", adminGuardMiddleware(pultGeneral)).Methods("POST")
 	router.HandleFunc("/api/admin/pult/page/{slug}", adminGuardMiddleware(pultPage)).Methods("GET")
 	router.HandleFunc("/api/admin/pult/page-answers/{slug}", adminGuardMiddleware(pultPageAnswers)).Methods("GET")
@@ -148,22 +149,33 @@ func pultShell(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET /api/admin/pult/state
+// pultActiveSQL: a block is on the pult unless its data says active=false (json false extracts as 0).
+const pultActiveSQL = `COALESCE(json_extract(data, '$.active'), 1) != 0`
+
+// pultArchiveDays: how far back the archive list goes (owner 23.11.2026: "вся история не нужна, это я спрошу").
+const pultArchiveDays = 14
+
+// GET /api/admin/pult/state — only what is open right now (owner 23.11.2026: «это не журнал и не лог, это пульт
+// самого актуального»): active blocks newest first, the owner's replies to those blocks, and the number of blocks
+// in the archive. Closed blocks, session pages and their html are not sent here: the archive comes from
+// /archive on a click, a page from /page/{slug} on a click.
 func pultState(w http.ResponseWriter, r *http.Request) {
 	if !pultGate(w, r) {
 		return
 	}
 	items := []map[string]interface{}{}
-	rows, err := pultDB.Query(`SELECT id, data, version FROM items ORDER BY id`)
+	ids := map[string]bool{}
+	rows, err := pultDB.Query(`SELECT id, data, version, COALESCE(updated_at,'') FROM items WHERE ` + pultActiveSQL +
+		` ORDER BY updated_at DESC, id`)
 	if err != nil {
 		pultFail(w, "state items", err)
 		return
 	}
 	for rows.Next() {
-		var id string
+		var id, at string
 		var data sql.NullString
 		var version sql.NullInt64
-		if err := rows.Scan(&id, &data, &version); err != nil {
+		if err := rows.Scan(&id, &data, &version, &at); err != nil {
 			rows.Close()
 			pultFail(w, "state items", err)
 			return
@@ -177,7 +189,9 @@ func pultState(w http.ResponseWriter, r *http.Request) {
 		}
 		m["id"] = id
 		m["version"] = version.Int64
+		m["updated_at"] = at
 		items = append(items, m)
+		ids[id] = true
 	}
 	err = rows.Err()
 	rows.Close()
@@ -187,7 +201,7 @@ func pultState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	replies := map[string]interface{}{}
-	rows, err = pultDB.Query(`SELECT id, data FROM replies`)
+	rows, err = pultDB.Query(`SELECT id, data FROM replies WHERE id IN (SELECT id FROM items WHERE ` + pultActiveSQL + `)`)
 	if err != nil {
 		pultFail(w, "state replies", err)
 		return
@@ -199,6 +213,9 @@ func pultState(w http.ResponseWriter, r *http.Request) {
 			rows.Close()
 			pultFail(w, "state replies", err)
 			return
+		}
+		if !ids[id] {
+			continue
 		}
 		m := map[string]interface{}{}
 		if err := json.Unmarshal([]byte(data.String), &m); err != nil {
@@ -214,29 +231,62 @@ func pultState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages := []map[string]interface{}{}
-	rows, err = pultDB.Query(`SELECT slug, COALESCE(title,''), COALESCE(session,''), COALESCE(updated_at,'')
-		FROM pages ORDER BY updated_at DESC, slug`)
-	if err != nil {
-		pultFail(w, "state pages", err)
+	var archived int
+	if err := pultDB.QueryRow(`SELECT COUNT(*) FROM items WHERE NOT (`+pultActiveSQL+`) AND updated_at >= ?`,
+		pultArchiveSince()).Scan(&archived); err != nil {
+		pultFail(w, "state archive count", err)
 		return
 	}
+	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "items": items, "replies": replies, "archived": archived})
+}
+
+func pultArchiveSince() string {
+	return time.Now().UTC().AddDate(0, 0, -pultArchiveDays).Format(time.RFC3339)
+}
+
+// pultCut: the first n runes of s, with … when cut.
+func pultCut(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	rs := []rune(s)
+	if len(rs) <= n {
+		return s
+	}
+	return string(rs[:n]) + "…"
+}
+
+// GET /api/admin/pult/archive — closed blocks of the last pultArchiveDays days, newest first, one line each:
+// task, title, when closed, and the owner's answer ("ok" and the start of his text). No bodies, no pages.
+func pultArchive(w http.ResponseWriter, r *http.Request) {
+	if !pultGate(w, r) {
+		return
+	}
+	rows, err := pultDB.Query(`SELECT i.id, COALESCE(json_extract(i.data,'$.task'),''), COALESCE(json_extract(i.data,'$.title'),''),
+		COALESCE(json_extract(i.data,'$.closed_at'), i.updated_at, ''),
+		COALESCE(json_extract(rp.data,'$.ok'),0), COALESCE(json_extract(rp.data,'$.text'),'')
+		FROM items i LEFT JOIN replies rp ON rp.id = i.id
+		WHERE NOT (`+strings.ReplaceAll(pultActiveSQL, "data", "i.data")+`) AND i.updated_at >= ?
+		ORDER BY i.updated_at DESC, i.id`, pultArchiveSince())
+	if err != nil {
+		pultFail(w, "archive", err)
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
 	for rows.Next() {
-		var slug, title, session, at string
-		if err := rows.Scan(&slug, &title, &session, &at); err != nil {
-			rows.Close()
-			pultFail(w, "state pages", err)
+		var id, task, title, at, text string
+		var ok int
+		if err := rows.Scan(&id, &task, &title, &at, &ok, &text); err != nil {
+			pultFail(w, "archive", err)
 			return
 		}
-		pages = append(pages, map[string]interface{}{"slug": slug, "title": title, "session": session, "updated_at": at})
+		out = append(out, map[string]interface{}{"id": id, "task": task, "title": pultCut(title, 160),
+			"closed_at": at, "ok": ok != 0, "text": pultCut(text, 140)})
 	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		pultFail(w, "state pages", err)
+	if err := rows.Err(); err != nil {
+		pultFail(w, "archive", err)
 		return
 	}
-	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "items": items, "replies": replies, "pages": pages})
+	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "days": pultArchiveDays, "items": out})
 }
 
 // POST /api/admin/pult/reply {id, ok, text, rev, title, task}
@@ -287,11 +337,28 @@ func pultReply(w http.ResponseWriter, r *http.Request) {
 		pultFail(w, "reply log", err)
 		return
 	}
+	// The owner answered → the block leaves the pult (owner 23.11.2026: «ответ получен, ждёт сессию» blocks made the
+	// page unreadable). Only when he answered the version he saw: a block the session updated after he opened the
+	// page (rev grew) stays. A session that needs more puts a new block or sets active=true again.
+	res, err := tx.Exec(`UPDATE items SET data = json_set(COALESCE(data,'{}'), '$.active', json('false'), '$.closed_at', ?),
+		version = COALESCE(version,0) + 1, updated_at = ?
+		WHERE id = ? AND `+pultActiveSQL+` AND COALESCE(json_extract(data,'$.rev'),0) <= ?`, at, at, req.ID, req.Rev)
+	if err != nil {
+		pultRollback(tx)
+		pultFail(w, "reply close", err)
+		return
+	}
+	closed, err := res.RowsAffected()
+	if err != nil {
+		pultRollback(tx)
+		pultFail(w, "reply close", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		pultFail(w, "reply commit", err)
 		return
 	}
-	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "at": at})
+	radioJSON(w, http.StatusOK, map[string]interface{}{"success": true, "at": at, "closed": closed > 0})
 }
 
 func pultRollback(tx *sql.Tx) {

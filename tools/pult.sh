@@ -19,6 +19,10 @@
 #   pult.sh tokens                         # label, created_at, revoked, hash prefix
 #   pult.sh revoke-token <hash-prefix>     # 8+ hex chars of the hash, must match exactly one token
 #
+# Owner's answer (ok or text) to the current rev of a block closes it on the server (data.active=false,
+# closed_at): the block leaves the pult for the 14-day archive. To raise it again: set-item with
+# "active":true, or patch-item with {"active":true}; better a new block for a new question.
+#
 # The owner opens the pult by a personal link https://astrolytix.com/api/admin/pult/#k=<token>;
 # the shell keeps the token in localStorage and sends it as X-Pult-Token.
 #
