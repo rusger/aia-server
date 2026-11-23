@@ -646,7 +646,7 @@ func runSendPushCLI(args []string) {
 	}
 
 	var err error
-	db, err = sql.Open("sqlite", getEnv("USERS_DB_PATH", "./users.db"))
+	db, err = sql.Open("sqlite", usersDBDSN(getEnv("USERS_DB_PATH", "./users.db")))
 	if err != nil {
 		fmt.Printf("❌ open users.db: %v\n", err)
 		os.Exit(1)
