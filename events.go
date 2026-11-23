@@ -165,10 +165,17 @@ var posRe = regexp.MustCompile(`(\d{1,2})([A-Za-z]{3})(\d{2})`)
 // Mercury, Venus, Mars.
 func siderealLongitudes(date time.Time) (map[string]float64, error) {
 	date = date.UTC()
+	return siderealLongitudesAt(time.Date(date.Year(), date.Month(), date.Day(), 12, 0, 0, 0, time.UTC))
+}
+
+// siderealLongitudesAt is siderealLongitudes at the given UTC minute (the Moon
+// moves ~13°/day, so a lunation's sign needs its moment, not noon).
+func siderealLongitudesAt(at time.Time) (map[string]float64, error) {
+	date := at.UTC()
 	args := []string{
 		"-qa",
 		strconv.Itoa(int(date.Month())), strconv.Itoa(date.Day()), strconv.Itoa(date.Year()),
-		"12:00", "0", "0", "0",
+		date.Format("15:04"), "0", "0", "0",
 		"-s", "0.883208", "-R", "8", "9", "10", "-c", "14", "-C", "-RC", "22", "31",
 	}
 	out, err := runAstrolog(args)

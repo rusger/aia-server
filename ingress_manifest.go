@@ -290,7 +290,7 @@ func loadStationManifest() ([]stationEntry, error) {
 }
 
 // GET /api/events/ingresses → {ingresses: [{planet, date, from, to, key}],
-// stations: [{planet, date, kind, sign, key}]}.
+// stations: [{planet, date, kind, sign, key}], lunations: [{date, kind, sign, key}]}.
 func ingressManifestHandler(w http.ResponseWriter, r *http.Request) {
 	entries, err := loadIngressManifest()
 	if err != nil {
@@ -304,8 +304,14 @@ func ingressManifestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unavailable"}`, http.StatusInternalServerError)
 		return
 	}
+	// Lunation clips are optional: a failure only leaves them out (A177).
+	lunations, err := loadLunationManifest()
+	if err != nil {
+		log.Printf("⚠️ lunation manifest: %v", err)
+		lunations = []lunationEntry{}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{"ingresses": entries, "stations": stations}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"ingresses": entries, "stations": stations, "lunations": lunations}); err != nil {
 		log.Printf("⚠️ ingress manifest write: %v", err)
 	}
 }
