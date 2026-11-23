@@ -59,6 +59,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deviceID := claims.DeviceID
+	meta := newAPICallMeta(req) // A117: what the client asked for, before any server-side change
 	crisisHit, crisisLang, crisisID := detectCrisisMarker(lastUserMessage(req.Messages))
 	req.Model = enforceModelForUser(claims.Email, deviceID, req.Model)
 
@@ -111,6 +112,7 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 
 	// A117: optional per-call-type max_tokens floor (ai_token_floor.go); off by default.
 	req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.CallType, req.MaxTokens)
+	meta.MaxTokens = req.MaxTokens // the limit actually sent upstream (0 = none)
 	openAIRequest := map[string]interface{}{
 		"model":          req.Model,
 		"messages":       req.Messages,
@@ -177,13 +179,13 @@ func chatGPTStreamProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	streamSSEHeaders(w)
-	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, upstreamModel, req.AnswerID, crisisHit, crisisLang, crisisID)
+	go chatGPTStreamGenerate(buf, resp.Body, deviceID, callType, upstreamModel, req.AnswerID, crisisHit, crisisLang, crisisID, meta)
 	streamFollow(r.Context(), w, flusher, buf, -1, true)
 }
 
 // chatGPTStreamGenerate reads one OpenAI SSE response into buf and books the
 // call once at the end — whether or not anyone is still listening.
-func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callType, model, answerID string, crisisHit bool, crisisLang, crisisID string) {
+func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callType, model, answerID string, crisisHit bool, crisisLang, crisisID string, meta apiCallMeta) {
 	defer body.Close()
 	emit := func(v map[string]interface{}) { buf.append(v, time.Now()) }
 
@@ -209,6 +211,7 @@ func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callTyp
 				Delta struct {
 					Content string `json:"content"`
 				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage *struct {
 				PromptTokens        int `json:"prompt_tokens"`
@@ -230,6 +233,9 @@ func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callTyp
 				cachedTokens = chunk.Usage.PromptTokensDetails.CachedTokens
 			}
 		}
+		if len(chunk.Choices) > 0 && chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
+			meta.FinishReason = *chunk.Choices[0].FinishReason
+		}
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			emit(map[string]interface{}{"c": chunk.Choices[0].Delta.Content})
 		}
@@ -242,7 +248,7 @@ func chatGPTStreamGenerate(buf *streamBuf, body io.ReadCloser, deviceID, callTyp
 
 	log.Printf("✅ ChatGPT stream done: device=%s tokens=%d prompt (%d cached) + %d completion",
 		deviceID, promptTokens, cachedTokens, completionTokens)
-	logAPICallForAnswer(deviceID, callType, model, answerID,
-		promptTokens, completionTokens, totalTokens, cachedTokens)
+	logAPICallWithMeta(deviceID, callType, model, answerID,
+		promptTokens, completionTokens, totalTokens, cachedTokens, meta)
 	emit(map[string]interface{}{"done": true})
 }

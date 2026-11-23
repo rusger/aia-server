@@ -1233,6 +1233,8 @@ func initAnalyticsDB() error {
 
     // answer_id: the per-answer chain id (see ChatGPTProxyRequest.AnswerID).
     addAnswerIDColumn("api_calls")
+    // A117: request/response metadata for the chat proxy rows (api_call_meta.go).
+    addAPICallMetaColumns()
 
     // Create monthly aggregates table for historical data retention
     createMonthlyTableSQL := `
@@ -3411,6 +3413,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
 
     // Use device_id from JWT claims (more secure than trusting request body)
     deviceID := claims.DeviceID
+    meta := newAPICallMeta(req) // A117: what the client asked for, before any server-side change
 
     // Silent crisis screen on the user's own words. Never blocks or changes
     // the LLM call — on a hit the localized hotline block is prepended to the
@@ -3535,6 +3538,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // A117: optional per-call-type floor for the client's max_tokens
     // (ai_token_floor.go). Off by default — then nothing here changes.
     req.MaxTokens = applyMaxTokensFloor(aiMaxTokensFloor, callType, req.CallType, req.MaxTokens)
+    meta.MaxTokens = req.MaxTokens // the limit actually sent upstream (0 = none)
 
     // Prepare OpenAI API request
     openAIRequest := map[string]interface{}{
@@ -3662,6 +3666,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
         })
         return
     }
+    meta.FinishReason, _ = firstChoice["finish_reason"].(string)
 
     // Extract token usage from response
     var promptTokens, completionTokens, totalTokens, cachedTokens int
@@ -3690,7 +3695,7 @@ func chatGPTProxy(w http.ResponseWriter, r *http.Request) {
     // against the allowlist before the quota checks — overhead passes
     // (grounding_fix / claim_audit / barnum_*) stay separable in the usage
     // reports, unknown client-supplied tags have been clamped to "chatgpt".
-    logAPICallForAnswer(deviceID, callType, upstreamModel, req.AnswerID, promptTokens, completionTokens, totalTokens, cachedTokens)
+    logAPICallWithMeta(deviceID, callType, upstreamModel, req.AnswerID, promptTokens, completionTokens, totalTokens, cachedTokens, meta)
 
     // Crisis screen hit: hand the hotline block to the user ABOVE the normal
     // answer, as ordinary message text — old clients render it with no change.
