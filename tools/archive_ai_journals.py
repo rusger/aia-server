@@ -5,14 +5,14 @@ Runs on the Mac; the box is reached over ssh and every box command runs under ni
 
     python3 tools/archive_ai_journals.py                      # dry run: what would go, nothing written
     python3 tools/archive_ai_journals.py --days 60            # dry run with another retention
-    python3 tools/archive_ai_journals.py --apply --days 30    # export → verify → Elements + gdrive-crypt → DELETE
+    python3 tools/archive_ai_journals.py --apply --days 30    # export → verify → archive volume (WD3) + gdrive-crypt → DELETE
     python3 tools/archive_ai_journals.py --vacuum             # VACUUM only: quiet moment, free ≥ 2× (db+wal), 5-min watchdog
 
 Order per table (any mismatch = stop, nothing deleted):
   1. stat on the box: rows with created_at < cutoff → n, max(id), sum(id).
-  2. export exactly `created_at < cutoff AND id <= max_id` as gzip JSONL straight to Elements
+  2. export exactly `created_at < cutoff AND id <= max_id` as gzip JSONL straight to the archive volume
      (<archive>/<table>-before-<cutoff date>.jsonl.gz, never overwritten) + .sha256.
-  3. read the file back from Elements: line count and id sum must equal the stat.
+  3. read the file back from the archive volume: line count and id sum must equal the stat.
   4. rclone copyto gdrive-crypt:ai-journals/<name>; remote size must equal the local size and
      rclone cryptcheck must confirm the content hash.
   5. DELETE on the box with the same condition; the helper re-checks n/id sum before deleting.
@@ -23,6 +23,10 @@ hence a separate flag for a quiet hour.
 
 --local-db PATH runs the helper locally against a SQLite copy (tests); --archive-dir and --remote
 override the destinations (tests use a temp dir and --remote '' to skip the cloud copy).
+
+Archive volume (A176, 23.11.2026, moving off the failing Elements disk): AIA_ARCHIVE_VOLUME, default /Volumes/WD3,
+same relative path aia-archive/ai-journals; rollback — AIA_ARCHIVE_VOLUME=/Volumes/Elements. Before writing, the
+volume's own status tool (~/.claude/bin/<elements|wd3|toshiba> status) must answer; an unknown /Volumes/* stops.
 """
 from __future__ import annotations
 
@@ -30,6 +34,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -39,9 +44,10 @@ HERE = Path(__file__).resolve().parent
 HELPER = HERE / "ai_journals_box.py"
 BOX = "ruslan@91.98.77.205"
 BOX_DB = "/home/ruslan/aia/server/analytics.db"
-ARCHIVE = Path("/Volumes/Elements/aia-archive/ai-journals")
+ARCHIVE_VOLUME = Path(os.environ.get("AIA_ARCHIVE_VOLUME", "/Volumes/WD3"))
+ARCHIVE = ARCHIVE_VOLUME / "aia-archive" / "ai-journals"
 REMOTE = "gdrive-crypt:ai-journals"
-ELEMENTS = Path.home() / ".claude/bin/elements"
+STATUS_TOOLS = {name: Path.home() / ".claude/bin" / name.lower() for name in ("Elements", "WD3", "Toshiba")}
 SSH = ["ssh", "-o", "ConnectTimeout=20", "-o", "BatchMode=yes", BOX]
 
 
@@ -83,11 +89,16 @@ def cutoff_for(days: int, now: datetime | None = None) -> str:
     return f"{day.isoformat()} 00:00:00"   # created_at is SQLite datetime('now'): UTC 'YYYY-MM-DD HH:MM:SS'
 
 
-def check_elements(archive: Path) -> None:
-    if str(archive).startswith("/Volumes/Elements"):
-        p = subprocess.run([str(ELEMENTS), "status"], capture_output=True, text=True)
+def check_volume(archive: Path) -> None:
+    """Archive under /Volumes/<name>: that volume's status tool must say it answers; elsewhere (tests) — no check."""
+    parts = Path(archive).parts
+    if len(parts) > 2 and parts[1] == "Volumes":
+        tool = STATUS_TOOLS.get(parts[2])
+        if tool is None:
+            raise Stop(f"STOP: no status tool for volume /Volumes/{parts[2]} (known: {', '.join(STATUS_TOOLS)})")
+        p = subprocess.run([str(tool), "status"], capture_output=True, text=True)
         if p.returncode != 0 or "СТОП" in p.stdout + p.stderr or "отвечает" not in p.stdout:
-            raise Stop(f"STOP: Elements not ready:\n{p.stdout}{p.stderr}")
+            raise Stop(f"STOP: {parts[2]} not ready:\n{p.stdout}{p.stderr}")
     archive.mkdir(parents=True, exist_ok=True)
 
 
@@ -187,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     if not todo:
         print("nothing older than cutoff")
         return 0
-    check_elements(a.archive_dir)
+    check_volume(a.archive_dir)
     for t, s in todo.items():
         archive_table(box, t, s, cutoff, a.archive_dir, a.remote)
     return 0

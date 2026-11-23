@@ -246,6 +246,52 @@ def test_vacuum_stops_without_headroom_or_radio_root():
         assert db.stat().st_size == size
 
 
+def test_archive_volume_default_wd3_and_rollback():
+    """A176 (23.11.2026): default WD3; AIA_ARCHIVE_VOLUME=/Volumes/Elements rolls back."""
+    import os
+    import subprocess
+    code = "import archive_ai_journals as aj; print(aj.ARCHIVE)"
+    env = {k: v for k, v in os.environ.items() if k != "AIA_ARCHIVE_VOLUME"}
+    out = subprocess.run([sys.executable, "-c", code], cwd=aj.HERE, env=env, capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "/Volumes/WD3/aia-archive/ai-journals", out.stdout
+    env["AIA_ARCHIVE_VOLUME"] = "/Volumes/Elements"
+    out = subprocess.run([sys.executable, "-c", code], cwd=aj.HERE, env=env, capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "/Volumes/Elements/aia-archive/ai-journals", out.stdout
+
+
+def test_check_volume_uses_that_volumes_tool():
+    seen = []
+    real_run, real_mkdir = aj.subprocess.run, Path.mkdir
+
+    class R:
+        def __init__(self, out, rc=0):
+            self.stdout, self.stderr, self.returncode = out, "", rc
+
+    try:
+        Path.mkdir = lambda *a, **k: None
+        aj.subprocess.run = lambda cmd, **k: (seen.append(cmd), R("том:         отвечает\n"))[1]
+        aj.check_volume(Path("/Volumes/WD3/aia-archive/ai-journals"))
+        assert seen[-1] == [str(Path.home() / ".claude/bin/wd3"), "status"], seen
+        aj.check_volume(Path("/Volumes/Elements/aia-archive/ai-journals"))
+        assert seen[-1][0].endswith("/.claude/bin/elements"), seen
+        aj.subprocess.run = lambda cmd, **k: R("СТОП: диск не найден\n", 1)
+        try:
+            aj.check_volume(Path("/Volumes/WD3/x"))
+            raise AssertionError("expected Stop")
+        except aj.Stop as e:
+            assert "WD3 not ready" in str(e)
+        try:
+            aj.check_volume(Path("/Volumes/Other/x"))
+            raise AssertionError("expected Stop")
+        except aj.Stop as e:
+            assert "no status tool for volume /Volumes/Other" in str(e)
+        n = len(seen)
+        aj.check_volume(Path("/tmp/x"))   # not a volume — no status call
+        assert len(seen) == n
+    finally:
+        aj.subprocess.run, Path.mkdir = real_run, real_mkdir
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
