@@ -10,7 +10,9 @@ package main
 // the bank and the next manifest lists it.
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,16 +99,23 @@ func loadLunationManifest() ([]lunationEntry, error) {
 	for _, r := range list {
 		day, ok := strings.CutPrefix(r.ekey, r.kind+":")
 		if !ok || len(day) != len("2006-01-02") {
+			log.Printf("⚠️ lunation manifest: skipping %s: unexpected ekey", r.ekey)
 			continue
 		}
 		kind := strings.TrimPrefix(r.kind, "lunar_")
 		sign, err := lunationSign(r.ekey, r.at)
 		if err != nil {
+			log.Printf("⚠️ lunation manifest: skipping %s: sign: %v", r.ekey, err)
 			continue // no sign → no clip; the card stays as before
 		}
 		key := fmt.Sprintf("moon_%s_%s", signSlug(sign), kind)
 		if _, err := os.Stat(filepath.Join(dir, key+".mp4")); err != nil {
-			continue // not rendered yet → the app keeps its old card
+			// Not rendered yet is the normal case: the app keeps its old card.
+			// Anything else (bank volume unmounted, I/O, permissions) is logged.
+			if !errors.Is(err, os.ErrNotExist) {
+				log.Printf("⚠️ lunation manifest: bank stat %s: %v", key, err)
+			}
+			continue
 		}
 		out = append(out, lunationEntry{Date: day, Kind: kind, Sign: signSlug(sign), Key: key})
 	}
