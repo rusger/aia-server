@@ -9811,6 +9811,15 @@ func main() {
     }
     // CLI subcommand: generate the static SEO calendar pages, then exit.
     //   ./astrolog_api seo-gen <outdir> [year ...]   (see seo.go)
+    // CLI subcommands for A194 corrected answers (see fixed_answers.go).
+    if len(os.Args) >= 2 && os.Args[1] == "fixed-answer-add" {
+        runFixedAnswerAddCLI(os.Args[2:])
+        return
+    }
+    if len(os.Args) >= 2 && os.Args[1] == "fixed-answer-list" {
+        runFixedAnswerListCLI()
+        return
+    }
     if len(os.Args) >= 2 && os.Args[1] == "seo-gen" {
         runSeoGenCLI(os.Args[2:])
         return
@@ -9875,6 +9884,7 @@ func main() {
     // iOS Live Activity end pushes for the marathon countdown (see live_activity.go).
     migrateLiveActivities()
     migratePendingAnswers()
+    migrateFixedAnswers()
     migrateLiveActivityStarts()
     migratePresenterJobs()
     go liveActivityEndLoop()
@@ -9958,6 +9968,8 @@ func main() {
     // late delivery (pending_answers.go): what is waiting, and "got it" by checksum — no model call
     router.HandleFunc("/api/chatgpt-stream/pending", jwtAuthMiddleware(chatGPTPendingAnswers)).Methods("GET")
     router.HandleFunc("/api/chatgpt-stream/ack", jwtAuthMiddleware(chatGPTAckAnswer)).Methods("POST")
+    router.HandleFunc("/api/ai/fixed-answer", jwtAuthMiddleware(fixedAnswerGet)).Methods("GET")
+    router.HandleFunc("/api/ai/fixed-answer/ack", jwtAuthMiddleware(fixedAnswerAck)).Methods("POST")
     router.HandleFunc("/api/barnum/report", jwtAuthMiddleware(barnumReport)).Methods("POST")
     router.HandleFunc("/api/ai/guard/report", jwtAuthMiddleware(aiGuardReport)).Methods("POST")
     // De-identified guard corpus for hallucination triage (guard_corpus.go).
