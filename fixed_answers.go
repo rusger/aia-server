@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -58,7 +59,9 @@ func migrateFixedAnswers() {
 		)`); err != nil {
 		fmt.Printf("fixed_answers migration: %v\n", err)
 	}
-	db.Exec(`CREATE INDEX IF NOT EXISTS idx_fixed_answers_device ON fixed_answers (device_id)`)
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_fixed_answers_device ON fixed_answers (device_id)`); err != nil {
+		fmt.Printf("fixed_answers index: %v\n", err)
+	}
 }
 
 // headRunes returns the first n characters (not bytes) of s.
@@ -85,8 +88,10 @@ func addFixedAnswer(answerID string, override *string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	analyticsDB.QueryRow(`SELECT COALESCE(finish_reason,'') FROM api_calls
-		WHERE answer_id = ? AND call_type = 'chatgpt' ORDER BY id DESC LIMIT 1`, answerID).Scan(&mainFinish)
+	if err := analyticsDB.QueryRow(`SELECT COALESCE(finish_reason,'') FROM api_calls
+		WHERE answer_id = ? AND call_type = 'chatgpt' ORDER BY id DESC LIMIT 1`, answerID).Scan(&mainFinish); err != nil {
+		return "", fmt.Errorf("read finish_reason: %v", err)
+	}
 
 	var feature, language, raw, shipped string
 	err = analyticsDB.QueryRow(`SELECT feature, language, raw_answer, shipped_answer FROM ai_guard_corpus
@@ -116,10 +121,14 @@ func addFixedAnswer(answerID string, override *string) (string, error) {
 	if hasCorpus {
 		head = headRunes(shipped, fixedAnswerHeadChars)
 	} else {
-		analyticsDB.QueryRow(`SELECT feature FROM ai_guard_events WHERE answer_id = ? AND feature != ''
-			ORDER BY id LIMIT 1`, answerID).Scan(&feature)
+		if err := analyticsDB.QueryRow(`SELECT feature FROM ai_guard_events WHERE answer_id = ? AND feature != ''
+			ORDER BY id LIMIT 1`, answerID).Scan(&feature); err != nil && err != sql.ErrNoRows {
+			return "", fmt.Errorf("read guard event feature: %v", err)
+		}
 		var lang sql.NullString
-		db.QueryRow(`SELECT language FROM devices WHERE device_id = ? LIMIT 1`, deviceID).Scan(&lang)
+		if err := db.QueryRow(`SELECT language FROM devices WHERE device_id = ? LIMIT 1`, deviceID).Scan(&lang); err != nil && err != sql.ErrNoRows {
+			return "", fmt.Errorf("read device language: %v", err)
+		}
 		language = lang.String
 	}
 	if feature == "" {
@@ -213,6 +222,10 @@ func runFixedAnswerListCLI() {
 		fmt.Printf("%s\tdev#%s\t%s\t%s\t%s\t%s\t%d\tfetched=%s\tack=%s\n",
 			headRunes(id, 8), shortDeviceHash(dev), at, feature, lang, mode, n, f, ack)
 	}
+	if err := rows.Err(); err != nil { // a partial list must not pass as complete
+		fmt.Printf("iterate: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 // GET /api/ai/fixed-answer?id=<answer_id> → the correction for this device.
@@ -239,7 +252,10 @@ func fixedAnswerGet(w http.ResponseWriter, r *http.Request) {
 		streamJSONError(w, http.StatusInternalServerError, "Database error", "")
 		return
 	}
-	db.Exec(`UPDATE fixed_answers SET fetched_at = ? WHERE answer_id = ?`, time.Now().Unix(), id)
+	if _, err := db.Exec(`UPDATE fixed_answers SET fetched_at = ? WHERE answer_id = ?`, time.Now().Unix(), id); err != nil {
+		// Delivery itself is fine; only the bookkeeping mark is missing.
+		log.Printf("fixed_answers: fetched_at for %s: %v", headRunes(id, 8), err)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
