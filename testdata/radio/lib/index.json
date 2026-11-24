@@ -6376,6 +6376,32 @@
    "voice": "af_heart+am_michael",
    "dur": 6,
    "text_hash": "fixture"
+  },
+  {
+   "key": "sky-today/2026-10-13",
+   "file": "sky-today-2026-10-13.m4a",
+   "title": "Sky today",
+   "tags": {
+    "you": "sky_today",
+    "date": "2026-10-13"
+   },
+   "valid_until": "2026-10-13",
+   "voice": "af_heart+am_michael",
+   "dur": 38.3,
+   "text_hash": "a120sky1013"
+  },
+  {
+   "key": "sky-today/2026-10-14",
+   "file": "sky-today-2026-10-14.m4a",
+   "title": "Sky today",
+   "tags": {
+    "you": "sky_today",
+    "date": "2026-10-14"
+   },
+   "valid_until": "2026-10-14",
+   "voice": "af_heart+am_michael",
+   "dur": 39.0,
+   "text_hash": "a120sky1014"
   }
  ],
  "skipped": []

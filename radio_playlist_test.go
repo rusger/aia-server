@@ -169,6 +169,20 @@ func radioCheckDeck(t *testing.T, pl *radioPlaylist, n int) {
 }
 
 // radioNoteIDs: radioIDs with the lang_note variants folded to "lang_note".
+// radioCheckNoStationSpeech: from a station folder (/radio/<station>/…) the wave plays only music — no sky_news,
+// releases or other station speech (owner 17.11.2026, A120).
+func radioCheckNoStationSpeech(t *testing.T, pl *radioPlaylist) {
+	t.Helper()
+	for _, it := range pl.Items {
+		if it.Kind == "release" || strings.HasPrefix(it.ID, "release_") || strings.HasPrefix(it.Src, "/radio/rel/") {
+			t.Errorf("station release in the wave: %s %s", it.ID, it.Src)
+		}
+		if it.Kind != "music" && strings.HasPrefix(it.Src, "/radio/") && !strings.HasPrefix(it.Src, "/radio/lib/") {
+			t.Errorf("station item of kind %s in the wave: %s %s", it.Kind, it.ID, it.Src)
+		}
+	}
+}
+
 func radioNoteIDs(items []radioItem) []string {
 	out := radioIDs(items)
 	for i, id := range out {
@@ -287,7 +301,8 @@ func TestRadioPlaylistFixture(t *testing.T) {
 			t.Errorf("%s = %v\nwant a shuffle of the units %v", rubric, got, want)
 		}
 	}
-	check(rubSkyToday, "sky_news")
+	// A120: the wave's own sky-today segment of the date (the 2026-10-14 one is not taken).
+	check(rubSkyToday, "sky-today/2026-10-13")
 	// ru: the rubrics with a catalog insert announce the language after the lead.
 	check(rubTithi, "lang_note", "insert_tithi_sukla_9")
 	check(rubLagna, "signs/04-cancer")
@@ -308,15 +323,8 @@ func TestRadioPlaylistFixture(t *testing.T) {
 	check(rubTopic, "topics/01-love")
 	check(rubYear, "year-2027/10-capricorn")
 	// A120: station releases never enter the wave (the fixture schedule has four, incl. "sun-saturn" and
-	// sign episodes) — nothing but sky_news comes from the station of the day.
-	for _, it := range pl.Items {
-		if it.Kind == "release" || strings.HasPrefix(it.ID, "release_") || strings.HasPrefix(it.Src, "/radio/rel/") {
-			t.Errorf("station release in the wave: %s %s", it.ID, it.Src)
-		}
-		if strings.HasPrefix(it.Src, "/radio/mars/") && it.Kind != "sky_news" && it.Kind != "music" {
-			t.Errorf("station item of kind %s in the wave: %s", it.Kind, it.ID)
-		}
-	}
+	// sign episodes), nor the station's sky_news with its call sign — nothing but music comes from a station.
+	radioCheckNoStationSpeech(t, pl)
 	check(rubEvent, "events/retrograde-start_2026-10-24")
 
 	// Catalog insert: en src/dur, every language in durs; timeline uses the longer ru.
@@ -336,8 +344,9 @@ func TestRadioPlaylistFixture(t *testing.T) {
 		t.Errorf("tithi insert = %+v", tithi)
 	}
 	// Station sources are absolute under the station day folder.
-	if s := radioByRubric(pl, rubSkyToday)[1].Src; s != "/radio/mars/2026-10-13/seg/sky_news.m4a" {
-		t.Errorf("sky_news src = %s", s)
+	if sky := radioByRubric(pl, rubSkyToday)[1]; sky.Src != "/radio/lib/sky-today-2026-10-13.m4a" ||
+		sky.Kind != "sky_news" || sky.Title != "Sky today" || sky.Dur != 38.3 {
+		t.Errorf("sky today = %+v", sky)
 	}
 	if s := radioByRubric(pl, rubLagna)[1].Src; s != "/radio/lib/signs-04-cancer.m4a" {
 		t.Errorf("lib src = %s", s)
@@ -402,6 +411,11 @@ func TestRadioPlaylistExpiryAndMonth(t *testing.T) {
 		t.Errorf("station = %s", pl.FactsUsed.Station)
 	}
 
+	// A120: no sky-today segment for 2026-11-01 — the rubric is left out, the station's sky_news never stands in.
+	if items := radioByRubric(pl, rubSkyToday); len(items) != 0 {
+		t.Errorf("sky_today without a segment for the date: %v", radioIDs(items))
+	}
+	radioCheckNoStationSpeech(t, pl)
 	// 2027-02-01: q4 lenses (2027-01-24) are expired too, nothing has a
 	// January/February month spec beyond 2027-01, and no station schedule
 	// exists — those rubrics drop out instead of playing stale content.

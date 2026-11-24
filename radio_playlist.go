@@ -15,7 +15,8 @@ package main
 // already on this box under RADIO_DIR (default /var/www/html/radio):
 // lib/index.json (the Kokoro library of spec readings), cat/index.json (the
 // app's 16-language catalog, audio in TTS_CACHE_DIR/<sha1>.mp3), the
-// station-of-the-day schedule.json (sky news, yesterday's releases, music) and
+// station-of-the-day schedule.json (its music; sky news is the wave's own lib
+// segment sky-today/<date> since A120, station releases never enter) and
 // <station>/ever/loops.json (the music loops, each played once).
 // The answer has the item fields of a station schedule.json, so engine.js and
 // the app play it without a new player.
@@ -414,6 +415,17 @@ func (b *radioBuilder) you(role, rubric string) *radioLibTrack {
 	return cands[b.pick(len(cands), role+"/"+rubric)]
 }
 
+// skyToday is the wave's «sky today» segment of the playlist date (lib cycle sky-today, insta-agent).
+func (b *radioBuilder) skyToday() *radioLibTrack {
+	for i := range b.in.lib.Tracks {
+		t := &b.in.lib.Tracks[i]
+		if t.Tags.You == "sky_today" && t.Tags.Date == b.atStr && b.active(t) {
+			return t
+		}
+	}
+	return nil
+}
+
 // find returns the active lib tracks matching pred, in key order.
 func (b *radioBuilder) find(pred func(t *radioLibTrack) bool) []*radioLibTrack {
 	var out []*radioLibTrack
@@ -799,16 +811,6 @@ func (b *radioBuilder) addLib(dst *[]radioItem, ts []*radioLibTrack, rubric stri
 	}
 }
 
-// radioStationURL resolves a schedule src (relative to the station's day folder)
-// to an absolute /radio/ URL; anything escaping /radio/ is refused.
-func radioStationURL(station, day, src string) (string, bool) {
-	if src == "" || strings.HasPrefix(src, "/") || strings.Contains(src, "://") {
-		return "", false
-	}
-	u := path.Join("/radio", station, day, src)
-	return u, strings.HasPrefix(u, "/radio/")
-}
-
 func radioTitleCase(s string) string {
 	if s == "" {
 		return s
@@ -853,7 +855,6 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 	b.seed = sha1.Sum(append(factsJSON, "|"+b.atStr...))
 	b.day = radioWeekdayStation[in.at.Weekday()]
 	day := b.day
-	sched := in.schedule(day)
 
 	planetAt := map[string]chartFactsPlanet{}
 	houseCount := map[int]int{}
@@ -876,18 +877,16 @@ func buildRadioPlaylist(in radioInputs) *radioPlaylist {
 		}
 	}
 
-	// 1. Sky today: one sky_news of the station of the day.
-	if sched != nil {
-		for _, s := range sched.Items {
-			if s.Kind != "sky_news" {
-				continue
-			}
-			if u, ok := radioStationURL(day, b.atStr, s.Src); ok {
-				b.add(rubSkyToday, []radioItem{{Dur: s.Dur, span: s.Dur, Kind: "sky_news", ID: s.ID,
-					Title: s.Title, Src: u, Rubric: rubSkyToday, station: day}})
-			}
-			break
+	// 1. Sky today: the wave's own lib segment for this date (A120, owner 17.11.2026: on the personal
+	// station only the listener's own chart and the general sky — never another station's sky_news with
+	// its call sign). No segment for the date: the rubric is left out, nothing station-made stands in.
+	// Kind stays sky_news: the app labels the item by kind.
+	if t := b.skyToday(); t != nil {
+		if it, ok := b.libItem(t, "sky_news", rubSkyToday, day); ok {
+			b.add(rubSkyToday, []radioItem{it})
 		}
+	} else {
+		log.Printf("radio-you: no sky-today segment for %s", b.atStr)
 	}
 
 	// 2. Tithi today (catalog).
