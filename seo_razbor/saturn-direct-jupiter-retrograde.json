@@ -10,26 +10,51 @@
   "transits"
  ],
  "langs": [
-  "en"
+  "en",
+  "ru",
+  "es",
+  "de",
+  "ar",
+  "pt"
  ],
  "title": {
-  "en": "Saturn turns direct, Jupiter turns retrograde: 11 & 13 December 2026 for every ascendant"
+  "en": "Saturn turns direct, Jupiter turns retrograde: 11 & 13 December 2026 for every ascendant",
+  "ru": "Сатурн становится прямым, Юпитер — ретроградным: 11 и 13 декабря 2026 для каждой лагны",
+  "es": "Saturno pasa a directo y Júpiter a retrógrado: 11 y 13 de diciembre de 2026 para todos los ascendentes",
+  "de": "Saturn wird rechtläufig, Jupiter rückläufig: 11. und 13. Dezember 2026 für jeden Aszendenten",
+  "ar": "زحل يصبح مباشراً والمشتري راجعاً: 11 و13 ديسمبر 2026 لكل طالع",
+  "pt": "Saturno fica direto e Júpiter retrógrado: 11 e 13 de dezembro de 2026 para todos os ascendentes"
  },
  "lead": {
-  "en": "Two planets turn within two days: on 11 December 2026 Saturn turns direct in Pisces, and on 13 December 2026 Jupiter turns retrograde in Leo."
+  "en": "Two planets turn within two days: on 11 December 2026 Saturn turns direct in Pisces, and on 13 December 2026 Jupiter turns retrograde in Leo.",
+  "ru": "Две планеты разворачиваются за два дня: 11 декабря 2026 Сатурн становится прямым в Рыбах, а 13 декабря 2026 Юпитер становится ретроградным во Льве.",
+  "es": "Dos planetas cambian de sentido en dos días: el 11 de diciembre de 2026 Saturno pasa a directo en Piscis y el 13 de diciembre de 2026 Júpiter pasa a retrógrado en Leo.",
+  "de": "Zwei Planeten wenden sich innerhalb von zwei Tagen: Am 11. Dezember 2026 wird Saturn in den Fischen rechtläufig, am 13. Dezember 2026 Jupiter im Löwen rückläufig.",
+  "ar": "يغيّر كوكبان اتجاههما خلال يومين: في 11 ديسمبر 2026 يصبح زحل مباشراً في الحوت، وفي 13 ديسمبر 2026 يصبح المشتري راجعاً في الأسد.",
+  "pt": "Dois planetas mudam de direção em dois dias: em 11 de dezembro de 2026 Saturno fica direto em Peixes e em 13 de dezembro de 2026 Júpiter fica retrógrado em Leão."
  },
  "sections": [
   {
    "t": 0,
    "sign": -1,
    "h": {
-    "en": "Two planets, two turns"
+    "en": "Two planets, two turns",
+    "ru": "Две планеты, два разворота",
+    "es": "Dos planetas, dos giros",
+    "de": "Zwei Planeten, zwei Wenden",
+    "ar": "كوكبان، تحوّلان",
+    "pt": "Dois planetas, duas viradas"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "In the middle of December, Saturn and Jupiter both change direction, two days apart. What actually changes when a planet turns around?"
+      "en": "In the middle of December, Saturn and Jupiter both change direction, two days apart. What actually changes when a planet turns around?",
+      "ru": "В середине декабря Сатурн и Юпитер оба меняют направление с разницей в 2 дня. Что на самом деле меняется, когда планета разворачивается?",
+      "es": "A mediados de diciembre, Saturno y Júpiter cambian de dirección, con 2 días de diferencia. ¿Qué cambia realmente cuando un planeta da la vuelta?",
+      "de": "Mitte Dezember wechseln Saturn und Jupiter beide die Richtung, im Abstand von 2 Tagen. Was ändert sich eigentlich, wenn ein Planet umkehrt?",
+      "ar": "في منتصف ديسمبر، يغيّر زحل والمشتري اتجاههما كلاهما، بفارق يومين. ما الذي يتغيّر فعلًا عندما يغيّر الكوكب اتجاهه؟",
+      "pt": "Em meados de dezembro, Saturno e Júpiter mudam de direção, com 2 dias de diferença. O que muda de fato quando um planeta dá meia-volta?"
      }
     }
    ]
@@ -38,13 +63,23 @@
    "t": 16,
    "sign": -1,
    "h": {
-    "en": "Two turns in two days"
+    "en": "Two turns in two days",
+    "ru": "Два разворота за два дня",
+    "es": "Dos giros en dos días",
+    "de": "Zwei Wenden in zwei Tagen",
+    "ar": "تحوّلان في يومين",
+    "pt": "Duas viradas em dois dias"
    },
    "lines": [
     {
      "host": "B",
      "text": {
-      "en": "A planet never really walks backwards. From Earth it only looks that way, like a slower car that seems to roll back while you overtake it. Astrologers still read it closely. Retrograde time is for going back over things. Direct time is for moving on with what you have reviewed. Here are the two turns. On the eleventh of December twenty twenty-six, Saturn turns direct in Pisces. It has been retrograde since late July. On the thirteenth of December, Jupiter turns retrograde in Leo, only six weeks after it entered that sign. So the planet of patience starts walking forward again. And the planet of growth stops to look back."
+      "en": "A planet never really walks backwards. From Earth it only looks that way, like a slower car that seems to roll back while you overtake it. Astrologers still read it closely. Retrograde time is for going back over things. Direct time is for moving on with what you have reviewed. Here are the two turns. On the eleventh of December twenty twenty-six, Saturn turns direct in Pisces. It has been retrograde since late July. On the thirteenth of December, Jupiter turns retrograde in Leo, only six weeks after it entered that sign. So the planet of patience starts walking forward again. And the planet of growth stops to look back.",
+      "ru": "Планета никогда не идёт назад по-настоящему. Это только кажется с Земли, как медленная машина, которая будто катится назад, пока вы её обгоняете. Астрологи всё равно внимательно это читают. Время ретроградности — время возвращаться к пройденному. Время прямого движения — время двигаться дальше с тем, что вы пересмотрели. Вот два разворота. 11 декабря 2026 года Сатурн становится прямым в Рыбах. Он был ретроградным с конца июля. 13 декабря Юпитер становится ретроградным во Льве, всего через 6 недель после входа в этот знак. Так планета терпения снова начинает идти вперёд. А планета роста останавливается и оглядывается назад.",
+      "es": "Un planeta nunca camina de verdad hacia atrás. Desde la Tierra solo lo parece, como un coche más lento que parece retroceder mientras lo adelantas. Aun así, los astrólogos lo leen con atención. El tiempo retrógrado sirve para repasar lo hecho. El tiempo directo sirve para avanzar con lo que has revisado. Estos son los dos giros. El 11 de diciembre de 2026, Saturno se vuelve directo en Piscis. Estaba retrógrado desde finales de julio. El 13 de diciembre, Júpiter se vuelve retrógrado en Leo, solo 6 semanas después de entrar en ese signo. Así que el planeta de la paciencia vuelve a caminar hacia delante. Y el planeta del crecimiento se detiene a mirar atrás.",
+      "de": "Ein Planet läuft nie wirklich rückwärts. Von der Erde aus sieht es nur so aus, wie bei einem langsameren Auto, das zurückzurollen scheint, während du überholst. Astrologen lesen es trotzdem genau. Die rückläufige Zeit ist zum Zurückgehen und Überprüfen da. Die rechtläufige Zeit ist dafür da, mit dem Überprüften weiterzugehen. Hier sind die zwei Wendepunkte. Am 11. Dezember 2026 wird Saturn in den Fischen rechtläufig. Er ist seit Ende Juli rückläufig. Am 13. Dezember wird Jupiter im Löwen rückläufig, nur 6 Wochen nachdem er in dieses Zeichen eingetreten ist. Der Planet der Geduld geht also wieder vorwärts. Und der Planet des Wachstums bleibt stehen und schaut zurück.",
+      "ar": "الكوكب لا يمشي إلى الوراء حقًا. يبدو الأمر كذلك من الأرض فقط، مثل سيارة أبطأ تبدو كأنها تتراجع بينما تتجاوزها. ومع ذلك يقرأ المنجّمون هذا بعناية. زمن الحركة التراجعية هو وقت العودة إلى الأمور ومراجعتها. وزمن الحركة المباشرة هو وقت المضي قدمًا بما راجعته. وهذان هما التحوّلان. في 11 ديسمبر 2026، يعود زحل إلى الحركة المباشرة في الحوت. وكان في حركة تراجعية منذ أواخر يوليو. وفي 13 ديسمبر، يبدأ المشتري حركته التراجعية في الأسد، بعد 6 أسابيع فقط من دخوله هذا البرج. فكوكب الصبر يبدأ بالسير إلى الأمام من جديد. وكوكب النمو يتوقف لينظر إلى الوراء.",
+      "pt": "Um planeta nunca anda de verdade para trás. Da Terra só parece assim, como um carro mais lento que parece voltar enquanto você o ultrapassa. Mesmo assim, os astrólogos leem isso com atenção. O tempo retrógrado serve para rever o que já foi feito. O tempo direto serve para seguir em frente com o que você revisou. Aqui estão as duas viradas. Em 11 de dezembro de 2026, Saturno fica direto em Peixes. Ele está retrógrado desde o fim de julho. Em 13 de dezembro, Júpiter fica retrógrado em Leão, apenas 6 semanas depois de entrar nesse signo. Assim, o planeta da paciência volta a andar para a frente. E o planeta do crescimento para para olhar para trás."
      }
     }
    ]
@@ -53,19 +88,34 @@
    "t": 62,
    "sign": -1,
    "h": {
-    "en": "Why they belong together"
+    "en": "Why they belong together",
+    "ru": "Почему они связаны",
+    "es": "Por qué van juntos",
+    "de": "Warum sie zusammengehören",
+    "ar": "لماذا يرتبطان",
+    "pt": "Por que andam juntos"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Two turns, two days apart. Is that a coincidence, or are they connected?"
+      "en": "Two turns, two days apart. Is that a coincidence, or are they connected?",
+      "ru": "Два разворота с разницей в 2 дня. Это совпадение или они связаны?",
+      "es": "Dos giros, con 2 días de diferencia. ¿Es una coincidencia o están conectados?",
+      "de": "Zwei Wendepunkte, 2 Tage Abstand. Ist das Zufall, oder hängen sie zusammen?",
+      "ar": "تحوّلان بفارق يومين. هل هذه مصادفة، أم أنهما مرتبطان؟",
+      "pt": "Duas viradas, com 2 dias de diferença. Isso é coincidência ou elas estão ligadas?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "They are connected. Saturn sits in Pisces, and Pisces belongs to Jupiter. So Jupiter is the planet Saturn reports to. When the boss pauses and the worker starts moving, plans get built, but they keep getting checked. There is a second link. From Leo, Jupiter's fifth aspect falls on Sagittarius. From Pisces, Saturn's tenth aspect falls on Sagittarius too. So both slow planets look at the same sign this winter. Find Sagittarius in your own chart, and note which house it is for you. That house gets a double look."
+      "en": "They are connected. Saturn sits in Pisces, and Pisces belongs to Jupiter. So Jupiter is the planet Saturn reports to. When the boss pauses and the worker starts moving, plans get built, but they keep getting checked. There is a second link. From Leo, Jupiter's fifth aspect falls on Sagittarius. From Pisces, Saturn's tenth aspect falls on Sagittarius too. So both slow planets look at the same sign this winter. Find Sagittarius in your own chart, and note which house it is for you. That house gets a double look.",
+      "ru": "Они связаны. Сатурн стоит в Рыбах, а Рыбы принадлежат Юпитеру. Значит, Юпитер — планета, которой Сатурн подчиняется. Когда начальник останавливается, а работник начинает двигаться, планы строятся, но их постоянно перепроверяют. Есть и вторая связь. Из Льва пятый аспект Юпитера падает на Стрельца. Из Рыб десятый аспект Сатурна тоже падает на Стрельца. Так что этой зимой обе медленные планеты смотрят на один и тот же знак. Найдите Стрельца в своей карте и отметьте, каким домом он для вас является. Этот дом получает двойной взгляд.",
+      "es": "Están conectados. Saturno está en Piscis, y Piscis pertenece a Júpiter. Así que Júpiter es el planeta ante el que Saturno rinde cuentas. Cuando el jefe se detiene y el trabajador empieza a moverse, los planes se construyen, pero se siguen revisando. Hay una segunda conexión. Desde Leo, el quinto aspecto de Júpiter cae sobre Sagitario. Desde Piscis, el décimo aspecto de Saturno también cae sobre Sagitario. Así que ambos planetas lentos miran el mismo signo este invierno. Busca Sagitario en tu propia carta y fíjate en qué casa es para ti. Esa casa recibe una mirada doble.",
+      "de": "Sie hängen zusammen. Saturn steht in den Fischen, und die Fische gehören Jupiter. Jupiter ist also der Planet, dem Saturn Bericht erstattet. Wenn der Chef innehält und der Arbeiter sich in Bewegung setzt, werden Pläne gebaut, aber sie werden immer wieder geprüft. Es gibt eine zweite Verbindung. Vom Löwen aus fällt Jupiters fünfter Aspekt auf den Schützen. Von den Fischen aus fällt Saturns zehnter Aspekt ebenfalls auf den Schützen. Beide langsamen Planeten schauen diesen Winter also auf dasselbe Zeichen. Finde den Schützen in deinem eigenen Horoskop und sieh nach, das wievielte Haus er für dich ist. Dieses Haus bekommt einen doppelten Blick.",
+      "ar": "إنهما مرتبطان. زحل في الحوت، والحوت يتبع المشتري. فالمشتري هو الكوكب الذي يرفع زحل تقريره إليه. حين يتوقف الرئيس ويبدأ العامل بالحركة، تُبنى الخطط، لكنها تُراجَع باستمرار. وهناك رابط ثانٍ. من الأسد، تقع نظرة المشتري الخامسة على القوس. ومن الحوت، تقع نظرة زحل العاشرة على القوس أيضًا. فالكوكبان البطيئان كلاهما ينظران إلى البرج نفسه هذا الشتاء. ابحث عن القوس في خريطتك، وانتبه إلى رقم البيت الذي يشغله عندك. هذا البيت ينال نظرة مزدوجة.",
+      "pt": "Estão ligadas. Saturno está em Peixes, e Peixes pertence a Júpiter. Então Júpiter é o planeta a quem Saturno presta contas. Quando o chefe faz uma pausa e o trabalhador começa a se mover, os planos são construídos, mas continuam sendo conferidos. Há uma segunda ligação. De Leão, o quinto aspecto de Júpiter cai sobre Sagitário. De Peixes, o décimo aspecto de Saturno também cai sobre Sagitário. Então os dois planetas lentos olham para o mesmo signo neste inverno. Encontre Sagitário no seu próprio mapa e veja qual casa ele é para você. Essa casa recebe um olhar duplo."
      }
     }
    ]
@@ -74,19 +124,34 @@
    "t": 108,
    "sign": -1,
    "h": {
-    "en": "The calendar"
+    "en": "The calendar",
+    "ru": "Календарь",
+    "es": "El calendario",
+    "de": "Der Kalender",
+    "ar": "التقويم",
+    "pt": "O calendário"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "How long does all this last?"
+      "en": "How long does all this last?",
+      "ru": "Как долго всё это продлится?",
+      "es": "¿Cuánto dura todo esto?",
+      "de": "Wie lange dauert das alles?",
+      "ar": "إلى متى يستمر كل هذا؟",
+      "pt": "Quanto tempo dura tudo isso?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Jupiter's backward walk crosses a border. On the twenty-fourth of January twenty twenty-seven, it slips back from Leo into Cancer. In Cancer, Jupiter is exalted, at its strongest. On the thirteenth of April, it turns direct there. Saturn meanwhile walks forward through Pisces. On the third of June, it enters Aries. And on the twenty-sixth of June, Jupiter enters Leo again. So this winter brings Jupiter back to its best sign for five months."
+      "en": "Jupiter's backward walk crosses a border. On the twenty-fourth of January twenty twenty-seven, it slips back from Leo into Cancer. In Cancer, Jupiter is exalted, at its strongest. On the thirteenth of April, it turns direct there. Saturn meanwhile walks forward through Pisces. On the third of June, it enters Aries. And on the twenty-sixth of June, Jupiter enters Leo again. So this winter brings Jupiter back to its best sign for five months.",
+      "ru": "Обратный ход Юпитера пересекает границу. 24 января 2027 года он отступает из Льва обратно в Рак. В Раке Юпитер экзальтирован, то есть сильнее всего. 13 апреля он становится там прямым. Сатурн тем временем идёт вперёд по Рыбам. 3 июня он входит в Овен. А 26 июня Юпитер снова входит во Льва. Так эта зима на 5 месяцев возвращает Юпитер в его лучший знак.",
+      "es": "El paso atrás de Júpiter cruza una frontera. El 24 de enero de 2027, retrocede de Leo a Cáncer. En Cáncer, Júpiter está exaltado, en su máxima fuerza. El 13 de abril se vuelve directo allí. Mientras tanto, Saturno avanza por Piscis. El 3 de junio entra en Aries. Y el 26 de junio, Júpiter entra de nuevo en Leo. Así que este invierno devuelve a Júpiter a su mejor signo durante 5 meses.",
+      "de": "Jupiters Rückwärtsgang überschreitet eine Grenze. Am 24. Januar 2027 rutscht er vom Löwen zurück in den Krebs. Im Krebs ist Jupiter erhöht, auf dem Höhepunkt seiner Kraft. Am 13. April wird er dort wieder rechtläufig. Saturn läuft währenddessen vorwärts durch die Fische. Am 3. Juni tritt er in den Widder ein. Und am 26. Juni tritt Jupiter wieder in den Löwen ein. Dieser Winter bringt Jupiter also für 5 Monate in sein bestes Zeichen zurück.",
+      "ar": "مسير المشتري التراجعي يعبر حدًا بين برجين. في 24 يناير 2027، يرجع من الأسد إلى السرطان. في السرطان يكون المشتري في شرفه، وفي أقوى حالاته. وفي 13 أبريل، يعود إلى الحركة المباشرة هناك. أما زحل فيسير في أثناء ذلك إلى الأمام عبر الحوت. وفي 3 يونيو، يدخل الحمل. وفي 26 يونيو، يدخل المشتري الأسد مرة أخرى. فهذا الشتاء يعيد المشتري إلى أفضل أبراجه لمدة 5 أشهر.",
+      "pt": "O caminho de volta de Júpiter cruza uma fronteira. Em 24 de janeiro de 2027, ele volta de Leão para Câncer. Em Câncer, Júpiter está exaltado, no seu ponto mais forte. Em 13 de abril, ele fica direto ali. Enquanto isso, Saturno avança por Peixes. Em 3 de junho, ele entra em Áries. E em 26 de junho, Júpiter entra em Leão de novo. Assim, este inverno traz Júpiter de volta ao seu melhor signo por 5 meses."
      }
     }
    ]
@@ -95,49 +160,94 @@
    "t": 144,
    "sign": 0,
    "h": {
-    "en": "Aries rising"
+    "en": "Aries rising",
+    "ru": "Лагна Овен",
+    "es": "Ascendente Aries",
+    "de": "Aszendent Widder",
+    "ar": "الطالع الحمل",
+    "pt": "Ascendente Áries"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Now sign by sign. Aries rising first. Where do the two planets sit for Aries?"
+      "en": "Now sign by sign. Aries rising first. Where do the two planets sit for Aries?",
+      "ru": "Теперь знак за знаком. Сначала лагна Овен. Где стоят две планеты для Овна?",
+      "es": "Ahora, signo por signo. Primero, Ascendente Aries. ¿Dónde están los dos planetas para Aries?",
+      "de": "Jetzt Zeichen für Zeichen. Zuerst Aszendent Widder. Wo stehen die beiden Planeten für den Widder?",
+      "ar": "والآن برجًا برجًا. طالع الحمل أولًا. أين يقع الكوكبان بالنسبة إلى الحمل؟",
+      "pt": "Agora, signo por signo. Primeiro, Ascendente em Áries. Onde ficam os dois planetas para Áries?"
      },
      "sub": {
-      "en": "Aries: where they sit"
+      "en": "Aries: where they sit",
+      "ru": "Овен: где они стоят",
+      "es": "Aries: dónde están",
+      "de": "Widder: wo sie stehen",
+      "ar": "الحمل: أين يقعان",
+      "pt": "Áries: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Aries rising, Saturn is in Pisces, your twelfth house. That's sleep, rest, spending, and work done out of sight. Saturn rules your tenth and eleventh houses, career and income. So since late July, career plans may have stalled behind the scenes. From the eleventh of December, they start to move again. Jupiter sits in Leo, your fifth house, and turns retrograde there on the thirteenth. The fifth house is creativity, study, romance and children. Jupiter rules your ninth house of luck and teachers, and also your twelfth. And from Leo, its ninth aspect falls right on you, on your ascendant. That's a protective look, even while Jupiter is retrograde."
+      "en": "For Aries rising, Saturn is in Pisces, your twelfth house. That's sleep, rest, spending, and work done out of sight. Saturn rules your tenth and eleventh houses, career and income. So since late July, career plans may have stalled behind the scenes. From the eleventh of December, they start to move again. Jupiter sits in Leo, your fifth house, and turns retrograde there on the thirteenth. The fifth house is creativity, study, romance and children. Jupiter rules your ninth house of luck and teachers, and also your twelfth. And from Leo, its ninth aspect falls right on you, on your ascendant. That's a protective look, even while Jupiter is retrograde.",
+      "ru": "Для лагны Овна Сатурн в Рыбах, в вашем двенадцатом доме. Это сон, отдых, траты и работа, сделанная вне поля зрения. Сатурн управляет вашим десятым и одиннадцатым домами, карьерой и доходом. Так что с конца июля карьерные планы, возможно, застопорились за кулисами. С 11 декабря они снова начинают двигаться. Юпитер стоит во Льве, в вашем пятом доме, и становится там ретроградным 13-го. Пятый дом — творчество, учёба, романтика и дети. Юпитер управляет вашим девятым домом удачи и учителей, а также двенадцатым. А из Льва его девятый аспект падает прямо на вас, на вашу лагну. Это защитный взгляд, даже когда Юпитер ретроградный.",
+      "es": "Para el Ascendente Aries, Saturno está en Piscis, tu casa doce. Es el sueño, el descanso, los gastos y el trabajo hecho a escondidas. Saturno rige tus casas diez y once, la carrera y los ingresos. Así que desde finales de julio, los planes profesionales pueden haberse estancado entre bastidores. Desde el 11 de diciembre, vuelven a moverse. Júpiter está en Leo, tu casa cinco, y se vuelve retrógrado allí el 13. La casa cinco es la creatividad, el estudio, el romance y los hijos. Júpiter rige tu casa nueve de la suerte y los maestros, y también la doce. Y desde Leo, su noveno aspecto cae justo sobre ti, sobre tu Ascendente. Es una mirada protectora, incluso con Júpiter retrógrado.",
+      "de": "Für Aszendent Widder steht Saturn in den Fischen, deinem zwölften Haus. Das ist Schlaf, Ruhe, Ausgaben und Arbeit, die im Verborgenen geschieht. Saturn herrscht über dein zehntes und elftes Haus, Karriere und Einkommen. Seit Ende Juli haben Karrierepläne also vielleicht hinter den Kulissen gestockt. Ab dem 11. Dezember kommen sie wieder in Bewegung. Jupiter steht im Löwen, deinem fünften Haus, und wird dort am 13. rückläufig. Das fünfte Haus steht für Kreativität, Studium, Romantik und Kinder. Jupiter herrscht über dein neuntes Haus von Glück und Lehrern, und auch über dein zwölftes. Und vom Löwen aus fällt sein neunter Aspekt genau auf dich, auf deinen Aszendenten. Das ist ein schützender Blick, auch wenn Jupiter rückläufig ist.",
+      "ar": "لطالع الحمل، زحل في الحوت، في بيتك الثاني عشر. وهو بيت النوم والراحة والإنفاق والعمل الذي يتم بعيدًا عن الأنظار. زحل يحكم بيتيك العاشر والحادي عشر، أي المهنة والدخل. لذلك قد تكون خطط المهنة متعثرة خلف الكواليس منذ أواخر يوليو. ومن 11 ديسمبر، تبدأ بالتحرك من جديد. المشتري في الأسد، في بيتك الخامس، ويبدأ حركته التراجعية فيه في 13 ديسمبر. البيت الخامس هو الإبداع والدراسة والحب والأبناء. المشتري يحكم بيتك التاسع، بيت الحظ والمعلمين، وبيتك الثاني عشر أيضًا. ومن الأسد، تقع نظرته التاسعة عليك مباشرة، على طالعك. وهذه نظرة حامية، حتى والمشتري في حركة تراجعية.",
+      "pt": "Para o Ascendente em Áries, Saturno está em Peixes, sua casa doze. É sono, descanso, gastos e trabalho feito longe das vistas. Saturno rege suas casas dez e onze, carreira e renda. Então, desde o fim de julho, os planos de carreira podem ter parado nos bastidores. A partir de 11 de dezembro, eles voltam a andar. Júpiter está em Leão, sua casa cinco, e fica retrógrado ali no dia 13. A quinta casa é criatividade, estudo, romance e filhos. Júpiter rege sua casa nove, da sorte e dos mestres, e também a doze. E de Leão, seu nono aspecto cai bem sobre você, sobre o seu ascendente. É um olhar protetor, mesmo com Júpiter retrógrado."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "So what should Aries do with the retrograde months?"
+      "en": "So what should Aries do with the retrograde months?",
+      "ru": "Что же делать Овну в ретроградные месяцы?",
+      "es": "Entonces, ¿qué debería hacer Aries con los meses retrógrados?",
+      "de": "Was soll der Widder also mit den rückläufigen Monaten machen?",
+      "ar": "إذًا ماذا يفعل الحمل في أشهر الحركة التراجعية؟",
+      "pt": "Então o que Áries deve fazer nos meses retrógrados?"
      },
      "sub": {
-      "en": "Aries: the review"
+      "en": "Aries: the review",
+      "ru": "Овен: пересмотр",
+      "es": "Aries: la revisión",
+      "de": "Widder: die Überprüfung",
+      "ar": "الحمل: المراجعة",
+      "pt": "Áries: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Use them to finish, not to start. Jupiter going back through your fifth house is good for returning to a course you dropped, or a creative project you left half done. On the twenty-fourth of January, Jupiter slips back into Cancer, your fourth house. Home and family come to the front. Jupiter is exalted there, so it's a good window for a move, a repair, or a calm family talk. It turns direct on the thirteenth of April. Meanwhile, Saturn's tenth aspect from Pisces lands on Sagittarius, your ninth house. So teachers, travel plans and big beliefs get tested. Slow, careful answers win here."
+      "en": "Use them to finish, not to start. Jupiter going back through your fifth house is good for returning to a course you dropped, or a creative project you left half done. On the twenty-fourth of January, Jupiter slips back into Cancer, your fourth house. Home and family come to the front. Jupiter is exalted there, so it's a good window for a move, a repair, or a calm family talk. It turns direct on the thirteenth of April. Meanwhile, Saturn's tenth aspect from Pisces lands on Sagittarius, your ninth house. So teachers, travel plans and big beliefs get tested. Slow, careful answers win here.",
+      "ru": "Использовать их, чтобы завершать, а не начинать. Ход Юпитера назад через ваш пятый дом хорош, чтобы вернуться к брошенному курсу или к творческому проекту, оставленному наполовину. 24 января Юпитер отступает в Рак, ваш четвёртый дом. Дом и семья выходят на первый план. Юпитер там экзальтирован, так что это хорошее время для переезда, ремонта или спокойного семейного разговора. Прямым он становится 13 апреля. Тем временем десятый аспект Сатурна из Рыб падает на Стрельца, ваш девятый дом. Поэтому учителя, планы поездок и крупные убеждения проходят проверку. Здесь выигрывают медленные, осторожные ответы.",
+      "es": "Úsalos para terminar, no para empezar. Que Júpiter retroceda por tu casa cinco es bueno para retomar un curso que dejaste o un proyecto creativo a medias. El 24 de enero, Júpiter retrocede a Cáncer, tu casa cuatro. El hogar y la familia pasan al primer plano. Júpiter está exaltado allí, así que es buen momento para una mudanza, una reparación o una charla familiar tranquila. Se vuelve directo el 13 de abril. Mientras tanto, el décimo aspecto de Saturno desde Piscis cae sobre Sagitario, tu casa nueve. Así que los maestros, los planes de viaje y las grandes creencias se ponen a prueba. Aquí ganan las respuestas lentas y cuidadosas.",
+      "de": "Nutze sie, um abzuschließen, nicht um anzufangen. Jupiters Rückgang durch dein fünftes Haus ist gut, um zu einem aufgegebenen Kurs zurückzukehren oder zu einem kreativen Projekt, das du halb fertig liegen gelassen hast. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein viertes Haus. Zuhause und Familie rücken nach vorn. Jupiter ist dort erhöht, also ist es ein gutes Fenster für einen Umzug, eine Reparatur oder ein ruhiges Familiengespräch. Am 13. April wird er rechtläufig. Währenddessen trifft Saturns zehnter Aspekt von den Fischen aus den Schützen, dein neuntes Haus. Lehrer, Reisepläne und große Überzeugungen werden also auf die Probe gestellt. Langsame, sorgfältige Antworten gewinnen hier.",
+      "ar": "استخدمها لتُنهي ما بدأته، لا لتبدأ شيئًا جديدًا. مرور المشتري تراجعيًا في بيتك الخامس مناسب للعودة إلى دورة تركتها، أو مشروع إبداعي تركته نصف منجز. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الرابع. فيتصدّر البيت والعائلة. المشتري في شرفه هناك، فهي فرصة جيدة لانتقال أو إصلاح أو حديث عائلي هادئ. ويعود إلى الحركة المباشرة في 13 أبريل. وفي أثناء ذلك، تقع نظرة زحل العاشرة من الحوت على القوس، بيتك التاسع. فتُختبر هنا المعلمون وخطط السفر والمعتقدات الكبرى. والإجابات البطيئة الحذرة هي التي تكسب.",
+      "pt": "Use-os para terminar, não para começar. Júpiter voltando pela sua quinta casa é bom para retomar um curso que você largou ou um projeto criativo deixado pela metade. Em 24 de janeiro, Júpiter volta para Câncer, sua casa quatro. Lar e família passam para o primeiro plano. Júpiter está exaltado ali, então é uma boa janela para uma mudança, um conserto ou uma conversa tranquila em família. Ele fica direto em 13 de abril. Enquanto isso, o décimo aspecto de Saturno, de Peixes, cai sobre Sagitário, sua casa nove. Então mestres, planos de viagem e grandes crenças são postos à prova. Respostas lentas e cuidadosas vencem aqui."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And when does it open up again?"
+      "en": "And when does it open up again?",
+      "ru": "А когда всё снова откроется?",
+      "es": "¿Y cuándo se abre de nuevo?",
+      "de": "Und wann öffnet es sich wieder?",
+      "ar": "ومتى ينفتح الطريق من جديد؟",
+      "pt": "E quando isso se abre de novo?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "In early summer. On the third of June twenty twenty-seven, Saturn enters Aries, your own first house. That's a big chapter of its own. Then on the twenty-sixth of June, Jupiter returns to Leo and your fifth house, moving forward this time. Whatever you reviewed in winter, you can now take further. So, Aries in one sentence: finish what was stuck in December, settle the home front by spring, and step out in June."
+      "en": "In early summer. On the third of June twenty twenty-seven, Saturn enters Aries, your own first house. That's a big chapter of its own. Then on the twenty-sixth of June, Jupiter returns to Leo and your fifth house, moving forward this time. Whatever you reviewed in winter, you can now take further. So, Aries in one sentence: finish what was stuck in December, settle the home front by spring, and step out in June.",
+      "ru": "Ранним летом. 3 июня 2027 года Сатурн входит в Овен, в ваш собственный первый дом. Это отдельная большая глава. Затем 26 июня Юпитер возвращается во Льва, в ваш пятый дом, и на этот раз идёт вперёд. Всё, что вы пересмотрели зимой, теперь можно продвинуть дальше. Итак, Овен одним предложением: завершите в декабре то, что застряло, наладьте домашние дела к весне и выходите вперёд в июне.",
+      "es": "A principios del verano. El 3 de junio de 2027, Saturno entra en Aries, tu propia casa uno. Es un gran capítulo aparte. Luego, el 26 de junio, Júpiter vuelve a Leo y a tu casa cinco, esta vez avanzando. Todo lo que revisaste en invierno, ahora puedes llevarlo más lejos. Así que, Aries en una frase: termina lo que estaba atascado en diciembre, arregla el frente del hogar en primavera y da el paso en junio.",
+      "de": "Im Frühsommer. Am 3. Juni 2027 tritt Saturn in den Widder ein, dein eigenes erstes Haus. Das ist ein großes Kapitel für sich. Dann, am 26. Juni, kehrt Jupiter in den Löwen und dein fünftes Haus zurück, diesmal vorwärts laufend. Was du im Winter überprüft hast, kannst du jetzt weiterführen. Der Widder in einem Satz: Schließe im Dezember ab, was hing, bring bis zum Frühling die Lage zu Hause in Ordnung und tritt im Juni nach draußen.",
+      "ar": "في مطلع الصيف. في 3 يونيو 2027، يدخل زحل الحمل، بيتك الأول. وهذا فصل كبير قائم بذاته. ثم في 26 يونيو، يعود المشتري إلى الأسد وإلى بيتك الخامس، متجهًا إلى الأمام هذه المرة. وكل ما راجعته في الشتاء يمكنك الآن أن تمضي به أبعد. إذًا الحمل في جملة واحدة: أنهِ ما تعثّر في ديسمبر، ورتّب شؤون البيت بحلول الربيع، وانطلق في يونيو.",
+      "pt": "No início do verão. Em 3 de junho de 2027, Saturno entra em Áries, sua própria casa um. Esse é um grande capítulo à parte. Depois, em 26 de junho, Júpiter volta para Leão e para sua casa cinco, desta vez avançando. Tudo o que você revisou no inverno, agora pode levar mais longe. Então, Áries em uma frase: termine o que estava parado em dezembro, acerte a casa até a primavera e dê um passo à frente em junho."
      }
     }
    ],
@@ -150,49 +260,94 @@
    "t": 282,
    "sign": 1,
    "h": {
-    "en": "Taurus rising"
+    "en": "Taurus rising",
+    "ru": "Лагна Телец",
+    "es": "Ascendente Tauro",
+    "de": "Aszendent Stier",
+    "ar": "الطالع الثور",
+    "pt": "Ascendente Touro"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Next, Taurus rising. What do the two turns mean for Taurus?"
+      "en": "Next, Taurus rising. What do the two turns mean for Taurus?",
+      "ru": "Дальше лагна Телец. Что два разворота значат для Тельца?",
+      "es": "A continuación, Ascendente Tauro. ¿Qué significan los dos giros para Tauro?",
+      "de": "Als Nächstes Aszendent Stier. Was bedeuten die beiden Wendepunkte für den Stier?",
+      "ar": "بعده طالع الثور. ماذا يعني التحوّلان للثور؟",
+      "pt": "Agora, Ascendente em Touro. O que as duas viradas significam para Touro?"
      },
      "sub": {
-      "en": "Taurus: where they sit"
+      "en": "Taurus: where they sit",
+      "ru": "Телец: где они стоят",
+      "es": "Tauro: dónde están",
+      "de": "Stier: wo sie stehen",
+      "ar": "الثور: أين يقعان",
+      "pt": "Touro: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Taurus rising, Saturn is your best friend among the planets. It rules your ninth and tenth houses, luck and career. Right now it sits in Pisces, your eleventh house of gains, friends and big networks. And its third aspect lands straight on your ascendant. Since late July, income from groups and contacts may have felt slow. When Saturn turns direct on the eleventh of December, those channels open again. Jupiter sits in Leo, your fourth house of home, mother and inner peace, and turns retrograde there on the thirteenth. For you, Jupiter rules the eighth and eleventh houses, so it brings sudden changes and sudden gains."
+      "en": "For Taurus rising, Saturn is your best friend among the planets. It rules your ninth and tenth houses, luck and career. Right now it sits in Pisces, your eleventh house of gains, friends and big networks. And its third aspect lands straight on your ascendant. Since late July, income from groups and contacts may have felt slow. When Saturn turns direct on the eleventh of December, those channels open again. Jupiter sits in Leo, your fourth house of home, mother and inner peace, and turns retrograde there on the thirteenth. For you, Jupiter rules the eighth and eleventh houses, so it brings sudden changes and sudden gains.",
+      "ru": "Для лагны Тельца Сатурн — лучший друг среди планет. Он управляет вашим девятым и десятым домами, удачей и карьерой. Сейчас он стоит в Рыбах, в вашем одиннадцатом доме доходов, друзей и больших сетей знакомств. И его третий аспект падает прямо на вашу лагну. С конца июля доход от групп и контактов, возможно, шёл медленно. Когда Сатурн становится прямым 11 декабря, эти каналы снова открываются. Юпитер стоит во Льве, в вашем четвёртом доме — доме, матери и внутреннего покоя, — и становится там ретроградным 13-го. Для вас Юпитер управляет восьмым и одиннадцатым домами, поэтому он приносит внезапные перемены и внезапные приобретения.",
+      "es": "Para el Ascendente Tauro, Saturno es tu mejor amigo entre los planetas. Rige tus casas nueve y diez, la suerte y la carrera. Ahora mismo está en Piscis, tu casa once de las ganancias, los amigos y las grandes redes. Y su tercer aspecto cae directo sobre tu Ascendente. Desde finales de julio, los ingresos de grupos y contactos pueden haberse sentido lentos. Cuando Saturno se vuelve directo el 11 de diciembre, esos canales se abren de nuevo. Júpiter está en Leo, tu casa cuatro del hogar, la madre y la paz interior, y se vuelve retrógrado allí el 13. Para ti, Júpiter rige las casas ocho y once, así que trae cambios repentinos y ganancias repentinas.",
+      "de": "Für Aszendent Stier ist Saturn dein bester Freund unter den Planeten. Er herrscht über dein neuntes und zehntes Haus, Glück und Karriere. Gerade steht er in den Fischen, deinem elften Haus der Gewinne, Freunde und großen Netzwerke. Und sein dritter Aspekt fällt direkt auf deinen Aszendenten. Seit Ende Juli hat sich das Einkommen aus Gruppen und Kontakten vielleicht langsam angefühlt. Wenn Saturn am 11. Dezember rechtläufig wird, öffnen sich diese Kanäle wieder. Jupiter steht im Löwen, deinem vierten Haus von Zuhause, Mutter und innerem Frieden, und wird dort am 13. rückläufig. Für dich herrscht Jupiter über das achte und elfte Haus, er bringt also plötzliche Veränderungen und plötzliche Gewinne.",
+      "ar": "لطالع الثور، زحل هو أفضل أصدقائك بين الكواكب. إنه يحكم بيتيك التاسع والعاشر، الحظ والمهنة. وهو الآن في الحوت، في بيتك الحادي عشر، بيت المكاسب والأصدقاء والشبكات الكبيرة. ونظرته الثالثة تقع مباشرة على طالعك. منذ أواخر يوليو، ربما بدا الدخل القادم من المجموعات والمعارف بطيئًا. وحين يعود زحل إلى الحركة المباشرة في 11 ديسمبر، تنفتح هذه القنوات من جديد. المشتري في الأسد، في بيتك الرابع، بيت الدار والأم والسكينة الداخلية، ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري عندك يحكم البيتين الثامن والحادي عشر، فيجلب تغيّرات مفاجئة ومكاسب مفاجئة.",
+      "pt": "Para o Ascendente em Touro, Saturno é seu melhor amigo entre os planetas. Ele rege suas casas nove e dez, sorte e carreira. Agora está em Peixes, sua casa onze, dos ganhos, amigos e grandes redes. E seu terceiro aspecto cai direto sobre o seu ascendente. Desde o fim de julho, a renda vinda de grupos e contatos pode ter parecido lenta. Quando Saturno fica direto em 11 de dezembro, esses canais se abrem de novo. Júpiter está em Leão, sua casa quatro, do lar, da mãe e da paz interior, e fica retrógrado ali no dia 13. Para você, Júpiter rege as casas oito e onze, então traz mudanças repentinas e ganhos repentinos."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What is the retrograde Jupiter asking Taurus to look at?"
+      "en": "What is the retrograde Jupiter asking Taurus to look at?",
+      "ru": "На что ретроградный Юпитер просит Тельца взглянуть?",
+      "es": "¿Qué le pide mirar a Tauro el Júpiter retrógrado?",
+      "de": "Worauf soll der Stier laut dem rückläufigen Jupiter schauen?",
+      "ar": "ما الذي يطلب المشتري التراجعي من الثور أن ينظر فيه؟",
+      "pt": "O que Júpiter retrógrado pede que Touro olhe?"
      },
      "sub": {
-      "en": "Taurus: the review"
+      "en": "Taurus: the review",
+      "ru": "Телец: пересмотр",
+      "es": "Tauro: la revisión",
+      "de": "Stier: die Überprüfung",
+      "ar": "الثور: المراجعة",
+      "pt": "Touro: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "The home front. Old questions about where you live, or about family, come back for a second look. Don't rush a property purchase in December. On the twenty-fourth of January, Jupiter slips back into Cancer, your third house. Writing, short trips, siblings and your own courage get a lift, and Jupiter is exalted there. It's a good time to learn a skill, or to send the message you kept postponing. Jupiter turns direct on the thirteenth of April. All winter, Saturn's tenth aspect sits on Sagittarius, your eighth house. Shared money, taxes and debts want order. Pay them down slowly."
+      "en": "The home front. Old questions about where you live, or about family, come back for a second look. Don't rush a property purchase in December. On the twenty-fourth of January, Jupiter slips back into Cancer, your third house. Writing, short trips, siblings and your own courage get a lift, and Jupiter is exalted there. It's a good time to learn a skill, or to send the message you kept postponing. Jupiter turns direct on the thirteenth of April. All winter, Saturn's tenth aspect sits on Sagittarius, your eighth house. Shared money, taxes and debts want order. Pay them down slowly.",
+      "ru": "На домашний фронт. Старые вопросы о том, где вы живёте, или о семье возвращаются на повторный взгляд. Не спешите с покупкой недвижимости в декабре. 24 января Юпитер отступает в Рак, ваш третий дом. Письмо, короткие поездки, братья и сёстры и ваша собственная смелость получают подъём, а Юпитер там экзальтирован. Это хорошее время, чтобы освоить навык или отправить сообщение, которое вы всё откладывали. Юпитер становится прямым 13 апреля. Всю зиму десятый аспект Сатурна лежит на Стрельце, вашем восьмом доме. Общие деньги, налоги и долги требуют порядка. Гасите их медленно.",
+      "es": "El frente del hogar. Viejas preguntas sobre dónde vives o sobre la familia vuelven para un segundo vistazo. No te apresures a comprar una propiedad en diciembre. El 24 de enero, Júpiter retrocede a Cáncer, tu casa tres. La escritura, los viajes cortos, los hermanos y tu propio valor reciben un impulso, y Júpiter está exaltado allí. Es buen momento para aprender una habilidad o enviar el mensaje que seguías posponiendo. Júpiter se vuelve directo el 13 de abril. Todo el invierno, el décimo aspecto de Saturno cae sobre Sagitario, tu casa ocho. El dinero compartido, los impuestos y las deudas piden orden. Págalas poco a poco.",
+      "de": "Auf die Lage zu Hause. Alte Fragen dazu, wo du wohnst oder zur Familie, kommen für einen zweiten Blick zurück. Überstürze im Dezember keinen Immobilienkauf. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein drittes Haus. Schreiben, kurze Reisen, Geschwister und dein eigener Mut bekommen Auftrieb, und Jupiter ist dort erhöht. Es ist eine gute Zeit, eine Fertigkeit zu lernen oder die Nachricht zu schicken, die du immer aufgeschoben hast. Jupiter wird am 13. April rechtläufig. Den ganzen Winter liegt Saturns zehnter Aspekt auf dem Schützen, deinem achten Haus. Gemeinsames Geld, Steuern und Schulden wollen Ordnung. Zahl sie langsam ab.",
+      "ar": "جبهة البيت. أسئلة قديمة عن مكان سكنك أو عن العائلة تعود لتُنظر فيها مرة ثانية. لا تتعجّل شراء عقار في ديسمبر. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الثالث. الكتابة والرحلات القصيرة والإخوة وشجاعتك الشخصية تنال دفعة، والمشتري في شرفه هناك. إنه وقت جيد لتعلّم مهارة، أو لإرسال الرسالة التي ظللت تؤجلها. ويعود المشتري إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الثامن. المال المشترك والضرائب والديون تطلب النظام. سدّدها ببطء.",
+      "pt": "O lado do lar. Velhas questões sobre onde você mora ou sobre a família voltam para uma segunda olhada. Não apresse a compra de um imóvel em dezembro. Em 24 de janeiro, Júpiter volta para Câncer, sua casa três. Escrita, viagens curtas, irmãos e sua própria coragem ganham impulso, e Júpiter está exaltado ali. É um bom momento para aprender uma habilidade ou enviar a mensagem que você vinha adiando. Júpiter fica direto em 13 de abril. Durante todo o inverno, o décimo aspecto de Saturno fica sobre Sagitário, sua casa oito. Dinheiro compartilhado, impostos e dívidas pedem ordem. Pague-as aos poucos."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And the summer?"
+      "en": "And the summer?",
+      "ru": "А что летом?",
+      "es": "¿Y el verano?",
+      "de": "Und der Sommer?",
+      "ar": "والصيف؟",
+      "pt": "E o verão?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your twelfth house. Its long walk through your gains ends, and a quieter time of rest and letting go begins. On the twenty-sixth of June, Jupiter returns to Leo and your fourth house, moving forward this time. The home plans you checked in winter can go ahead. So, Taurus in one sentence: collect what your network owes you in December, learn and speak up in spring, and settle the house in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your twelfth house. Its long walk through your gains ends, and a quieter time of rest and letting go begins. On the twenty-sixth of June, Jupiter returns to Leo and your fourth house, moving forward this time. The home plans you checked in winter can go ahead. So, Taurus in one sentence: collect what your network owes you in December, learn and speak up in spring, and settle the house in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш двенадцатый дом. Его долгий путь по вашим доходам заканчивается, и начинается более тихое время отдыха и отпускания. 26 июня Юпитер возвращается во Льва, в ваш четвёртый дом, и на этот раз идёт вперёд. Домашние планы, которые вы проверяли зимой, можно двигать дальше. Итак, Телец одним предложением: в декабре соберите то, что вам должна ваша сеть, весной учитесь и говорите открыто, а летом обустройте дом.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa doce. Su largo recorrido por tus ganancias termina, y empieza un tiempo más tranquilo de descanso y desapego. El 26 de junio, Júpiter vuelve a Leo y a tu casa cuatro, esta vez avanzando. Los planes para el hogar que revisaste en invierno pueden seguir adelante. Así que, Tauro en una frase: cobra en diciembre lo que tu red te debe, aprende y habla en primavera, y asienta la casa en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein zwölftes Haus. Sein langer Gang durch deine Gewinne endet, und eine ruhigere Zeit des Ausruhens und Loslassens beginnt. Am 26. Juni kehrt Jupiter in den Löwen und dein viertes Haus zurück, diesmal vorwärts laufend. Die Pläne für zu Hause, die du im Winter geprüft hast, können weitergehen. Der Stier in einem Satz: Hol im Dezember ein, was dein Netzwerk dir schuldet, lerne und sprich im Frühling offen, und bring im Sommer das Haus in Ordnung.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك الثاني عشر. ينتهي مسيره الطويل عبر مكاسبك، ويبدأ وقت أهدأ من الراحة والتخلّي. في 26 يونيو، يعود المشتري إلى الأسد وإلى بيتك الرابع، متجهًا إلى الأمام هذه المرة. خطط البيت التي راجعتها في الشتاء يمكن أن تمضي. إذًا الثور في جملة واحدة: اقبض ما تدين به شبكتك لك في ديسمبر، وتعلّم وتكلّم في الربيع، واستقرّ في البيت في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa doze. Sua longa caminhada pelos seus ganhos termina, e começa um tempo mais calmo de descanso e desapego. Em 26 de junho, Júpiter volta para Leão e para sua casa quatro, desta vez avançando. Os planos para a casa que você conferiu no inverno podem seguir. Então, Touro em uma frase: cobre em dezembro o que sua rede lhe deve, aprenda e fale na primavera e assente a casa no verão."
      }
     }
    ],
@@ -205,49 +360,94 @@
    "t": 416,
    "sign": 2,
    "h": {
-    "en": "Gemini rising"
+    "en": "Gemini rising",
+    "ru": "Лагна Близнецы",
+    "es": "Ascendente Géminis",
+    "de": "Aszendent Zwillinge",
+    "ar": "الطالع الجوزاء",
+    "pt": "Ascendente Gêmeos"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Gemini rising now. Where do Saturn and Jupiter land for Gemini?"
+      "en": "Gemini rising now. Where do Saturn and Jupiter land for Gemini?",
+      "ru": "Теперь лагна Близнецы. Где для Близнецов оказываются Сатурн и Юпитер?",
+      "es": "Ahora, Ascendente Géminis. ¿Dónde caen Saturno y Júpiter para Géminis?",
+      "de": "Jetzt Aszendent Zwillinge. Wohin fallen Saturn und Jupiter für die Zwillinge?",
+      "ar": "والآن طالع الجوزاء. أين يقع زحل والمشتري بالنسبة إلى الجوزاء؟",
+      "pt": "Agora, Ascendente em Gêmeos. Onde caem Saturno e Júpiter para Gêmeos?"
      },
      "sub": {
-      "en": "Gemini: where they sit"
+      "en": "Gemini: where they sit",
+      "ru": "Близнецы: где они стоят",
+      "es": "Géminis: dónde están",
+      "de": "Zwillinge: wo sie stehen",
+      "ar": "الجوزاء: أين يقعان",
+      "pt": "Gêmeos: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Gemini rising, Saturn sits in Pisces, your tenth house, the top of your chart. That's career, status, and how the world sees you. Saturn rules your eighth and ninth houses, so it brings long tests and slow luck. Since late July, a promotion or a new role may have waited. On the eleventh of December, Saturn turns direct and the work starts moving. Jupiter sits in Leo, your third house of skills, writing and siblings. It turns retrograde there on the thirteenth. Jupiter rules your seventh and tenth houses, partners and career. And from Leo, its ninth aspect reaches Aries, your eleventh house of income."
+      "en": "For Gemini rising, Saturn sits in Pisces, your tenth house, the top of your chart. That's career, status, and how the world sees you. Saturn rules your eighth and ninth houses, so it brings long tests and slow luck. Since late July, a promotion or a new role may have waited. On the eleventh of December, Saturn turns direct and the work starts moving. Jupiter sits in Leo, your third house of skills, writing and siblings. It turns retrograde there on the thirteenth. Jupiter rules your seventh and tenth houses, partners and career. And from Leo, its ninth aspect reaches Aries, your eleventh house of income.",
+      "ru": "Для лагны Близнецов Сатурн стоит в Рыбах, в вашем десятом доме, на вершине вашей карты. Это карьера, статус и то, как вас видит мир. Сатурн управляет вашим восьмым и девятым домами, поэтому он приносит долгие испытания и медленную удачу. С конца июля повышение или новая роль, возможно, ждали своего часа. 11 декабря Сатурн становится прямым, и дело сдвигается. Юпитер стоит во Льве, в вашем третьем доме навыков, письма и братьев и сестёр. Он становится там ретроградным 13-го. Юпитер управляет вашим седьмым и десятым домами, партнёрами и карьерой. А из Льва его девятый аспект достигает Овна, вашего одиннадцатого дома дохода.",
+      "es": "Para el Ascendente Géminis, Saturno está en Piscis, tu casa diez, la cima de tu carta. Es la carrera, el estatus y cómo te ve el mundo. Saturno rige tus casas ocho y nueve, así que trae pruebas largas y suerte lenta. Desde finales de julio, un ascenso o un nuevo puesto puede haber esperado. El 11 de diciembre, Saturno se vuelve directo y el trabajo empieza a moverse. Júpiter está en Leo, tu casa tres de las habilidades, la escritura y los hermanos. Se vuelve retrógrado allí el 13. Júpiter rige tus casas siete y diez, la pareja y la carrera. Y desde Leo, su noveno aspecto llega a Aries, tu casa once de los ingresos.",
+      "de": "Für Aszendent Zwillinge steht Saturn in den Fischen, deinem zehnten Haus, dem Höhepunkt deines Horoskops. Das ist Karriere, Status und wie die Welt dich sieht. Saturn herrscht über dein achtes und neuntes Haus, er bringt also lange Prüfungen und langsames Glück. Seit Ende Juli hat eine Beförderung oder eine neue Rolle vielleicht auf sich warten lassen. Am 11. Dezember wird Saturn rechtläufig, und die Arbeit kommt in Bewegung. Jupiter steht im Löwen, deinem dritten Haus von Fähigkeiten, Schreiben und Geschwistern. Er wird dort am 13. rückläufig. Jupiter herrscht über dein siebtes und zehntes Haus, Partner und Karriere. Und vom Löwen aus erreicht sein neunter Aspekt den Widder, dein elftes Haus des Einkommens.",
+      "ar": "لطالع الجوزاء، زحل في الحوت، في بيتك العاشر، قمة خريطتك. وهو المهنة والمكانة وكيف يراك العالم. زحل يحكم بيتيك الثامن والتاسع، فيجلب اختبارات طويلة وحظًا بطيئًا. منذ أواخر يوليو، ربما كانت ترقية أو دور جديد في الانتظار. في 11 ديسمبر، يعود زحل إلى الحركة المباشرة ويبدأ العمل بالتحرك. المشتري في الأسد، في بيتك الثالث، بيت المهارات والكتابة والإخوة. ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك السابع والعاشر، الشركاء والمهنة. ومن الأسد، تصل نظرته التاسعة إلى الحمل، بيتك الحادي عشر، بيت الدخل.",
+      "pt": "Para o Ascendente em Gêmeos, Saturno está em Peixes, sua casa dez, o topo do seu mapa. É carreira, status e como o mundo vê você. Saturno rege suas casas oito e nove, então traz provas longas e sorte lenta. Desde o fim de julho, uma promoção ou um novo cargo pode ter ficado à espera. Em 11 de dezembro, Saturno fica direto e o trabalho começa a andar. Júpiter está em Leão, sua casa três, de habilidades, escrita e irmãos. Ele fica retrógrado ali no dia 13. Júpiter rege suas casas sete e dez, parceiros e carreira. E de Leão, seu nono aspecto chega a Áries, sua casa onze, da renda."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "Which retrograde lesson is there for Gemini?"
+      "en": "Which retrograde lesson is there for Gemini?",
+      "ru": "Какой ретроградный урок у Близнецов?",
+      "es": "¿Qué lección retrógrada hay para Géminis?",
+      "de": "Welche rückläufige Lektion gibt es für die Zwillinge?",
+      "ar": "فأي درس تراجعي ينتظر الجوزاء؟",
+      "pt": "Que lição retrógrada há para Gêmeos?"
      },
      "sub": {
-      "en": "Gemini: the review"
+      "en": "Gemini: the review",
+      "ru": "Близнецы: пересмотр",
+      "es": "Géminis: la revisión",
+      "de": "Zwillinge: die Überprüfung",
+      "ar": "الجوزاء: المراجعة",
+      "pt": "Gêmeos: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Go back over your words. Contracts, posts, a course you write or teach, all deserve a second draft. Siblings and neighbours may bring up an old matter. On the twenty-fourth of January, Jupiter slips back into Cancer, your second house. Money, food and family talk come into focus. Jupiter is exalted there, so savings can grow. It turns direct on the thirteenth of April. Through the winter, Saturn's tenth aspect falls on Sagittarius, your seventh house. Marriage and business partners face a quiet test. Keep promises small, and keep them."
+      "en": "Go back over your words. Contracts, posts, a course you write or teach, all deserve a second draft. Siblings and neighbours may bring up an old matter. On the twenty-fourth of January, Jupiter slips back into Cancer, your second house. Money, food and family talk come into focus. Jupiter is exalted there, so savings can grow. It turns direct on the thirteenth of April. Through the winter, Saturn's tenth aspect falls on Sagittarius, your seventh house. Marriage and business partners face a quiet test. Keep promises small, and keep them.",
+      "ru": "Вернитесь к своим словам. Договоры, публикации, курс, который вы пишете или преподаёте, — всё заслуживает второго черновика. Братья, сёстры и соседи могут поднять старый вопрос. 24 января Юпитер отступает в Рак, ваш второй дом. Деньги, еда и семейные разговоры выходят в фокус. Юпитер там экзальтирован, так что сбережения могут расти. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна падает на Стрельца, ваш седьмой дом. Брак и деловые партнёры проходят тихое испытание. Давайте небольшие обещания и держите их.",
+      "es": "Repasa tus palabras. Contratos, publicaciones, un curso que escribes o enseñas, todo merece un segundo borrador. Los hermanos y los vecinos pueden sacar un asunto antiguo. El 24 de enero, Júpiter retrocede a Cáncer, tu casa dos. El dinero, la comida y las charlas familiares cobran protagonismo. Júpiter está exaltado allí, así que los ahorros pueden crecer. Se vuelve directo el 13 de abril. Durante el invierno, el décimo aspecto de Saturno cae sobre Sagitario, tu casa siete. El matrimonio y los socios de negocios enfrentan una prueba silenciosa. Haz promesas pequeñas y cúmplelas.",
+      "de": "Geh deine Worte noch einmal durch. Verträge, Beiträge, ein Kurs, den du schreibst oder gibst, verdienen alle einen zweiten Entwurf. Geschwister und Nachbarn bringen vielleicht eine alte Angelegenheit zur Sprache. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein zweites Haus. Geld, Essen und Familiengespräche rücken in den Fokus. Jupiter ist dort erhöht, deshalb können Ersparnisse wachsen. Am 13. April wird er rechtläufig. Den Winter über fällt Saturns zehnter Aspekt auf den Schützen, dein siebtes Haus. Ehe und Geschäftspartner stehen vor einer stillen Prüfung. Halte Versprechen klein, und halte sie.",
+      "ar": "عُد إلى كلماتك. العقود والمنشورات ودورة تكتبها أو تدرّسها، كلها تستحق مسودة ثانية. وقد يثير الإخوة والجيران أمرًا قديمًا. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الثاني. يتّجه الانتباه إلى المال والطعام وأحاديث العائلة. المشتري في شرفه هناك، فيمكن للمدخرات أن تنمو. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك السابع. الزواج وشركاء العمل يواجهون اختبارًا هادئًا. اجعل وعودك صغيرة، والتزم بها.",
+      "pt": "Revisar suas palavras. Contratos, publicações, um curso que você escreve ou dá, tudo merece um segundo rascunho. Irmãos e vizinhos podem trazer à tona um assunto antigo. Em 24 de janeiro, Júpiter volta para Câncer, sua casa dois. Dinheiro, comida e conversas em família entram em foco. Júpiter está exaltado ali, então a poupança pode crescer. Ele fica direto em 13 de abril. Durante o inverno, o décimo aspecto de Saturno cai sobre Sagitário, sua casa sete. Casamento e sócios enfrentam uma prova silenciosa. Faça promessas pequenas e cumpra-as."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And what does June bring for Gemini?"
+      "en": "And what does June bring for Gemini?",
+      "ru": "А что июнь принесёт Близнецам?",
+      "es": "¿Y qué trae junio para Géminis?",
+      "de": "Und was bringt der Juni den Zwillingen?",
+      "ar": "وماذا يحمل يونيو للجوزاء؟",
+      "pt": "E o que junho traz para Gêmeos?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your eleventh house. Years of effort begin to pay, and older friends may help. On the twenty-sixth of June, Jupiter returns to Leo, your third house, moving forward. Ideas you rewrote in winter are ready to publish. So, Gemini in one sentence: let the career move in December, guard your savings in spring, and share your work in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your eleventh house. Years of effort begin to pay, and older friends may help. On the twenty-sixth of June, Jupiter returns to Leo, your third house, moving forward. Ideas you rewrote in winter are ready to publish. So, Gemini in one sentence: let the career move in December, guard your savings in spring, and share your work in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш одиннадцатый дом. Годы усилий начинают окупаться, и старшие друзья могут помочь. 26 июня Юпитер возвращается во Льва, в ваш третий дом, и идёт вперёд. Идеи, которые вы переписали зимой, готовы к публикации. Итак, Близнецы одним предложением: в декабре дайте карьере двигаться, весной берегите сбережения, а летом делитесь своей работой.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa once. Años de esfuerzo empiezan a dar fruto, y amigos mayores pueden ayudar. El 26 de junio, Júpiter vuelve a Leo, tu casa tres, avanzando. Las ideas que reescribiste en invierno están listas para publicarse. Así que, Géminis en una frase: deja que la carrera se mueva en diciembre, cuida tus ahorros en primavera y comparte tu trabajo en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein elftes Haus. Jahre der Mühe beginnen sich auszuzahlen, und ältere Freunde können helfen. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein drittes Haus, vorwärts laufend. Ideen, die du im Winter umgeschrieben hast, sind bereit zur Veröffentlichung. Die Zwillinge in einem Satz: Lass im Dezember die Karriere in Bewegung kommen, schütze im Frühling deine Ersparnisse und teile im Sommer deine Arbeit.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك الحادي عشر. سنوات الجهد تبدأ في الإثمار، وقد يساعدك أصدقاء أكبر سنًا. في 26 يونيو، يعود المشتري إلى الأسد، بيتك الثالث، متجهًا إلى الأمام. الأفكار التي أعدت كتابتها في الشتاء صارت جاهزة للنشر. إذًا الجوزاء في جملة واحدة: دع المهنة تتحرك في ديسمبر، واحرس مدخراتك في الربيع، وشارك عملك في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa onze. Anos de esforço começam a dar frutos, e amigos mais velhos podem ajudar. Em 26 de junho, Júpiter volta para Leão, sua casa três, avançando. As ideias que você reescreveu no inverno estão prontas para ser publicadas. Então, Gêmeos em uma frase: deixe a carreira andar em dezembro, proteja suas economias na primavera e divulgue seu trabalho no verão."
      }
     }
    ],
@@ -260,49 +460,94 @@
    "t": 544,
    "sign": 3,
    "h": {
-    "en": "Cancer rising"
+    "en": "Cancer rising",
+    "ru": "Лагна Рак",
+    "es": "Ascendente Cáncer",
+    "de": "Aszendent Krebs",
+    "ar": "الطالع السرطان",
+    "pt": "Ascendente Câncer"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Cancer rising. Where are Saturn and Jupiter for Cancer?"
+      "en": "Cancer rising. Where are Saturn and Jupiter for Cancer?",
+      "ru": "Лагна Рак. Где Сатурн и Юпитер для Рака?",
+      "es": "Ascendente Cáncer. ¿Dónde están Saturno y Júpiter para Cáncer?",
+      "de": "Aszendent Krebs. Wo stehen Saturn und Jupiter für den Krebs?",
+      "ar": "طالع السرطان. أين زحل والمشتري بالنسبة إلى السرطان؟",
+      "pt": "Ascendente em Câncer. Onde estão Saturno e Júpiter para Câncer?"
      },
      "sub": {
-      "en": "Cancer: where they sit"
+      "en": "Cancer: where they sit",
+      "ru": "Рак: где они стоят",
+      "es": "Cáncer: dónde están",
+      "de": "Krebs: wo sie stehen",
+      "ar": "السرطان: أين يقعان",
+      "pt": "Câncer: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Cancer rising, Saturn sits in Pisces, your ninth house of faith, teachers and long journeys. Saturn rules your seventh and eighth houses, so partners and shared money are tied to these themes. Plans to travel, to study abroad, or to settle things with a father figure may have stalled since late July. They get going again on the eleventh of December. Jupiter sits in Leo, your second house of savings, food and family. It turns retrograde there on the thirteenth. Jupiter rules your sixth and ninth houses, so it links work and health with luck."
+      "en": "For Cancer rising, Saturn sits in Pisces, your ninth house of faith, teachers and long journeys. Saturn rules your seventh and eighth houses, so partners and shared money are tied to these themes. Plans to travel, to study abroad, or to settle things with a father figure may have stalled since late July. They get going again on the eleventh of December. Jupiter sits in Leo, your second house of savings, food and family. It turns retrograde there on the thirteenth. Jupiter rules your sixth and ninth houses, so it links work and health with luck.",
+      "ru": "Для лагны Рака Сатурн стоит в Рыбах, в вашем девятом доме веры, учителей и дальних путешествий. Сатурн управляет вашим седьмым и восьмым домами, так что партнёры и общие деньги связаны с этими темами. Планы поехать, учиться за границей или уладить дела с отцовской фигурой, возможно, стояли с конца июля. 11 декабря они снова начинают двигаться. Юпитер стоит во Льве, в вашем втором доме сбережений, еды и семьи. Он становится там ретроградным 13-го. Юпитер управляет вашим шестым и девятым домами, поэтому он связывает работу и здоровье с удачей.",
+      "es": "Para el Ascendente Cáncer, Saturno está en Piscis, tu casa nueve de la fe, los maestros y los viajes largos. Saturno rige tus casas siete y ocho, así que la pareja y el dinero compartido están ligados a estos temas. Los planes de viajar, estudiar en el extranjero o arreglar asuntos con una figura paterna pueden haberse estancado desde finales de julio. Vuelven a arrancar el 11 de diciembre. Júpiter está en Leo, tu casa dos de los ahorros, la comida y la familia. Se vuelve retrógrado allí el 13. Júpiter rige tus casas seis y nueve, así que une el trabajo y la salud con la suerte.",
+      "de": "Für Aszendent Krebs steht Saturn in den Fischen, deinem neunten Haus von Glauben, Lehrern und langen Reisen. Saturn herrscht über dein siebtes und achtes Haus, Partner und gemeinsames Geld hängen also mit diesen Themen zusammen. Pläne für eine Reise, ein Studium im Ausland oder für eine Klärung mit einer Vaterfigur haben seit Ende Juli vielleicht gestockt. Am 11. Dezember kommen sie wieder in Gang. Jupiter steht im Löwen, deinem zweiten Haus von Ersparnissen, Essen und Familie. Er wird dort am 13. rückläufig. Jupiter herrscht über dein sechstes und neuntes Haus, er verbindet also Arbeit und Gesundheit mit Glück.",
+      "ar": "لطالع السرطان، زحل في الحوت، في بيتك التاسع، بيت الإيمان والمعلمين والرحلات الطويلة. زحل يحكم بيتيك السابع والثامن، فالشركاء والمال المشترك مرتبطان بهذه الموضوعات. خطط السفر أو الدراسة في الخارج أو تسوية الأمور مع شخصية أبوية ربما تعثّرت منذ أواخر يوليو. وتنطلق من جديد في 11 ديسمبر. المشتري في الأسد، في بيتك الثاني، بيت المدخرات والطعام والعائلة. ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك السادس والتاسع، فيربط العمل والصحة بالحظ.",
+      "pt": "Para o Ascendente em Câncer, Saturno está em Peixes, sua casa nove, da fé, dos mestres e das viagens longas. Saturno rege suas casas sete e oito, então parceiros e dinheiro compartilhado estão ligados a esses temas. Planos de viajar, estudar no exterior ou resolver assuntos com uma figura paterna podem ter parado desde o fim de julho. Eles voltam a andar em 11 de dezembro. Júpiter está em Leão, sua casa dois, da poupança, da comida e da família. Ele fica retrógrado ali no dia 13. Júpiter rege suas casas seis e nove, então liga trabalho e saúde à sorte."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What should Cancer review?"
+      "en": "What should Cancer review?",
+      "ru": "Что Раку стоит пересмотреть?",
+      "es": "¿Qué debería revisar Cáncer?",
+      "de": "Was soll der Krebs überprüfen?",
+      "ar": "ماذا على السرطان أن يراجع؟",
+      "pt": "O que Câncer deve revisar?"
      },
      "sub": {
-      "en": "Cancer: the review"
+      "en": "Cancer: the review",
+      "ru": "Рак: пересмотр",
+      "es": "Cáncer: la revisión",
+      "de": "Krebs: die Überprüfung",
+      "ar": "السرطان: المراجعة",
+      "pt": "Câncer: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Your money habits. Look again at spending, at what you eat, and at how your family talks about money. Then comes your best news. On the twenty-fourth of January, Jupiter slips back into Cancer, right onto your ascendant. Jupiter is exalted in your own sign, and you feel it in health, confidence, and good advice from others. It turns direct on the thirteenth of April, still in your sign. Meanwhile, Saturn's tenth aspect falls on Sagittarius, your sixth house. Daily work and health ask for routine."
+      "en": "Your money habits. Look again at spending, at what you eat, and at how your family talks about money. Then comes your best news. On the twenty-fourth of January, Jupiter slips back into Cancer, right onto your ascendant. Jupiter is exalted in your own sign, and you feel it in health, confidence, and good advice from others. It turns direct on the thirteenth of April, still in your sign. Meanwhile, Saturn's tenth aspect falls on Sagittarius, your sixth house. Daily work and health ask for routine.",
+      "ru": "Ваши привычки с деньгами. Ещё раз посмотрите на траты, на то, что вы едите, и на то, как в вашей семье говорят о деньгах. Затем идёт ваша лучшая новость. 24 января Юпитер отступает в Рак, прямо на вашу лагну. Юпитер экзальтирован в вашем собственном знаке, и вы чувствуете это в здоровье, уверенности и добрых советах от других. Прямым он становится 13 апреля, всё ещё в вашем знаке. Тем временем десятый аспект Сатурна падает на Стрельца, ваш шестой дом. Повседневная работа и здоровье требуют режима.",
+      "es": "Tus hábitos con el dinero. Mira de nuevo los gastos, lo que comes y cómo habla tu familia del dinero. Luego llega tu mejor noticia. El 24 de enero, Júpiter retrocede a Cáncer, justo sobre tu Ascendente. Júpiter está exaltado en tu propio signo, y lo notas en la salud, la confianza y los buenos consejos de otros. Se vuelve directo el 13 de abril, aún en tu signo. Mientras tanto, el décimo aspecto de Saturno cae sobre Sagitario, tu casa seis. El trabajo diario y la salud piden rutina.",
+      "de": "Deine Geldgewohnheiten. Sieh dir noch einmal deine Ausgaben an, was du isst und wie deine Familie über Geld spricht. Dann kommt deine beste Nachricht. Am 24. Januar rutscht Jupiter zurück in den Krebs, genau auf deinen Aszendenten. Jupiter ist in deinem eigenen Zeichen erhöht, und du spürst es in Gesundheit, Selbstvertrauen und guten Ratschlägen von anderen. Am 13. April wird er rechtläufig, immer noch in deinem Zeichen. Währenddessen fällt Saturns zehnter Aspekt auf den Schützen, dein sechstes Haus. Die tägliche Arbeit und die Gesundheit verlangen Routine.",
+      "ar": "عاداتك المالية. أعد النظر في الإنفاق، وفي ما تأكله، وفي طريقة حديث عائلتك عن المال. ثم تأتي أفضل أخبارك. في 24 يناير، يرجع المشتري إلى السرطان، فوق طالعك مباشرة. المشتري في شرفه في برجك أنت، وتشعر بذلك في الصحة والثقة والنصيحة الجيدة من الآخرين. ويعود إلى الحركة المباشرة في 13 أبريل، وهو ما زال في برجك. وفي أثناء ذلك، تقع نظرة زحل العاشرة على القوس، بيتك السادس. العمل اليومي والصحة يطلبان الانتظام.",
+      "pt": "Seus hábitos com dinheiro. Olhe de novo para os gastos, para o que você come e para como sua família fala de dinheiro. Depois vem sua melhor notícia. Em 24 de janeiro, Júpiter volta para Câncer, bem sobre o seu ascendente. Júpiter está exaltado no seu próprio signo, e você sente isso na saúde, na confiança e em bons conselhos de outras pessoas. Ele fica direto em 13 de abril, ainda no seu signo. Enquanto isso, o décimo aspecto de Saturno cai sobre Sagitário, sua casa seis. Trabalho diário e saúde pedem rotina."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And then the summer?"
+      "en": "And then the summer?",
+      "ru": "А потом лето?",
+      "es": "¿Y luego el verano?",
+      "de": "Und dann der Sommer?",
+      "ar": "ثم الصيف؟",
+      "pt": "E depois, o verão?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your tenth house. Career becomes serious work, with real duties and real rewards. On the twenty-sixth of June, Jupiter moves on, back into Leo and your second house. The confidence of spring turns into income. So, Cancer in one sentence: unlock your travel and study plans in December, enjoy Jupiter on your ascendant in spring, and build your career from June."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your tenth house. Career becomes serious work, with real duties and real rewards. On the twenty-sixth of June, Jupiter moves on, back into Leo and your second house. The confidence of spring turns into income. So, Cancer in one sentence: unlock your travel and study plans in December, enjoy Jupiter on your ascendant in spring, and build your career from June.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш десятый дом. Карьера становится серьёзной работой, с настоящими обязанностями и настоящими наградами. 26 июня Юпитер идёт дальше, обратно во Льва, в ваш второй дом. Уверенность весны превращается в доход. Итак, Рак одним предложением: в декабре освободите планы поездок и учёбы, весной наслаждайтесь Юпитером на вашей лагне, а с июня стройте карьеру.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa diez. La carrera se vuelve trabajo serio, con deberes reales y recompensas reales. El 26 de junio, Júpiter sigue su camino, de vuelta a Leo y a tu casa dos. La confianza de la primavera se convierte en ingresos. Así que, Cáncer en una frase: destraba tus planes de viaje y estudio en diciembre, disfruta de Júpiter en tu Ascendente en primavera y construye tu carrera desde junio.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein zehntes Haus. Die Karriere wird zu ernster Arbeit, mit echten Pflichten und echtem Lohn. Am 26. Juni zieht Jupiter weiter, zurück in den Löwen und dein zweites Haus. Das Selbstvertrauen des Frühlings verwandelt sich in Einkommen. Der Krebs in einem Satz: Löse im Dezember deine Reise- und Studienpläne, genieße im Frühling Jupiter auf deinem Aszendenten und baue ab Juni deine Karriere auf.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك العاشر. تصبح المهنة عملًا جادًا، بواجبات حقيقية ومكافآت حقيقية. في 26 يونيو، يمضي المشتري، عائدًا إلى الأسد وإلى بيتك الثاني. وثقة الربيع تتحول إلى دخل. إذًا السرطان في جملة واحدة: افتح خطط السفر والدراسة في ديسمبر، وتمتّع بالمشتري على طالعك في الربيع، وابنِ مهنتك منذ يونيو.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa dez. A carreira vira trabalho sério, com deveres reais e recompensas reais. Em 26 de junho, Júpiter segue em frente, voltando para Leão e para sua casa dois. A confiança da primavera se transforma em renda. Então, Câncer em uma frase: destrave seus planos de viagem e estudo em dezembro, aproveite Júpiter no seu ascendente na primavera e construa sua carreira a partir de junho."
      }
     }
    ],
@@ -315,49 +560,94 @@
    "t": 664,
    "sign": 4,
    "h": {
-    "en": "Leo rising"
+    "en": "Leo rising",
+    "ru": "Лагна Лев",
+    "es": "Ascendente Leo",
+    "de": "Aszendent Löwe",
+    "ar": "الطالع الأسد",
+    "pt": "Ascendente Leão"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Leo rising. Jupiter is in your own sign, isn't it?"
+      "en": "Leo rising. Jupiter is in your own sign, isn't it?",
+      "ru": "Лагна Лев. Юпитер ведь в вашем собственном знаке?",
+      "es": "Ascendente Leo. Júpiter está en tu propio signo, ¿verdad?",
+      "de": "Aszendent Löwe. Jupiter steht in deinem eigenen Zeichen, oder?",
+      "ar": "طالع الأسد. المشتري في برجك أنت، أليس كذلك؟",
+      "pt": "Ascendente em Leão. Júpiter está no seu próprio signo, não é?"
      },
      "sub": {
-      "en": "Leo: where they sit"
+      "en": "Leo: where they sit",
+      "ru": "Лев: где они стоят",
+      "es": "Leo: dónde están",
+      "de": "Löwe: wo sie stehen",
+      "ar": "الأسد: أين يقعان",
+      "pt": "Leão: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Yes. For Leo rising, Jupiter sits on your ascendant, in your first house. It rules your fifth house of children and creativity, and your eighth house of hidden change. Saturn sits in Pisces, your eighth house of research, insurance and other people's money. Saturn rules your sixth and seventh houses, work and partners. Since late July, a shared financial matter may have dragged. From the eleventh of December, it begins to resolve. Two days later, on the thirteenth, Jupiter turns retrograde right on you. Expect to think again about who you are, and what you want to show."
+      "en": "Yes. For Leo rising, Jupiter sits on your ascendant, in your first house. It rules your fifth house of children and creativity, and your eighth house of hidden change. Saturn sits in Pisces, your eighth house of research, insurance and other people's money. Saturn rules your sixth and seventh houses, work and partners. Since late July, a shared financial matter may have dragged. From the eleventh of December, it begins to resolve. Two days later, on the thirteenth, Jupiter turns retrograde right on you. Expect to think again about who you are, and what you want to show.",
+      "ru": "Да. Для лагны Льва Юпитер стоит на вашей лагне, в первом доме. Он управляет вашим пятым домом детей и творчества и восьмым домом скрытых перемен. Сатурн стоит в Рыбах, в вашем восьмом доме исследований, страховки и чужих денег. Сатурн управляет вашим шестым и седьмым домами, работой и партнёрами. С конца июля общее финансовое дело, возможно, затягивалось. С 11 декабря оно начинает разрешаться. 2 дня спустя, 13-го, Юпитер становится ретроградным прямо на вас. Ждите, что придётся заново подумать о том, кто вы и что хотите показать.",
+      "es": "Sí. Para el Ascendente Leo, Júpiter está sobre tu Ascendente, en tu casa uno. Rige tu casa cinco de los hijos y la creatividad, y tu casa ocho del cambio oculto. Saturno está en Piscis, tu casa ocho de la investigación, los seguros y el dinero de otros. Saturno rige tus casas seis y siete, el trabajo y la pareja. Desde finales de julio, un asunto financiero compartido puede haberse alargado. Desde el 11 de diciembre, empieza a resolverse. 2 días después, el 13, Júpiter se vuelve retrógrado justo sobre ti. Espera volver a pensar en quién eres y qué quieres mostrar.",
+      "de": "Ja. Für Aszendent Löwe steht Jupiter auf deinem Aszendenten, in deinem ersten Haus. Er herrscht über dein fünftes Haus von Kindern und Kreativität und dein achtes Haus der verborgenen Wandlung. Saturn steht in den Fischen, deinem achten Haus von Forschung, Versicherung und dem Geld anderer. Saturn herrscht über dein sechstes und siebtes Haus, Arbeit und Partner. Seit Ende Juli hat sich eine gemeinsame Geldangelegenheit vielleicht hingezogen. Ab dem 11. Dezember beginnt sie sich zu lösen. 2 Tage später, am 13., wird Jupiter genau auf dir rückläufig. Rechne damit, noch einmal darüber nachzudenken, wer du bist und was du zeigen willst.",
+      "ar": "نعم. لطالع الأسد، المشتري على طالعك، في بيتك الأول. إنه يحكم بيتك الخامس، بيت الأبناء والإبداع، وبيتك الثامن، بيت التغيّر الخفي. زحل في الحوت، في بيتك الثامن، بيت البحث والتأمين ومال الآخرين. زحل يحكم بيتيك السادس والسابع، العمل والشركاء. منذ أواخر يوليو، ربما تأخّر أمر مالي مشترك. ومن 11 ديسمبر، يبدأ بالانحلال. وبعد يومين، في 13 ديسمبر، يبدأ المشتري حركته التراجعية فوقك مباشرة. توقّع أن تعيد التفكير في من أنت، وفي ما تريد إظهاره.",
+      "pt": "Sim. Para o Ascendente em Leão, Júpiter está sobre o seu ascendente, na sua casa um. Ele rege sua casa cinco, dos filhos e da criatividade, e sua casa oito, da mudança oculta. Saturno está em Peixes, sua casa oito, de pesquisa, seguros e dinheiro dos outros. Saturno rege suas casas seis e sete, trabalho e parceiros. Desde o fim de julho, um assunto financeiro compartilhado pode ter se arrastado. A partir de 11 de dezembro, ele começa a se resolver. 2 dias depois, no dia 13, Júpiter fica retrógrado bem sobre você. Espere repensar quem você é e o que quer mostrar."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "So how does Leo use the retrograde?"
+      "en": "So how does Leo use the retrograde?",
+      "ru": "Так как же Льву использовать ретроградность?",
+      "es": "Entonces, ¿cómo usa Leo el retrógrado?",
+      "de": "Wie nutzt der Löwe also die Rückläufigkeit?",
+      "ar": "فكيف يستفيد الأسد من الحركة التراجعية؟",
+      "pt": "Então, como Leão usa o retrógrado?"
      },
      "sub": {
-      "en": "Leo: the review"
+      "en": "Leo: the review",
+      "ru": "Лев: пересмотр",
+      "es": "Leo: la revisión",
+      "de": "Löwe: die Überprüfung",
+      "ar": "الأسد: المراجعة",
+      "pt": "Leão: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Polish rather than launch. Refresh your look, your health routine, your personal story. On the twenty-fourth of January, Jupiter slips back into Cancer, your twelfth house. That's rest, retreats, sleep and spiritual practice, and Jupiter is exalted there. Charity, or a quiet trip, can do more than effort now. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect falls on Sagittarius, your fifth house. Children, students and creative work need patience. Results come, only slower."
+      "en": "Polish rather than launch. Refresh your look, your health routine, your personal story. On the twenty-fourth of January, Jupiter slips back into Cancer, your twelfth house. That's rest, retreats, sleep and spiritual practice, and Jupiter is exalted there. Charity, or a quiet trip, can do more than effort now. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect falls on Sagittarius, your fifth house. Children, students and creative work need patience. Results come, only slower.",
+      "ru": "Шлифовать, а не запускать. Обновите свой образ, режим здоровья, свою личную историю. 24 января Юпитер отступает в Рак, ваш двенадцатый дом. Это отдых, уединение, сон и духовная практика, и Юпитер там экзальтирован. Благотворительность или тихая поездка сейчас могут дать больше, чем усилия. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна падает на Стрельца, ваш пятый дом. Дети, ученики и творческая работа требуют терпения. Результаты придут, только медленнее.",
+      "es": "Pule en vez de lanzar. Renueva tu imagen, tu rutina de salud, tu historia personal. El 24 de enero, Júpiter retrocede a Cáncer, tu casa doce. Es el descanso, los retiros, el sueño y la práctica espiritual, y Júpiter está exaltado allí. La caridad o un viaje tranquilo pueden hacer más que el esfuerzo ahora. Se vuelve directo el 13 de abril. Todo el invierno, el décimo aspecto de Saturno cae sobre Sagitario, tu casa cinco. Los hijos, los estudiantes y el trabajo creativo necesitan paciencia. Los resultados llegan, solo que más despacio.",
+      "de": "Verfeinern statt starten. Frische dein Aussehen, deine Gesundheitsroutine und deine persönliche Geschichte auf. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein zwölftes Haus. Das sind Ruhe, Rückzug, Schlaf und spirituelle Praxis, und Jupiter ist dort erhöht. Wohltätigkeit oder eine stille Reise können jetzt mehr bewirken als Anstrengung. Am 13. April wird er rechtläufig. Den ganzen Winter fällt Saturns zehnter Aspekt auf den Schützen, dein fünftes Haus. Kinder, Schüler und kreative Arbeit brauchen Geduld. Ergebnisse kommen, nur langsamer.",
+      "ar": "صقل بدل الإطلاق. جدّد مظهرك، وروتينك الصحي، وقصتك الشخصية. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الثاني عشر. وهو بيت الراحة والخلوات والنوم والممارسة الروحية، والمشتري في شرفه هناك. الصدقة، أو رحلة هادئة، قد تفعل الآن أكثر مما يفعله الجهد. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الخامس. الأبناء والطلاب والعمل الإبداعي تحتاج إلى صبر. النتائج تأتي، لكن أبطأ.",
+      "pt": "Lapide em vez de lançar. Renove seu visual, sua rotina de saúde, sua história pessoal. Em 24 de janeiro, Júpiter volta para Câncer, sua casa doze. É descanso, retiros, sono e prática espiritual, e Júpiter está exaltado ali. Caridade ou uma viagem tranquila podem fazer mais do que esforço agora. Ele fica direto em 13 de abril. Durante todo o inverno, o décimo aspecto de Saturno cai sobre Sagitário, sua casa cinco. Filhos, alunos e trabalho criativo precisam de paciência. Os resultados vêm, só que mais devagar."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And when does Leo shine again?"
+      "en": "And when does Leo shine again?",
+      "ru": "А когда Лев снова засияет?",
+      "es": "¿Y cuándo vuelve a brillar Leo?",
+      "de": "Und wann strahlt der Löwe wieder?",
+      "ar": "ومتى يتألق الأسد من جديد؟",
+      "pt": "E quando Leão volta a brilhar?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your ninth house, and asks you to commit to one teacher or one path. Then on the twenty-sixth of June, Jupiter comes back into Leo, onto your ascendant, now moving forward. A fresh year of growth starts. So, Leo in one sentence: sort out shared money in December, rest deeply in spring, and step forward in late June."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your ninth house, and asks you to commit to one teacher or one path. Then on the twenty-sixth of June, Jupiter comes back into Leo, onto your ascendant, now moving forward. A fresh year of growth starts. So, Leo in one sentence: sort out shared money in December, rest deeply in spring, and step forward in late June.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш девятый дом, и просит вас посвятить себя одному учителю или одному пути. Затем 26 июня Юпитер возвращается во Льва, на вашу лагну, и теперь идёт вперёд. Начинается новый год роста. Итак, Лев одним предложением: в декабре наведите порядок в общих деньгах, весной глубоко отдохните, а в конце июня шагните вперёд.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa nueve, y te pide comprometerte con un maestro o un camino. Luego, el 26 de junio, Júpiter vuelve a Leo, sobre tu Ascendente, ya avanzando. Empieza un año nuevo de crecimiento. Así que, Leo en una frase: ordena el dinero compartido en diciembre, descansa a fondo en primavera y da un paso adelante a finales de junio.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein neuntes Haus, und verlangt, dass du dich auf einen Lehrer oder einen Weg festlegst. Dann, am 26. Juni, kommt Jupiter zurück in den Löwen, auf deinen Aszendenten, jetzt vorwärts laufend. Ein frisches Jahr des Wachstums beginnt. Der Löwe in einem Satz: Klär im Dezember das gemeinsame Geld, ruh dich im Frühling tief aus und tritt Ende Juni vor.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك التاسع، ويطلب منك أن تلتزم بمعلم واحد أو بطريق واحد. ثم في 26 يونيو، يعود المشتري إلى الأسد، إلى طالعك، متجهًا الآن إلى الأمام. تبدأ سنة جديدة من النمو. إذًا الأسد في جملة واحدة: رتّب المال المشترك في ديسمبر، واسترح بعمق في الربيع، وتقدّم إلى الأمام في أواخر يونيو.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa nove, e pede que você se comprometa com um mestre ou um caminho. Depois, em 26 de junho, Júpiter volta para Leão, sobre o seu ascendente, agora avançando. Começa um novo ano de crescimento. Então, Leão em uma frase: resolva o dinheiro compartilhado em dezembro, descanse fundo na primavera e dê um passo à frente no fim de junho."
      }
     }
    ],
@@ -370,49 +660,94 @@
    "t": 784,
    "sign": 5,
    "h": {
-    "en": "Virgo rising"
+    "en": "Virgo rising",
+    "ru": "Лагна Дева",
+    "es": "Ascendente Virgo",
+    "de": "Aszendent Jungfrau",
+    "ar": "الطالع العذراء",
+    "pt": "Ascendente Virgem"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Virgo rising. What do these turns mean for Virgo?"
+      "en": "Virgo rising. What do these turns mean for Virgo?",
+      "ru": "Лагна Дева. Что эти развороты значат для Девы?",
+      "es": "Ascendente Virgo. ¿Qué significan estos giros para Virgo?",
+      "de": "Aszendent Jungfrau. Was bedeuten diese Wendepunkte für die Jungfrau?",
+      "ar": "طالع العذراء. ماذا تعني هذه التحوّلات للعذراء؟",
+      "pt": "Ascendente em Virgem. O que essas viradas significam para Virgem?"
      },
      "sub": {
-      "en": "Virgo: where they sit"
+      "en": "Virgo: where they sit",
+      "ru": "Дева: где они стоят",
+      "es": "Virgo: dónde están",
+      "de": "Jungfrau: wo sie stehen",
+      "ar": "العذراء: أين يقعان",
+      "pt": "Virgem: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Virgo rising, Saturn sits in Pisces, your seventh house, opposite you. From there, its seventh aspect looks straight at your ascendant. Marriage, business partners and contracts are under review. Saturn rules your fifth and sixth houses, so study, children, work and health all feel its weight. Since late July, an agreement may have stalled. On the eleventh of December it moves again, with clearer terms. Jupiter sits in Leo, your twelfth house of rest, foreign places and spending. It turns retrograde there on the thirteenth. Jupiter rules your fourth and seventh houses, home and partner."
+      "en": "For Virgo rising, Saturn sits in Pisces, your seventh house, opposite you. From there, its seventh aspect looks straight at your ascendant. Marriage, business partners and contracts are under review. Saturn rules your fifth and sixth houses, so study, children, work and health all feel its weight. Since late July, an agreement may have stalled. On the eleventh of December it moves again, with clearer terms. Jupiter sits in Leo, your twelfth house of rest, foreign places and spending. It turns retrograde there on the thirteenth. Jupiter rules your fourth and seventh houses, home and partner.",
+      "ru": "Для лагны Девы Сатурн стоит в Рыбах, в вашем седьмом доме, напротив вас. Оттуда его седьмой аспект смотрит прямо на вашу лагну. Брак, деловые партнёры и договоры пересматриваются. Сатурн управляет вашим пятым и шестым домами, поэтому учёба, дети, работа и здоровье чувствуют его вес. С конца июля какое-то соглашение, возможно, застопорилось. 11 декабря оно снова движется, с более ясными условиями. Юпитер стоит во Льве, в вашем двенадцатом доме отдыха, чужих краёв и трат. Он становится там ретроградным 13-го. Юпитер управляет вашим четвёртым и седьмым домами, домом и партнёром.",
+      "es": "Para el Ascendente Virgo, Saturno está en Piscis, tu casa siete, frente a ti. Desde allí, su séptimo aspecto mira directo a tu Ascendente. El matrimonio, los socios de negocios y los contratos están en revisión. Saturno rige tus casas cinco y seis, así que el estudio, los hijos, el trabajo y la salud sienten su peso. Desde finales de julio, un acuerdo puede haberse estancado. El 11 de diciembre se mueve de nuevo, con condiciones más claras. Júpiter está en Leo, tu casa doce del descanso, los lugares extranjeros y los gastos. Se vuelve retrógrado allí el 13. Júpiter rige tus casas cuatro y siete, el hogar y la pareja.",
+      "de": "Für Aszendent Jungfrau steht Saturn in den Fischen, deinem siebten Haus, dir gegenüber. Von dort schaut sein siebter Aspekt direkt auf deinen Aszendenten. Ehe, Geschäftspartner und Verträge werden überprüft. Saturn herrscht über dein fünftes und sechstes Haus, Studium, Kinder, Arbeit und Gesundheit spüren also alle sein Gewicht. Seit Ende Juli hat eine Vereinbarung vielleicht gestockt. Am 11. Dezember kommt sie wieder in Bewegung, mit klareren Bedingungen. Jupiter steht im Löwen, deinem zwölften Haus von Ruhe, fernen Ländern und Ausgaben. Er wird dort am 13. rückläufig. Jupiter herrscht über dein viertes und siebtes Haus, Zuhause und Partner.",
+      "ar": "لطالع العذراء، زحل في الحوت، في بيتك السابع، مقابلك. ومن هناك، تنظر نظرته السابعة إلى طالعك مباشرة. الزواج وشركاء العمل والعقود قيد المراجعة. زحل يحكم بيتيك الخامس والسادس، فالدراسة والأبناء والعمل والصحة كلها تشعر بثقله. منذ أواخر يوليو، ربما تعثّر اتفاق ما. وفي 11 ديسمبر يتحرك من جديد، بشروط أوضح. المشتري في الأسد، في بيتك الثاني عشر، بيت الراحة والأماكن الأجنبية والإنفاق. ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك الرابع والسابع، الدار والشريك.",
+      "pt": "Para o Ascendente em Virgem, Saturno está em Peixes, sua casa sete, oposta a você. De lá, seu sétimo aspecto olha direto para o seu ascendente. Casamento, sócios e contratos estão sob revisão. Saturno rege suas casas cinco e seis, então estudo, filhos, trabalho e saúde sentem seu peso. Desde o fim de julho, um acordo pode ter parado. Em 11 de dezembro ele volta a andar, com termos mais claros. Júpiter está em Leão, sua casa doze, do descanso, de lugares estrangeiros e dos gastos. Ele fica retrógrado ali no dia 13. Júpiter rege suas casas quatro e sete, lar e parceiro."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What does Virgo go back over?"
+      "en": "What does Virgo go back over?",
+      "ru": "К чему возвращается Дева?",
+      "es": "¿Qué repasa Virgo?",
+      "de": "Was geht die Jungfrau noch einmal durch?",
+      "ar": "إلى ماذا تعود العذراء؟",
+      "pt": "O que Virgem revisa?"
      },
      "sub": {
-      "en": "Virgo: the review"
+      "en": "Virgo: the review",
+      "ru": "Дева: пересмотр",
+      "es": "Virgo: la revisión",
+      "de": "Jungfrau: die Überprüfung",
+      "ar": "العذراء: المراجعة",
+      "pt": "Virgem: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Hidden costs and lost sleep. Check subscriptions, travel bookings and bills from abroad. On the twenty-fourth of January, Jupiter slips back into Cancer, your eleventh house of income and friends. Jupiter is exalted there, so gains and helpful contacts arrive more easily. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect falls on Sagittarius, your fourth house. Home, property and your mother's health ask for care. Fix what is old before you buy what is new."
+      "en": "Hidden costs and lost sleep. Check subscriptions, travel bookings and bills from abroad. On the twenty-fourth of January, Jupiter slips back into Cancer, your eleventh house of income and friends. Jupiter is exalted there, so gains and helpful contacts arrive more easily. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect falls on Sagittarius, your fourth house. Home, property and your mother's health ask for care. Fix what is old before you buy what is new.",
+      "ru": "К скрытым расходам и потерянному сну. Проверьте подписки, бронирования поездок и счета из-за границы. 24 января Юпитер отступает в Рак, ваш одиннадцатый дом дохода и друзей. Юпитер там экзальтирован, так что приобретения и полезные контакты приходят легче. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна падает на Стрельца, ваш четвёртый дом. Дом, недвижимость и здоровье вашей матери требуют заботы. Почините старое, прежде чем покупать новое.",
+      "es": "Costos ocultos y sueño perdido. Revisa suscripciones, reservas de viaje y facturas del extranjero. El 24 de enero, Júpiter retrocede a Cáncer, tu casa once de los ingresos y los amigos. Júpiter está exaltado allí, así que las ganancias y los contactos útiles llegan con más facilidad. Se vuelve directo el 13 de abril. Todo el invierno, el décimo aspecto de Saturno cae sobre Sagitario, tu casa cuatro. El hogar, la propiedad y la salud de tu madre piden cuidado. Arregla lo viejo antes de comprar lo nuevo.",
+      "de": "Versteckte Kosten und verlorenen Schlaf. Prüfe Abos, Reisebuchungen und Rechnungen aus dem Ausland. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein elftes Haus von Einkommen und Freunden. Jupiter ist dort erhöht, deshalb kommen Gewinne und hilfreiche Kontakte leichter. Am 13. April wird er rechtläufig. Den ganzen Winter fällt Saturns zehnter Aspekt auf den Schützen, dein viertes Haus. Zuhause, Immobilien und die Gesundheit deiner Mutter brauchen Fürsorge. Repariere das Alte, bevor du Neues kaufst.",
+      "ar": "التكاليف الخفية والنوم الضائع. راجع الاشتراكات وحجوزات السفر والفواتير القادمة من الخارج. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الحادي عشر، بيت الدخل والأصدقاء. المشتري في شرفه هناك، فتأتي المكاسب والمعارف المفيدة بسهولة أكبر. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الرابع. البيت والعقار وصحة أمك تطلب العناية. أصلح القديم قبل أن تشتري الجديد.",
+      "pt": "Custos ocultos e noites mal dormidas. Confira assinaturas, reservas de viagem e contas do exterior. Em 24 de janeiro, Júpiter volta para Câncer, sua casa onze, da renda e dos amigos. Júpiter está exaltado ali, então ganhos e contatos úteis chegam com mais facilidade. Ele fica direto em 13 de abril. Durante todo o inverno, o décimo aspecto de Saturno cai sobre Sagitário, sua casa quatro. Lar, imóveis e a saúde da sua mãe pedem cuidado. Conserte o que é velho antes de comprar o que é novo."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And the summer for Virgo?"
+      "en": "And the summer for Virgo?",
+      "ru": "А лето для Девы?",
+      "es": "¿Y el verano para Virgo?",
+      "de": "Und der Sommer für die Jungfrau?",
+      "ar": "والصيف للعذراء؟",
+      "pt": "E o verão para Virgem?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your eighth house. It's a sober time for taxes, loans and inheritance. On the twenty-sixth of June, Jupiter returns to Leo, your twelfth house, moving forward. That's good for a retreat, or a trip abroad. So, Virgo in one sentence: settle your agreements in December, collect your gains in spring, and keep your finances tidy in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your eighth house. It's a sober time for taxes, loans and inheritance. On the twenty-sixth of June, Jupiter returns to Leo, your twelfth house, moving forward. That's good for a retreat, or a trip abroad. So, Virgo in one sentence: settle your agreements in December, collect your gains in spring, and keep your finances tidy in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш восьмой дом. Это трезвое время для налогов, займов и наследства. 26 июня Юпитер возвращается во Льва, в ваш двенадцатый дом, и идёт вперёд. Это хорошо для уединения или поездки за границу. Итак, Дева одним предложением: в декабре уладьте договорённости, весной получите свои приобретения, а летом держите финансы в порядке.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa ocho. Es un tiempo sobrio para impuestos, préstamos y herencias. El 26 de junio, Júpiter vuelve a Leo, tu casa doce, avanzando. Es bueno para un retiro o un viaje al extranjero. Así que, Virgo en una frase: cierra tus acuerdos en diciembre, cobra tus ganancias en primavera y mantén tus finanzas en orden en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein achtes Haus. Es ist eine nüchterne Zeit für Steuern, Kredite und Erbschaft. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein zwölftes Haus, vorwärts laufend. Das ist gut für einen Rückzug oder eine Reise ins Ausland. Die Jungfrau in einem Satz: Regle im Dezember deine Vereinbarungen, hol im Frühling deine Gewinne ein und halte im Sommer deine Finanzen in Ordnung.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك الثامن. إنه وقت رصين للضرائب والقروض والميراث. في 26 يونيو، يعود المشتري إلى الأسد، بيتك الثاني عشر، متجهًا إلى الأمام. وهذا مناسب للخلوة أو لرحلة إلى الخارج. إذًا العذراء في جملة واحدة: سوِّ اتفاقاتك في ديسمبر، واجمع مكاسبك في الربيع، وأبقِ أمورك المالية مرتبة في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa oito. É um tempo sóbrio para impostos, empréstimos e herança. Em 26 de junho, Júpiter volta para Leão, sua casa doze, avançando. Isso é bom para um retiro ou uma viagem ao exterior. Então, Virgem em uma frase: resolva seus acordos em dezembro, colha seus ganhos na primavera e mantenha as finanças em ordem no verão."
      }
     }
    ],
@@ -425,49 +760,94 @@
    "t": 905,
    "sign": 6,
    "h": {
-    "en": "Libra rising"
+    "en": "Libra rising",
+    "ru": "Лагна Весы",
+    "es": "Ascendente Libra",
+    "de": "Aszendent Waage",
+    "ar": "الطالع الميزان",
+    "pt": "Ascendente Libra"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Libra rising. Saturn is a friend to Libra, right?"
+      "en": "Libra rising. Saturn is a friend to Libra, right?",
+      "ru": "Лагна Весы. Сатурн ведь друг Весов?",
+      "es": "Ascendente Libra. Saturno es amigo de Libra, ¿no?",
+      "de": "Aszendent Waage. Saturn ist ein Freund der Waage, oder?",
+      "ar": "طالع الميزان. زحل صديق للميزان، أليس كذلك؟",
+      "pt": "Ascendente em Libra. Saturno é amigo de Libra, certo?"
      },
      "sub": {
-      "en": "Libra: where they sit"
+      "en": "Libra: where they sit",
+      "ru": "Весы: где они стоят",
+      "es": "Libra: dónde están",
+      "de": "Waage: wo sie stehen",
+      "ar": "الميزان: أين يقعان",
+      "pt": "Libra: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "It is. For Libra rising, Saturn rules your fourth and fifth houses, home and creativity, so it's your best planet. It sits in Pisces, your sixth house of work, health and competition, and Saturn does well there. Since late July, a work problem or a health routine may have stuck. From the eleventh of December, steady effort beats rivals again. Jupiter sits in Leo, your eleventh house of income and friends, and turns retrograde there on the thirteenth. Jupiter rules your third and sixth houses. From Leo, its ninth aspect falls on Aries, your seventh house of partners."
+      "en": "It is. For Libra rising, Saturn rules your fourth and fifth houses, home and creativity, so it's your best planet. It sits in Pisces, your sixth house of work, health and competition, and Saturn does well there. Since late July, a work problem or a health routine may have stuck. From the eleventh of December, steady effort beats rivals again. Jupiter sits in Leo, your eleventh house of income and friends, and turns retrograde there on the thirteenth. Jupiter rules your third and sixth houses. From Leo, its ninth aspect falls on Aries, your seventh house of partners.",
+      "ru": "Да. Для лагны Весов Сатурн управляет вашим четвёртым и пятым домами, домом и творчеством, так что это ваша лучшая планета. Он стоит в Рыбах, в вашем шестом доме работы, здоровья и соперничества, и Сатурну там хорошо. С конца июля рабочая проблема или режим здоровья, возможно, застряли. С 11 декабря ровное усилие снова побеждает соперников. Юпитер стоит во Льве, в вашем одиннадцатом доме дохода и друзей, и становится там ретроградным 13-го. Юпитер управляет вашим третьим и шестым домами. Из Льва его девятый аспект падает на Овен, ваш седьмой дом партнёров.",
+      "es": "Así es. Para el Ascendente Libra, Saturno rige tus casas cuatro y cinco, el hogar y la creatividad, así que es tu mejor planeta. Está en Piscis, tu casa seis del trabajo, la salud y la competencia, y a Saturno le va bien allí. Desde finales de julio, un problema laboral o una rutina de salud pueden haberse atascado. Desde el 11 de diciembre, el esfuerzo constante vuelve a vencer a los rivales. Júpiter está en Leo, tu casa once de los ingresos y los amigos, y se vuelve retrógrado allí el 13. Júpiter rige tus casas tres y seis. Desde Leo, su noveno aspecto cae sobre Aries, tu casa siete de la pareja.",
+      "de": "Ja. Für Aszendent Waage herrscht Saturn über dein viertes und fünftes Haus, Zuhause und Kreativität, er ist also dein bester Planet. Er steht in den Fischen, deinem sechsten Haus von Arbeit, Gesundheit und Konkurrenz, und dort fühlt sich Saturn wohl. Seit Ende Juli hat ein Arbeitsproblem oder eine Gesundheitsroutine vielleicht festgesteckt. Ab dem 11. Dezember besiegt stetige Anstrengung die Rivalen wieder. Jupiter steht im Löwen, deinem elften Haus von Einkommen und Freunden, und wird dort am 13. rückläufig. Jupiter herrscht über dein drittes und sechstes Haus. Vom Löwen aus fällt sein neunter Aspekt auf den Widder, dein siebtes Haus der Partner.",
+      "ar": "بلى. لطالع الميزان، زحل يحكم بيتيك الرابع والخامس، الدار والإبداع، فهو أفضل كواكبك. وهو في الحوت، في بيتك السادس، بيت العمل والصحة والمنافسة، وزحل يكون جيدًا هناك. منذ أواخر يوليو، ربما علقت مشكلة في العمل أو روتين صحي. ومن 11 ديسمبر، يتغلب الجهد الثابت على المنافسين من جديد. المشتري في الأسد، في بيتك الحادي عشر، بيت الدخل والأصدقاء، ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك الثالث والسادس. ومن الأسد، تقع نظرته التاسعة على الحمل، بيتك السابع، بيت الشركاء.",
+      "pt": "É sim. Para o Ascendente em Libra, Saturno rege suas casas quatro e cinco, lar e criatividade, então é seu melhor planeta. Ele está em Peixes, sua casa seis, de trabalho, saúde e competição, e Saturno vai bem ali. Desde o fim de julho, um problema no trabalho ou uma rotina de saúde pode ter travado. A partir de 11 de dezembro, o esforço constante volta a vencer os rivais. Júpiter está em Leão, sua casa onze, da renda e dos amigos, e fica retrógrado ali no dia 13. Júpiter rege suas casas três e seis. De Leão, seu nono aspecto cai sobre Áries, sua casa sete, dos parceiros."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What should Libra check again?"
+      "en": "What should Libra check again?",
+      "ru": "Что Весам стоит проверить заново?",
+      "es": "¿Qué debería revisar de nuevo Libra?",
+      "de": "Was soll die Waage noch einmal prüfen?",
+      "ar": "ماذا على الميزان أن يفحص مرة أخرى؟",
+      "pt": "O que Libra deve conferir de novo?"
      },
      "sub": {
-      "en": "Libra: the review"
+      "en": "Libra: the review",
+      "ru": "Весы: пересмотр",
+      "es": "Libra: la revisión",
+      "de": "Waage: die Überprüfung",
+      "ar": "الميزان: المراجعة",
+      "pt": "Libra: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Your circle and your income streams. An old friend, or an old client, may return. On the twenty-fourth of January, Jupiter slips back into Cancer, your tenth house of career. Jupiter is exalted there, a strong sign for recognition and a good boss. It turns direct on the thirteenth of April. Through the winter, Saturn's tenth aspect sits on Sagittarius, your third house. Writing, sales and short trips need discipline. Do the boring follow-up calls."
+      "en": "Your circle and your income streams. An old friend, or an old client, may return. On the twenty-fourth of January, Jupiter slips back into Cancer, your tenth house of career. Jupiter is exalted there, a strong sign for recognition and a good boss. It turns direct on the thirteenth of April. Through the winter, Saturn's tenth aspect sits on Sagittarius, your third house. Writing, sales and short trips need discipline. Do the boring follow-up calls.",
+      "ru": "Ваш круг общения и источники дохода. Старый друг или старый клиент может вернуться. 24 января Юпитер отступает в Рак, ваш десятый дом карьеры. Юпитер там экзальтирован, это сильный знак для признания и хорошего начальника. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна лежит на Стрельце, вашем третьем доме. Письмо, продажи и короткие поездки требуют дисциплины. Делайте скучные повторные звонки.",
+      "es": "Tu círculo y tus fuentes de ingresos. Un viejo amigo o un viejo cliente puede volver. El 24 de enero, Júpiter retrocede a Cáncer, tu casa diez de la carrera. Júpiter está exaltado allí, un signo fuerte para el reconocimiento y un buen jefe. Se vuelve directo el 13 de abril. Durante el invierno, el décimo aspecto de Saturno está sobre Sagitario, tu casa tres. La escritura, las ventas y los viajes cortos necesitan disciplina. Haz las llamadas de seguimiento aburridas.",
+      "de": "Deinen Kreis und deine Einkommensquellen. Ein alter Freund oder ein alter Kunde kommt vielleicht zurück. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein zehntes Haus der Karriere. Jupiter ist dort erhöht, ein starkes Zeichen für Anerkennung und einen guten Chef. Am 13. April wird er rechtläufig. Den Winter über liegt Saturns zehnter Aspekt auf dem Schützen, deinem dritten Haus. Schreiben, Verkauf und kurze Reisen brauchen Disziplin. Mach die langweiligen Nachfass-Anrufe.",
+      "ar": "دائرة معارفك ومصادر دخلك. قد يعود صديق قديم، أو عميل قديم. في 24 يناير، يرجع المشتري إلى السرطان، بيتك العاشر، بيت المهنة. المشتري في شرفه هناك، وهذا علامة قوية على التقدير وعلى رئيس جيد. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الثالث. الكتابة والمبيعات والرحلات القصيرة تحتاج إلى انضباط. قم بمكالمات المتابعة المملة.",
+      "pt": "Seu círculo e suas fontes de renda. Um velho amigo ou um antigo cliente pode voltar. Em 24 de janeiro, Júpiter volta para Câncer, sua casa dez, da carreira. Júpiter está exaltado ali, um sinal forte de reconhecimento e de um bom chefe. Ele fica direto em 13 de abril. Durante o inverno, o décimo aspecto de Saturno fica sobre Sagitário, sua casa três. Escrita, vendas e viagens curtas exigem disciplina. Faça as chamadas de acompanhamento chatas."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And from June?"
+      "en": "And from June?",
+      "ru": "А с июня?",
+      "es": "¿Y desde junio?",
+      "de": "Und ab Juni?",
+      "ar": "ومن يونيو؟",
+      "pt": "E a partir de junho?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your seventh house, and faces you directly. Partnerships become serious, and gain structure. On the twenty-sixth of June, Jupiter returns to Leo, your eleventh house, moving forward, and income can grow again. So, Libra in one sentence: win at work in December, rise in your career in spring, and build solid partnerships in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your seventh house, and faces you directly. Partnerships become serious, and gain structure. On the twenty-sixth of June, Jupiter returns to Leo, your eleventh house, moving forward, and income can grow again. So, Libra in one sentence: win at work in December, rise in your career in spring, and build solid partnerships in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш седьмой дом, и встаёт перед вами лицом к лицу. Партнёрства становятся серьёзными и обретают структуру. 26 июня Юпитер возвращается во Льва, в ваш одиннадцатый дом, и идёт вперёд, а доход снова может расти. Итак, Весы одним предложением: в декабре побеждайте на работе, весной поднимайтесь в карьере, а летом стройте прочные партнёрства.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa siete, y te mira de frente. Las alianzas se vuelven serias y ganan estructura. El 26 de junio, Júpiter vuelve a Leo, tu casa once, avanzando, y los ingresos pueden crecer de nuevo. Así que, Libra en una frase: gana en el trabajo en diciembre, asciende en tu carrera en primavera y construye alianzas sólidas en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein siebtes Haus, und steht dir direkt gegenüber. Partnerschaften werden ernst und bekommen Struktur. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein elftes Haus, vorwärts laufend, und das Einkommen kann wieder wachsen. Die Waage in einem Satz: Gewinne im Dezember bei der Arbeit, steige im Frühling in der Karriere auf und baue im Sommer solide Partnerschaften auf.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك السابع، ويواجهك مباشرة. تصبح الشراكات جادة، وتكتسب بنية. في 26 يونيو، يعود المشتري إلى الأسد، بيتك الحادي عشر، متجهًا إلى الأمام، ويمكن للدخل أن ينمو من جديد. إذًا الميزان في جملة واحدة: انتصر في العمل في ديسمبر، وارتقِ في مهنتك في الربيع، وابنِ شراكات متينة في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa sete, e fica de frente para você. As parcerias ficam sérias e ganham estrutura. Em 26 de junho, Júpiter volta para Leão, sua casa onze, avançando, e a renda pode crescer de novo. Então, Libra em uma frase: vença no trabalho em dezembro, suba na carreira na primavera e construa parcerias sólidas no verão."
      }
     }
    ],
@@ -480,49 +860,94 @@
    "t": 1022,
    "sign": 7,
    "h": {
-    "en": "Scorpio rising"
+    "en": "Scorpio rising",
+    "ru": "Лагна Скорпион",
+    "es": "Ascendente Escorpio",
+    "de": "Aszendent Skorpion",
+    "ar": "الطالع العقرب",
+    "pt": "Ascendente Escorpião"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Scorpio rising. Where do the two planets fall?"
+      "en": "Scorpio rising. Where do the two planets fall?",
+      "ru": "Лагна Скорпион. Где оказываются две планеты?",
+      "es": "Ascendente Escorpio. ¿Dónde caen los dos planetas?",
+      "de": "Aszendent Skorpion. Wohin fallen die beiden Planeten?",
+      "ar": "طالع العقرب. أين يقع الكوكبان؟",
+      "pt": "Ascendente em Escorpião. Onde caem os dois planetas?"
      },
      "sub": {
-      "en": "Scorpio: where they sit"
+      "en": "Scorpio: where they sit",
+      "ru": "Скорпион: где они стоят",
+      "es": "Escorpio: dónde están",
+      "de": "Skorpion: wo sie stehen",
+      "ar": "العقرب: أين يقعان",
+      "pt": "Escorpião: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Scorpio rising, Saturn sits in Pisces, your fifth house of children, study, romance and creative work. Saturn rules your third and fourth houses, effort and home. Since late July, a project or an exam may have felt heavy. From the eleventh of December, it moves forward, slowly but surely. Jupiter sits in Leo, your tenth house, the top of your chart, and turns retrograde there on the thirteenth. Jupiter rules your second and fifth houses, money and children. So career and family money are linked this winter."
+      "en": "For Scorpio rising, Saturn sits in Pisces, your fifth house of children, study, romance and creative work. Saturn rules your third and fourth houses, effort and home. Since late July, a project or an exam may have felt heavy. From the eleventh of December, it moves forward, slowly but surely. Jupiter sits in Leo, your tenth house, the top of your chart, and turns retrograde there on the thirteenth. Jupiter rules your second and fifth houses, money and children. So career and family money are linked this winter.",
+      "ru": "Для лагны Скорпиона Сатурн стоит в Рыбах, в вашем пятом доме детей, учёбы, романтики и творческой работы. Сатурн управляет вашим третьим и четвёртым домами, усилием и домом. С конца июля проект или экзамен, возможно, давались тяжело. С 11 декабря он движется вперёд, медленно, но верно. Юпитер стоит во Льве, в вашем десятом доме, на вершине вашей карты, и становится там ретроградным 13-го. Юпитер управляет вашим вторым и пятым домами, деньгами и детьми. Так что этой зимой карьера и семейные деньги связаны.",
+      "es": "Para el Ascendente Escorpio, Saturno está en Piscis, tu casa cinco de los hijos, el estudio, el romance y el trabajo creativo. Saturno rige tus casas tres y cuatro, el esfuerzo y el hogar. Desde finales de julio, un proyecto o un examen pueden haberse sentido pesados. Desde el 11 de diciembre, avanza, despacio pero con seguridad. Júpiter está en Leo, tu casa diez, la cima de tu carta, y se vuelve retrógrado allí el 13. Júpiter rige tus casas dos y cinco, el dinero y los hijos. Así que la carrera y el dinero familiar están ligados este invierno.",
+      "de": "Für Aszendent Skorpion steht Saturn in den Fischen, deinem fünften Haus von Kindern, Studium, Romantik und kreativer Arbeit. Saturn herrscht über dein drittes und viertes Haus, Anstrengung und Zuhause. Seit Ende Juli hat sich ein Projekt oder eine Prüfung vielleicht schwer angefühlt. Ab dem 11. Dezember geht es vorwärts, langsam, aber sicher. Jupiter steht im Löwen, deinem zehnten Haus, dem Höhepunkt deines Horoskops, und wird dort am 13. rückläufig. Jupiter herrscht über dein zweites und fünftes Haus, Geld und Kinder. Karriere und Familiengeld hängen diesen Winter also zusammen.",
+      "ar": "لطالع العقرب، زحل في الحوت، في بيتك الخامس، بيت الأبناء والدراسة والحب والعمل الإبداعي. زحل يحكم بيتيك الثالث والرابع، الجهد والدار. منذ أواخر يوليو، ربما بدا مشروع أو امتحان ثقيلًا. ومن 11 ديسمبر، يتقدم إلى الأمام، ببطء لكن بثبات. المشتري في الأسد، في بيتك العاشر، قمة خريطتك، ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك الثاني والخامس، المال والأبناء. فالمهنة ومال العائلة مرتبطان هذا الشتاء.",
+      "pt": "Para o Ascendente em Escorpião, Saturno está em Peixes, sua casa cinco, dos filhos, do estudo, do romance e do trabalho criativo. Saturno rege suas casas três e quatro, esforço e lar. Desde o fim de julho, um projeto ou uma prova pode ter parecido pesado. A partir de 11 de dezembro, ele avança, devagar mas com segurança. Júpiter está em Leão, sua casa dez, o topo do seu mapa, e fica retrógrado ali no dia 13. Júpiter rege suas casas dois e cinco, dinheiro e filhos. Então carreira e dinheiro da família estão ligados neste inverno."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What does the retrograde ask of Scorpio?"
+      "en": "What does the retrograde ask of Scorpio?",
+      "ru": "Чего ретроградность просит от Скорпиона?",
+      "es": "¿Qué le pide el retrógrado a Escorpio?",
+      "de": "Was verlangt die Rückläufigkeit vom Skorpion?",
+      "ar": "ماذا تطلب الحركة التراجعية من العقرب؟",
+      "pt": "O que o retrógrado pede de Escorpião?"
      },
      "sub": {
-      "en": "Scorpio: the review"
+      "en": "Scorpio: the review",
+      "ru": "Скорпион: пересмотр",
+      "es": "Escorpio: la revisión",
+      "de": "Skorpion: die Überprüfung",
+      "ar": "العقرب: المراجعة",
+      "pt": "Escorpião: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Rethink your career moves before you make them. A job offer may come back, or a manager may change plans. On the twenty-fourth of January, Jupiter slips back into Cancer, your ninth house of luck and teachers. Jupiter is exalted there, and from Cancer, its fifth aspect lands on your ascendant. That's real protection and good guidance. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect falls on Sagittarius, your second house. Watch your spending, and speak carefully."
+      "en": "Rethink your career moves before you make them. A job offer may come back, or a manager may change plans. On the twenty-fourth of January, Jupiter slips back into Cancer, your ninth house of luck and teachers. Jupiter is exalted there, and from Cancer, its fifth aspect lands on your ascendant. That's real protection and good guidance. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect falls on Sagittarius, your second house. Watch your spending, and speak carefully.",
+      "ru": "Обдумайте свои карьерные шаги, прежде чем их делать. Предложение о работе может вернуться, или руководитель может изменить планы. 24 января Юпитер отступает в Рак, ваш девятый дом удачи и учителей. Юпитер там экзальтирован, и из Рака его пятый аспект падает на вашу лагну. Это настоящая защита и хорошее руководство. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна падает на Стрельца, ваш второй дом. Следите за тратами и говорите осторожно.",
+      "es": "Replantea tus movimientos profesionales antes de hacerlos. Una oferta de trabajo puede volver, o un jefe puede cambiar de planes. El 24 de enero, Júpiter retrocede a Cáncer, tu casa nueve de la suerte y los maestros. Júpiter está exaltado allí, y desde Cáncer, su quinto aspecto cae sobre tu Ascendente. Es protección real y buena guía. Se vuelve directo el 13 de abril. Todo el invierno, el décimo aspecto de Saturno cae sobre Sagitario, tu casa dos. Vigila tus gastos y habla con cuidado.",
+      "de": "Überdenke deine Karriereschritte, bevor du sie machst. Ein Jobangebot kommt vielleicht zurück, oder ein Vorgesetzter ändert seine Pläne. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein neuntes Haus von Glück und Lehrern. Jupiter ist dort erhöht, und vom Krebs aus fällt sein fünfter Aspekt auf deinen Aszendenten. Das ist echter Schutz und gute Führung. Am 13. April wird er rechtläufig. Den ganzen Winter fällt Saturns zehnter Aspekt auf den Schützen, dein zweites Haus. Achte auf deine Ausgaben und sprich vorsichtig.",
+      "ar": "أعد التفكير في خطواتك المهنية قبل أن تخطوها. قد يعود عرض عمل، أو يغيّر مدير خططه. في 24 يناير، يرجع المشتري إلى السرطان، بيتك التاسع، بيت الحظ والمعلمين. المشتري في شرفه هناك، ومن السرطان تقع نظرته الخامسة على طالعك. وهذه حماية حقيقية وتوجيه جيد. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الثاني. راقب إنفاقك، وتكلّم بحذر.",
+      "pt": "Repense seus passos na carreira antes de dá-los. Uma oferta de emprego pode voltar, ou um gerente pode mudar de planos. Em 24 de janeiro, Júpiter volta para Câncer, sua casa nove, da sorte e dos mestres. Júpiter está exaltado ali e, de Câncer, seu quinto aspecto cai sobre o seu ascendente. Isso é proteção de verdade e boa orientação. Ele fica direto em 13 de abril. Durante todo o inverno, o décimo aspecto de Saturno cai sobre Sagitário, sua casa dois. Cuide dos gastos e fale com cuidado."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "When does Scorpio feel the lift?"
+      "en": "When does Scorpio feel the lift?",
+      "ru": "Когда Скорпион почувствует подъём?",
+      "es": "¿Cuándo siente Escorpio el impulso?",
+      "de": "Wann spürt der Skorpion den Aufschwung?",
+      "ar": "متى يشعر العقرب بالدفعة؟",
+      "pt": "Quando Escorpião sente o impulso?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your sixth house. That's good news. Saturn wins battles from there, and debts and illness are easier to beat. On the twenty-sixth of June, Jupiter returns to Leo, your tenth house, moving forward. The career plan you rethought can now go ahead. So, Scorpio in one sentence: finish your studies in December, trust your mentors in spring, and push your career in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your sixth house. That's good news. Saturn wins battles from there, and debts and illness are easier to beat. On the twenty-sixth of June, Jupiter returns to Leo, your tenth house, moving forward. The career plan you rethought can now go ahead. So, Scorpio in one sentence: finish your studies in December, trust your mentors in spring, and push your career in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш шестой дом. Это хорошая новость. Оттуда Сатурн выигрывает битвы, а долги и болезни легче победить. 26 июня Юпитер возвращается во Льва, в ваш десятый дом, и идёт вперёд. Карьерный план, который вы переосмыслили, теперь можно двигать. Итак, Скорпион одним предложением: в декабре завершите учёбу, весной доверьтесь наставникам, а летом продвигайте карьеру.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa seis. Es una buena noticia. Desde ahí, Saturno gana batallas, y las deudas y las enfermedades son más fáciles de vencer. El 26 de junio, Júpiter vuelve a Leo, tu casa diez, avanzando. El plan profesional que replanteaste ya puede seguir adelante. Así que, Escorpio en una frase: termina tus estudios en diciembre, confía en tus mentores en primavera e impulsa tu carrera en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein sechstes Haus. Das sind gute Nachrichten. Von dort aus gewinnt Saturn Kämpfe, und Schulden und Krankheit lassen sich leichter besiegen. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein zehntes Haus, vorwärts laufend. Der Karriereplan, den du überdacht hast, kann jetzt weitergehen. Der Skorpion in einem Satz: Schließe im Dezember dein Studium ab, vertraue im Frühling deinen Mentoren und treib im Sommer deine Karriere voran.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك السادس. وهذا خبر جيد. فزحل يكسب المعارك من هناك، ويصبح التغلب على الديون والمرض أسهل. في 26 يونيو، يعود المشتري إلى الأسد، بيتك العاشر، متجهًا إلى الأمام. خطة المهنة التي أعدت التفكير فيها يمكن أن تمضي الآن. إذًا العقرب في جملة واحدة: أنهِ دراستك في ديسمبر، وثق بمرشديك في الربيع، ودفع مهنتك إلى الأمام في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa seis. Essa é uma boa notícia. De lá, Saturno vence batalhas, e dívidas e doenças ficam mais fáceis de vencer. Em 26 de junho, Júpiter volta para Leão, sua casa dez, avançando. O plano de carreira que você repensou agora pode seguir. Então, Escorpião em uma frase: termine os estudos em dezembro, confie nos seus mentores na primavera e impulsione sua carreira no verão."
      }
     }
    ],
@@ -535,49 +960,94 @@
    "t": 1140,
    "sign": 8,
    "h": {
-    "en": "Sagittarius rising"
+    "en": "Sagittarius rising",
+    "ru": "Лагна Стрелец",
+    "es": "Ascendente Sagitario",
+    "de": "Aszendent Schütze",
+    "ar": "الطالع القوس",
+    "pt": "Ascendente Sagitário"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Sagittarius rising. Both planets look at Sagittarius, don't they?"
+      "en": "Sagittarius rising. Both planets look at Sagittarius, don't they?",
+      "ru": "Лагна Стрелец. Обе планеты смотрят на Стрельца, не так ли?",
+      "es": "Ascendente Sagitario. Ambos planetas miran a Sagitario, ¿verdad?",
+      "de": "Aszendent Schütze. Beide Planeten schauen auf den Schützen, nicht wahr?",
+      "ar": "طالع القوس. الكوكبان كلاهما ينظران إلى القوس، أليس كذلك؟",
+      "pt": "Ascendente em Sagitário. Os dois planetas olham para Sagitário, não é?"
      },
      "sub": {
-      "en": "Sagittarius: where they sit"
+      "en": "Sagittarius: where they sit",
+      "ru": "Стрелец: где они стоят",
+      "es": "Sagitario: dónde están",
+      "de": "Schütze: wo sie stehen",
+      "ar": "القوس: أين يقعان",
+      "pt": "Sagitário: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "They do, so this winter is about you. Saturn sits in Pisces, your fourth house of home, mother and property. Saturn rules your second and third houses, savings and effort, and its tenth aspect falls on your ascendant. Since late July, home matters may have felt heavy. From the eleventh of December, they slowly clear. Jupiter is your ruling planet, and it sits in Leo, your ninth house of luck, faith and long journeys. Its fifth aspect also falls on your ascendant. It turns retrograde there on the thirteenth of December."
+      "en": "They do, so this winter is about you. Saturn sits in Pisces, your fourth house of home, mother and property. Saturn rules your second and third houses, savings and effort, and its tenth aspect falls on your ascendant. Since late July, home matters may have felt heavy. From the eleventh of December, they slowly clear. Jupiter is your ruling planet, and it sits in Leo, your ninth house of luck, faith and long journeys. Its fifth aspect also falls on your ascendant. It turns retrograde there on the thirteenth of December.",
+      "ru": "Да, так что эта зима о вас. Сатурн стоит в Рыбах, в вашем четвёртом доме дома, матери и недвижимости. Сатурн управляет вашим вторым и третьим домами, сбережениями и усилием, и его десятый аспект падает на вашу лагну. С конца июля домашние дела, возможно, давались тяжело. С 11 декабря они постепенно проясняются. Юпитер — ваша управляющая планета, и он стоит во Льве, в вашем девятом доме удачи, веры и дальних путешествий. Его пятый аспект тоже падает на вашу лагну. Он становится там ретроградным 13 декабря.",
+      "es": "Sí, así que este invierno trata de ti. Saturno está en Piscis, tu casa cuatro del hogar, la madre y la propiedad. Saturno rige tus casas dos y tres, los ahorros y el esfuerzo, y su décimo aspecto cae sobre tu Ascendente. Desde finales de julio, los asuntos del hogar pueden haberse sentido pesados. Desde el 11 de diciembre, se despejan poco a poco. Júpiter es tu planeta regente, y está en Leo, tu casa nueve de la suerte, la fe y los viajes largos. Su quinto aspecto también cae sobre tu Ascendente. Se vuelve retrógrado allí el 13 de diciembre.",
+      "de": "Ja, dieser Winter dreht sich also um dich. Saturn steht in den Fischen, deinem vierten Haus von Zuhause, Mutter und Immobilien. Saturn herrscht über dein zweites und drittes Haus, Ersparnisse und Anstrengung, und sein zehnter Aspekt fällt auf deinen Aszendenten. Seit Ende Juli haben sich Angelegenheiten zu Hause vielleicht schwer angefühlt. Ab dem 11. Dezember klären sie sich langsam. Jupiter ist dein herrschender Planet, und er steht im Löwen, deinem neunten Haus von Glück, Glauben und langen Reisen. Sein fünfter Aspekt fällt ebenfalls auf deinen Aszendenten. Er wird dort am 13. Dezember rückläufig.",
+      "ar": "نعم، لذلك هذا الشتاء يخصّك. زحل في الحوت، في بيتك الرابع، بيت الدار والأم والعقار. زحل يحكم بيتيك الثاني والثالث، المدخرات والجهد، وتقع نظرته العاشرة على طالعك. منذ أواخر يوليو، ربما بدت شؤون البيت ثقيلة. ومن 11 ديسمبر، تنجلي ببطء. المشتري هو كوكبك الحاكم، وهو في الأسد، في بيتك التاسع، بيت الحظ والإيمان والرحلات الطويلة. ونظرته الخامسة تقع أيضًا على طالعك. ويبدأ حركته التراجعية فيه في 13 ديسمبر.",
+      "pt": "Olham, então este inverno é sobre você. Saturno está em Peixes, sua casa quatro, do lar, da mãe e dos imóveis. Saturno rege suas casas dois e três, poupança e esforço, e seu décimo aspecto cai sobre o seu ascendente. Desde o fim de julho, assuntos de casa podem ter parecido pesados. A partir de 11 de dezembro, eles se resolvem aos poucos. Júpiter é seu planeta regente e está em Leão, sua casa nove, da sorte, da fé e das viagens longas. Seu quinto aspecto também cai sobre o seu ascendente. Ele fica retrógrado ali em 13 de dezembro."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What should Sagittarius review?"
+      "en": "What should Sagittarius review?",
+      "ru": "Что Стрельцу стоит пересмотреть?",
+      "es": "¿Qué debería revisar Sagitario?",
+      "de": "Was soll der Schütze überprüfen?",
+      "ar": "ماذا على القوس أن يراجع؟",
+      "pt": "O que Sagitário deve revisar?"
      },
      "sub": {
-      "en": "Sagittarius: the review"
+      "en": "Sagittarius: the review",
+      "ru": "Стрелец: пересмотр",
+      "es": "Sagitario: la revisión",
+      "de": "Schütze: die Überprüfung",
+      "ar": "القوس: المراجعة",
+      "pt": "Sagitário: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Your beliefs and your big plans. A trip, a course, or a teacher may need a second look. On the twenty-fourth of January, Jupiter slips back into Cancer, your eighth house. Exalted there, it helps with insurance, inheritance and research, and it gives a calm mind in a crisis. It turns direct on the thirteenth of April. With Saturn looking at you all winter, take care of your body. Sleep, posture and a simple routine pay off."
+      "en": "Your beliefs and your big plans. A trip, a course, or a teacher may need a second look. On the twenty-fourth of January, Jupiter slips back into Cancer, your eighth house. Exalted there, it helps with insurance, inheritance and research, and it gives a calm mind in a crisis. It turns direct on the thirteenth of April. With Saturn looking at you all winter, take care of your body. Sleep, posture and a simple routine pay off.",
+      "ru": "Ваши убеждения и большие планы. Поездке, курсу или учителю может понадобиться второй взгляд. 24 января Юпитер отступает в Рак, ваш восьмой дом. Экзальтированный там, он помогает со страховкой, наследством и исследованиями и даёт спокойный ум в кризис. Прямым он становится 13 апреля. Пока Сатурн смотрит на вас всю зиму, берегите своё тело. Сон, осанка и простой режим окупятся.",
+      "es": "Tus creencias y tus grandes planes. Un viaje, un curso o un maestro pueden necesitar un segundo vistazo. El 24 de enero, Júpiter retrocede a Cáncer, tu casa ocho. Exaltado allí, ayuda con los seguros, la herencia y la investigación, y da una mente tranquila en una crisis. Se vuelve directo el 13 de abril. Con Saturno mirándote todo el invierno, cuida tu cuerpo. El sueño, la postura y una rutina sencilla dan resultado.",
+      "de": "Deine Überzeugungen und deine großen Pläne. Eine Reise, ein Kurs oder ein Lehrer braucht vielleicht einen zweiten Blick. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein achtes Haus. Dort erhöht hilft er bei Versicherung, Erbschaft und Forschung und schenkt einen ruhigen Geist in der Krise. Am 13. April wird er rechtläufig. Da Saturn den ganzen Winter auf dich schaut, achte auf deinen Körper. Schlaf, Haltung und eine einfache Routine zahlen sich aus.",
+      "ar": "معتقداتك وخططك الكبرى. رحلة، أو دورة، أو معلم، قد يحتاج إلى نظرة ثانية. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الثامن. وهو في شرفه هناك، فيساعد في التأمين والميراث والبحث، ويمنح عقلًا هادئًا في الأزمات. ويعود إلى الحركة المباشرة في 13 أبريل. وزحل ينظر إليك طوال الشتاء، فاعتنِ بجسدك. النوم ووضعية الجسم وروتين بسيط كلها تؤتي ثمارها.",
+      "pt": "Suas crenças e seus grandes planos. Uma viagem, um curso ou um mestre podem precisar de uma segunda olhada. Em 24 de janeiro, Júpiter volta para Câncer, sua casa oito. Exaltado ali, ele ajuda com seguros, herança e pesquisa, e dá uma mente calma numa crise. Ele fica direto em 13 de abril. Com Saturno olhando para você durante todo o inverno, cuide do seu corpo. Sono, postura e uma rotina simples compensam."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And summer for Sagittarius?"
+      "en": "And summer for Sagittarius?",
+      "ru": "А лето для Стрельца?",
+      "es": "¿Y el verano para Sagitario?",
+      "de": "Und der Sommer für den Schützen?",
+      "ar": "والصيف للقوس؟",
+      "pt": "E o verão para Sagitário?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your fifth house, and teaches patience with children and creative work. On the twenty-sixth of June, Jupiter returns to Leo, your ninth house, moving forward, and travel and study open up again. So, Sagittarius in one sentence: let home matters settle in December, stay calm through spring, and go further in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your fifth house, and teaches patience with children and creative work. On the twenty-sixth of June, Jupiter returns to Leo, your ninth house, moving forward, and travel and study open up again. So, Sagittarius in one sentence: let home matters settle in December, stay calm through spring, and go further in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш пятый дом, и учит терпению с детьми и в творческой работе. 26 июня Юпитер возвращается во Льва, в ваш девятый дом, и идёт вперёд, а поездки и учёба снова открываются. Итак, Стрелец одним предложением: в декабре дайте домашним делам устояться, весной сохраняйте спокойствие, а летом идите дальше.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa cinco, y enseña paciencia con los hijos y el trabajo creativo. El 26 de junio, Júpiter vuelve a Leo, tu casa nueve, avanzando, y los viajes y el estudio se abren de nuevo. Así que, Sagitario en una frase: deja que los asuntos del hogar se asienten en diciembre, mantén la calma en primavera y llega más lejos en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein fünftes Haus, und lehrt Geduld mit Kindern und kreativer Arbeit. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein neuntes Haus, vorwärts laufend, und Reisen und Studium öffnen sich wieder. Der Schütze in einem Satz: Lass im Dezember die Angelegenheiten zu Hause zur Ruhe kommen, bleib im Frühling gelassen und geh im Sommer weiter.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك الخامس، ويعلّمك الصبر مع الأبناء ومع العمل الإبداعي. في 26 يونيو، يعود المشتري إلى الأسد، بيتك التاسع، متجهًا إلى الأمام، وينفتح السفر والدراسة من جديد. إذًا القوس في جملة واحدة: دع شؤون البيت تستقر في ديسمبر، وابقَ هادئًا طوال الربيع، واذهب أبعد في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa cinco, e ensina paciência com os filhos e o trabalho criativo. Em 26 de junho, Júpiter volta para Leão, sua casa nove, avançando, e viagens e estudos se abrem de novo. Então, Sagitário em uma frase: deixe os assuntos de casa assentarem em dezembro, mantenha a calma na primavera e vá mais longe no verão."
      }
     }
    ],
@@ -590,49 +1060,94 @@
    "t": 1251,
    "sign": 9,
    "h": {
-    "en": "Capricorn rising"
+    "en": "Capricorn rising",
+    "ru": "Лагна Козерог",
+    "es": "Ascendente Capricornio",
+    "de": "Aszendent Steinbock",
+    "ar": "الطالع الجدي",
+    "pt": "Ascendente Capricórnio"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Capricorn rising. Saturn is your own ruler. What changes for you?"
+      "en": "Capricorn rising. Saturn is your own ruler. What changes for you?",
+      "ru": "Лагна Козерог. Сатурн — ваш собственный управитель. Что меняется для вас?",
+      "es": "Ascendente Capricornio. Saturno es tu propio regente. ¿Qué cambia para ti?",
+      "de": "Aszendent Steinbock. Saturn ist dein eigener Herrscher. Was ändert sich für dich?",
+      "ar": "طالع الجدي. زحل هو حاكمك. ماذا يتغيّر عندك؟",
+      "pt": "Ascendente em Capricórnio. Saturno é seu próprio regente. O que muda para você?"
      },
      "sub": {
-      "en": "Capricorn: where they sit"
+      "en": "Capricorn: where they sit",
+      "ru": "Козерог: где они стоят",
+      "es": "Capricornio: dónde están",
+      "de": "Steinbock: wo sie stehen",
+      "ar": "الجدي: أين يقعان",
+      "pt": "Capricórnio: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "A lot. For Capricorn rising, Saturn rules your first and second houses, your body and your money. It sits in Pisces, your third house of courage, skills, siblings and short trips, and Saturn likes the third house. Since late July, your own drive may have felt held back. From the eleventh of December, it returns, steady and practical. Jupiter sits in Leo, your eighth house of change, research and joint funds. It turns retrograde there on the thirteenth. Jupiter rules your third and twelfth houses."
+      "en": "A lot. For Capricorn rising, Saturn rules your first and second houses, your body and your money. It sits in Pisces, your third house of courage, skills, siblings and short trips, and Saturn likes the third house. Since late July, your own drive may have felt held back. From the eleventh of December, it returns, steady and practical. Jupiter sits in Leo, your eighth house of change, research and joint funds. It turns retrograde there on the thirteenth. Jupiter rules your third and twelfth houses.",
+      "ru": "Многое. Для лагны Козерога Сатурн управляет вашим первым и вторым домами, телом и деньгами. Он стоит в Рыбах, в вашем третьем доме смелости, навыков, братьев и сестёр и коротких поездок, а Сатурн любит третий дом. С конца июля ваш собственный напор, возможно, был сдержан. С 11 декабря он возвращается, ровный и практичный. Юпитер стоит во Льве, в вашем восьмом доме перемен, исследований и общих средств. Он становится там ретроградным 13-го. Юпитер управляет вашим третьим и двенадцатым домами.",
+      "es": "Mucho. Para el Ascendente Capricornio, Saturno rige tus casas uno y dos, tu cuerpo y tu dinero. Está en Piscis, tu casa tres del valor, las habilidades, los hermanos y los viajes cortos, y a Saturno le gusta la casa tres. Desde finales de julio, tu propio impulso puede haberse sentido frenado. Desde el 11 de diciembre, vuelve, firme y práctico. Júpiter está en Leo, tu casa ocho del cambio, la investigación y los fondos conjuntos. Se vuelve retrógrado allí el 13. Júpiter rige tus casas tres y doce.",
+      "de": "Viel. Für Aszendent Steinbock herrscht Saturn über dein erstes und zweites Haus, deinen Körper und dein Geld. Er steht in den Fischen, deinem dritten Haus von Mut, Fähigkeiten, Geschwistern und kurzen Reisen, und Saturn mag das dritte Haus. Seit Ende Juli hat sich dein eigener Antrieb vielleicht gebremst angefühlt. Ab dem 11. Dezember kehrt er zurück, stetig und praktisch. Jupiter steht im Löwen, deinem achten Haus von Wandel, Forschung und gemeinsamen Mitteln. Er wird dort am 13. rückläufig. Jupiter herrscht über dein drittes und zwölftes Haus.",
+      "ar": "الكثير. لطالع الجدي، زحل يحكم بيتيك الأول والثاني، جسدك ومالك. وهو في الحوت، في بيتك الثالث، بيت الشجاعة والمهارات والإخوة والرحلات القصيرة، وزحل يحب البيت الثالث. منذ أواخر يوليو، ربما شعرت بأن اندفاعك الذاتي محبوس. ومن 11 ديسمبر، يعود، ثابتًا وعمليًا. المشتري في الأسد، في بيتك الثامن، بيت التغيّر والبحث والأموال المشتركة. ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك الثالث والثاني عشر.",
+      "pt": "Muita coisa. Para o Ascendente em Capricórnio, Saturno rege suas casas um e dois, seu corpo e seu dinheiro. Ele está em Peixes, sua casa três, da coragem, das habilidades, dos irmãos e das viagens curtas, e Saturno gosta da terceira casa. Desde o fim de julho, seu próprio ímpeto pode ter se sentido contido. A partir de 11 de dezembro, ele volta, firme e prático. Júpiter está em Leão, sua casa oito, da mudança, da pesquisa e dos fundos conjuntos. Ele fica retrógrado ali no dia 13. Júpiter rege suas casas três e doze."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What does Capricorn go back over?"
+      "en": "What does Capricorn go back over?",
+      "ru": "К чему возвращается Козерог?",
+      "es": "¿Qué repasa Capricornio?",
+      "de": "Was geht der Steinbock noch einmal durch?",
+      "ar": "إلى ماذا يعود الجدي؟",
+      "pt": "O que Capricórnio revisa?"
      },
      "sub": {
-      "en": "Capricorn: the review"
+      "en": "Capricorn: the review",
+      "ru": "Козерог: пересмотр",
+      "es": "Capricornio: la revisión",
+      "de": "Steinbock: die Überprüfung",
+      "ar": "الجدي: المراجعة",
+      "pt": "Capricórnio: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Shared money and old secrets. Loans, insurance, and family inheritance may need fresh paperwork. On the twenty-fourth of January, Jupiter slips back into Cancer, your seventh house, opposite you. Exalted there, Jupiter is good for marriage and partnership, and its seventh aspect falls on your ascendant. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect sits on Sagittarius, your twelfth house. Spend less, sleep more, and let go of old guilt."
+      "en": "Shared money and old secrets. Loans, insurance, and family inheritance may need fresh paperwork. On the twenty-fourth of January, Jupiter slips back into Cancer, your seventh house, opposite you. Exalted there, Jupiter is good for marriage and partnership, and its seventh aspect falls on your ascendant. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect sits on Sagittarius, your twelfth house. Spend less, sleep more, and let go of old guilt.",
+      "ru": "К общим деньгам и старым тайнам. Займы, страховка и семейное наследство могут потребовать новых бумаг. 24 января Юпитер отступает в Рак, ваш седьмой дом, напротив вас. Экзальтированный там, Юпитер хорош для брака и партнёрства, и его седьмой аспект падает на вашу лагну. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна лежит на Стрельце, вашем двенадцатом доме. Тратьте меньше, спите больше и отпустите старую вину.",
+      "es": "El dinero compartido y los viejos secretos. Préstamos, seguros y herencias familiares pueden necesitar papeles nuevos. El 24 de enero, Júpiter retrocede a Cáncer, tu casa siete, frente a ti. Exaltado allí, Júpiter es bueno para el matrimonio y la pareja, y su séptimo aspecto cae sobre tu Ascendente. Se vuelve directo el 13 de abril. Todo el invierno, el décimo aspecto de Saturno está sobre Sagitario, tu casa doce. Gasta menos, duerme más y suelta la vieja culpa.",
+      "de": "Gemeinsames Geld und alte Geheimnisse. Kredite, Versicherungen und das Familienerbe brauchen vielleicht neue Unterlagen. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein siebtes Haus, dir gegenüber. Dort erhöht ist Jupiter gut für Ehe und Partnerschaft, und sein siebter Aspekt fällt auf deinen Aszendenten. Am 13. April wird er rechtläufig. Den ganzen Winter liegt Saturns zehnter Aspekt auf dem Schützen, deinem zwölften Haus. Gib weniger aus, schlaf mehr und lass alte Schuldgefühle los.",
+      "ar": "المال المشترك والأسرار القديمة. القروض والتأمين وميراث العائلة قد تحتاج إلى أوراق جديدة. في 24 يناير، يرجع المشتري إلى السرطان، بيتك السابع، مقابلك. المشتري في شرفه هناك، وهو جيد للزواج والشراكة، وتقع نظرته السابعة على طالعك. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الثاني عشر. أنفق أقل، ونم أكثر، وتخلَّ عن الذنب القديم.",
+      "pt": "Dinheiro compartilhado e velhos segredos. Empréstimos, seguros e herança da família podem precisar de papelada nova. Em 24 de janeiro, Júpiter volta para Câncer, sua casa sete, oposta a você. Exaltado ali, Júpiter é bom para casamento e parceria, e seu sétimo aspecto cai sobre o seu ascendente. Ele fica direto em 13 de abril. Durante todo o inverno, o décimo aspecto de Saturno fica sobre Sagitário, sua casa doze. Gaste menos, durma mais e deixe de lado a culpa antiga."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And when does Capricorn build?"
+      "en": "And when does Capricorn build?",
+      "ru": "А когда Козерог строит?",
+      "es": "¿Y cuándo construye Capricornio?",
+      "de": "Und wann baut der Steinbock auf?",
+      "ar": "ومتى يبني الجدي؟",
+      "pt": "E quando Capricórnio constrói?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your fourth house. It asks you to rebuild your base: a home, a property, or your peace of mind. On the twenty-sixth of June, Jupiter returns to Leo, your eighth house, moving forward. So, Capricorn in one sentence: get your drive back in December, invest in partnership in spring, and build your foundations in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your fourth house. It asks you to rebuild your base: a home, a property, or your peace of mind. On the twenty-sixth of June, Jupiter returns to Leo, your eighth house, moving forward. So, Capricorn in one sentence: get your drive back in December, invest in partnership in spring, and build your foundations in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш четвёртый дом. Он просит вас заново выстроить свою основу: дом, недвижимость или душевный покой. 26 июня Юпитер возвращается во Льва, в ваш восьмой дом, и идёт вперёд. Итак, Козерог одним предложением: в декабре верните свой напор, весной вкладывайтесь в партнёрство, а летом стройте фундамент.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa cuatro. Te pide reconstruir tu base: un hogar, una propiedad o tu paz interior. El 26 de junio, Júpiter vuelve a Leo, tu casa ocho, avanzando. Así que, Capricornio en una frase: recupera tu impulso en diciembre, invierte en la pareja en primavera y construye tus cimientos en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein viertes Haus. Er verlangt, dass du dein Fundament neu aufbaust: ein Zuhause, eine Immobilie oder deinen inneren Frieden. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein achtes Haus, vorwärts laufend. Der Steinbock in einem Satz: Hol dir im Dezember deinen Antrieb zurück, investiere im Frühling in die Partnerschaft und baue im Sommer dein Fundament auf.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك الرابع. ويطلب منك أن تعيد بناء أساسك: بيتًا، أو عقارًا، أو سكينتك الداخلية. في 26 يونيو، يعود المشتري إلى الأسد، بيتك الثامن، متجهًا إلى الأمام. إذًا الجدي في جملة واحدة: استعد اندفاعك في ديسمبر، واستثمر في الشراكة في الربيع، وابنِ أسسك في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa quatro. Ele pede que você reconstrua sua base: uma casa, um imóvel ou sua paz de espírito. Em 26 de junho, Júpiter volta para Leão, sua casa oito, avançando. Então, Capricórnio em uma frase: recupere seu ímpeto em dezembro, invista na parceria na primavera e construa suas bases no verão."
      }
     }
    ],
@@ -645,49 +1160,94 @@
    "t": 1365,
    "sign": 10,
    "h": {
-    "en": "Aquarius rising"
+    "en": "Aquarius rising",
+    "ru": "Лагна Водолей",
+    "es": "Ascendente Acuario",
+    "de": "Aszendent Wassermann",
+    "ar": "الطالع الدلو",
+    "pt": "Ascendente Aquário"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "Aquarius rising. Saturn is your ruler, and Jupiter sits right across from you. What does that mean?"
+      "en": "Aquarius rising. Saturn is your ruler, and Jupiter sits right across from you. What does that mean?",
+      "ru": "Лагна Водолей. Сатурн — ваш управитель, а Юпитер стоит прямо напротив вас. Что это значит?",
+      "es": "Ascendente Acuario. Saturno es tu regente, y Júpiter está justo frente a ti. ¿Qué significa eso?",
+      "de": "Aszendent Wassermann. Saturn ist dein Herrscher, und Jupiter steht genau gegenüber von dir. Was bedeutet das?",
+      "ar": "طالع الدلو. زحل هو حاكمك، والمشتري يقع مقابلك تمامًا. ماذا يعني ذلك؟",
+      "pt": "Ascendente em Aquário. Saturno é seu regente, e Júpiter está bem à sua frente. O que isso significa?"
      },
      "sub": {
-      "en": "Aquarius: where they sit"
+      "en": "Aquarius: where they sit",
+      "ru": "Водолей: где они стоят",
+      "es": "Acuario: dónde están",
+      "de": "Wassermann: wo sie stehen",
+      "ar": "الدلو: أين يقعان",
+      "pt": "Aquário: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "For Aquarius rising, Saturn, your ruler, sits in Pisces, your second house of savings, family and speech. Since late July, money may have moved slowly. From the eleventh of December, it starts flowing again, carefully. Jupiter sits in Leo, your seventh house of partners and clients, and its seventh aspect falls on your ascendant. It turns retrograde there on the thirteenth. Jupiter rules your second and eleventh houses, money and gains, so partners and income are linked."
+      "en": "For Aquarius rising, Saturn, your ruler, sits in Pisces, your second house of savings, family and speech. Since late July, money may have moved slowly. From the eleventh of December, it starts flowing again, carefully. Jupiter sits in Leo, your seventh house of partners and clients, and its seventh aspect falls on your ascendant. It turns retrograde there on the thirteenth. Jupiter rules your second and eleventh houses, money and gains, so partners and income are linked.",
+      "ru": "Для лагны Водолея Сатурн, ваш управитель, стоит в Рыбах, в вашем втором доме сбережений, семьи и речи. С конца июля деньги, возможно, двигались медленно. С 11 декабря они снова начинают течь, осторожно. Юпитер стоит во Льве, в вашем седьмом доме партнёров и клиентов, и его седьмой аспект падает на вашу лагну. Он становится там ретроградным 13-го. Юпитер управляет вашим вторым и одиннадцатым домами, деньгами и приобретениями, так что партнёры и доход связаны.",
+      "es": "Para el Ascendente Acuario, Saturno, tu regente, está en Piscis, tu casa dos de los ahorros, la familia y el habla. Desde finales de julio, el dinero puede haberse movido despacio. Desde el 11 de diciembre, empieza a fluir de nuevo, con cuidado. Júpiter está en Leo, tu casa siete de los socios y los clientes, y su séptimo aspecto cae sobre tu Ascendente. Se vuelve retrógrado allí el 13. Júpiter rige tus casas dos y once, el dinero y las ganancias, así que la pareja y los ingresos están ligados.",
+      "de": "Für Aszendent Wassermann steht Saturn, dein Herrscher, in den Fischen, deinem zweiten Haus von Ersparnissen, Familie und Sprache. Seit Ende Juli hat sich das Geld vielleicht langsam bewegt. Ab dem 11. Dezember beginnt es wieder zu fließen, vorsichtig. Jupiter steht im Löwen, deinem siebten Haus von Partnern und Kunden, und sein siebter Aspekt fällt auf deinen Aszendenten. Er wird dort am 13. rückläufig. Jupiter herrscht über dein zweites und elftes Haus, Geld und Gewinne, Partner und Einkommen hängen also zusammen.",
+      "ar": "لطالع الدلو، زحل، حاكمك، في الحوت، في بيتك الثاني، بيت المدخرات والعائلة والكلام. منذ أواخر يوليو، ربما تحرّك المال ببطء. ومن 11 ديسمبر، يبدأ بالتدفق من جديد، بحذر. المشتري في الأسد، في بيتك السابع، بيت الشركاء والعملاء، وتقع نظرته السابعة على طالعك. ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم بيتيك الثاني والحادي عشر، المال والمكاسب، فالشركاء والدخل مرتبطان.",
+      "pt": "Para o Ascendente em Aquário, Saturno, seu regente, está em Peixes, sua casa dois, da poupança, da família e da fala. Desde o fim de julho, o dinheiro pode ter andado devagar. A partir de 11 de dezembro, ele volta a fluir, com cuidado. Júpiter está em Leão, sua casa sete, dos parceiros e clientes, e seu sétimo aspecto cai sobre o seu ascendente. Ele fica retrógrado ali no dia 13. Júpiter rege suas casas dois e onze, dinheiro e ganhos, então parceiros e renda estão ligados."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What does Aquarius review?"
+      "en": "What does Aquarius review?",
+      "ru": "Что пересматривает Водолей?",
+      "es": "¿Qué revisa Acuario?",
+      "de": "Was überprüft der Wassermann?",
+      "ar": "ماذا يراجع الدلو؟",
+      "pt": "O que Aquário revisa?"
      },
      "sub": {
-      "en": "Aquarius: the review"
+      "en": "Aquarius: the review",
+      "ru": "Водолей: пересмотр",
+      "es": "Acuario: la revisión",
+      "de": "Wassermann: die Überprüfung",
+      "ar": "الدلو: المراجعة",
+      "pt": "Aquário: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Your partnerships. Terms with a partner or a client may need to be renegotiated. On the twenty-fourth of January, Jupiter slips back into Cancer, your sixth house of work and health. Exalted there, it helps you win against problems and improve daily habits. It turns direct on the thirteenth of April. Through the winter, Saturn's tenth aspect sits on Sagittarius, your eleventh house. Gains come, but through hard work, not luck."
+      "en": "Your partnerships. Terms with a partner or a client may need to be renegotiated. On the twenty-fourth of January, Jupiter slips back into Cancer, your sixth house of work and health. Exalted there, it helps you win against problems and improve daily habits. It turns direct on the thirteenth of April. Through the winter, Saturn's tenth aspect sits on Sagittarius, your eleventh house. Gains come, but through hard work, not luck.",
+      "ru": "Ваши партнёрства. Условия с партнёром или клиентом, возможно, придётся пересогласовать. 24 января Юпитер отступает в Рак, ваш шестой дом работы и здоровья. Экзальтированный там, он помогает побеждать проблемы и улучшать повседневные привычки. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна лежит на Стрельце, вашем одиннадцатом доме. Приобретения приходят, но через тяжёлый труд, а не удачу.",
+      "es": "Tus alianzas. Las condiciones con un socio o un cliente pueden necesitar renegociarse. El 24 de enero, Júpiter retrocede a Cáncer, tu casa seis del trabajo y la salud. Exaltado allí, te ayuda a ganar contra los problemas y a mejorar los hábitos diarios. Se vuelve directo el 13 de abril. Durante el invierno, el décimo aspecto de Saturno está sobre Sagitario, tu casa once. Las ganancias llegan, pero con trabajo duro, no por suerte.",
+      "de": "Deine Partnerschaften. Die Bedingungen mit einem Partner oder Kunden müssen vielleicht neu verhandelt werden. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein sechstes Haus von Arbeit und Gesundheit. Dort erhöht hilft er dir, Probleme zu besiegen und tägliche Gewohnheiten zu verbessern. Am 13. April wird er rechtläufig. Den Winter über liegt Saturns zehnter Aspekt auf dem Schützen, deinem elften Haus. Gewinne kommen, aber durch harte Arbeit, nicht durch Glück.",
+      "ar": "شراكاتك. شروط التعامل مع شريك أو عميل قد تحتاج إلى إعادة تفاوض. في 24 يناير، يرجع المشتري إلى السرطان، بيتك السادس، بيت العمل والصحة. وهو في شرفه هناك، فيساعدك على الانتصار على المشكلات وتحسين عاداتك اليومية. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك الحادي عشر. المكاسب تأتي، لكن بالعمل الشاق لا بالحظ.",
+      "pt": "Suas parcerias. Os termos com um sócio ou um cliente podem precisar ser renegociados. Em 24 de janeiro, Júpiter volta para Câncer, sua casa seis, do trabalho e da saúde. Exaltado ali, ele ajuda você a vencer problemas e a melhorar os hábitos diários. Ele fica direto em 13 de abril. Durante o inverno, o décimo aspecto de Saturno fica sobre Sagitário, sua casa onze. Os ganhos vêm, mas pelo trabalho duro, não pela sorte."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And the summer for Aquarius?"
+      "en": "And the summer for Aquarius?",
+      "ru": "А лето для Водолея?",
+      "es": "¿Y el verano para Acuario?",
+      "de": "Und der Sommer für den Wassermann?",
+      "ar": "والصيف للدلو؟",
+      "pt": "E o verão para Aquário?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your third house, a strong place for it. Courage and skills grow. On the twenty-sixth of June, Jupiter returns to Leo, your seventh house, moving forward, and a partnership can be signed. So, Aquarius in one sentence: let money flow again in December, fix your habits in spring, and act boldly in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn enters Aries, your third house, a strong place for it. Courage and skills grow. On the twenty-sixth of June, Jupiter returns to Leo, your seventh house, moving forward, and a partnership can be signed. So, Aquarius in one sentence: let money flow again in December, fix your habits in spring, and act boldly in summer.",
+      "ru": "3 июня 2027 года Сатурн входит в Овен, ваш третий дом, сильное для него место. Смелость и навыки растут. 26 июня Юпитер возвращается во Льва, в ваш седьмой дом, и идёт вперёд, а партнёрство можно подписать. Итак, Водолей одним предложением: в декабре дайте деньгам снова течь, весной наладьте привычки, а летом действуйте смело.",
+      "es": "El 3 de junio de 2027, Saturno entra en Aries, tu casa tres, un lugar fuerte para él. El valor y las habilidades crecen. El 26 de junio, Júpiter vuelve a Leo, tu casa siete, avanzando, y se puede firmar una alianza. Así que, Acuario en una frase: deja que el dinero fluya de nuevo en diciembre, arregla tus hábitos en primavera y actúa con audacia en verano.",
+      "de": "Am 3. Juni 2027 tritt Saturn in den Widder ein, dein drittes Haus, ein starker Platz für ihn. Mut und Fähigkeiten wachsen. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein siebtes Haus, vorwärts laufend, und eine Partnerschaft kann unterschrieben werden. Der Wassermann in einem Satz: Lass im Dezember das Geld wieder fließen, bring im Frühling deine Gewohnheiten in Ordnung und handle im Sommer mutig.",
+      "ar": "في 3 يونيو 2027، يدخل زحل الحمل، بيتك الثالث، وهو مكان قوي له. تنمو الشجاعة والمهارات. في 26 يونيو، يعود المشتري إلى الأسد، بيتك السابع، متجهًا إلى الأمام، ويمكن توقيع شراكة. إذًا الدلو في جملة واحدة: دع المال يتدفق من جديد في ديسمبر، وأصلح عاداتك في الربيع، وتصرّف بجرأة في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno entra em Áries, sua casa três, um lugar forte para ele. Coragem e habilidades crescem. Em 26 de junho, Júpiter volta para Leão, sua casa sete, avançando, e uma parceria pode ser assinada. Então, Aquário em uma frase: deixe o dinheiro voltar a fluir em dezembro, conserte seus hábitos na primavera e aja com ousadia no verão."
      }
     }
    ],
@@ -700,49 +1260,94 @@
    "t": 1475,
    "sign": 11,
    "h": {
-    "en": "Pisces rising"
+    "en": "Pisces rising",
+    "ru": "Лагна Рыбы",
+    "es": "Ascendente Piscis",
+    "de": "Aszendent Fische",
+    "ar": "الطالع الحوت",
+    "pt": "Ascendente Peixes"
    },
    "lines": [
     {
      "host": "A",
      "text": {
-      "en": "And last, Pisces rising. Saturn is in your own sign."
+      "en": "And last, Pisces rising. Saturn is in your own sign.",
+      "ru": "И последняя, лагна Рыбы. Сатурн в вашем собственном знаке.",
+      "es": "Y por último, Ascendente Piscis. Saturno está en tu propio signo.",
+      "de": "Und zuletzt Aszendent Fische. Saturn steht in deinem eigenen Zeichen.",
+      "ar": "وأخيرًا، طالع الحوت. زحل في برجك أنت.",
+      "pt": "E por último, Ascendente em Peixes. Saturno está no seu próprio signo."
      },
      "sub": {
-      "en": "Pisces: where they sit"
+      "en": "Pisces: where they sit",
+      "ru": "Рыбы: где они стоят",
+      "es": "Piscis: dónde están",
+      "de": "Fische: wo sie stehen",
+      "ar": "الحوت: أين يقعان",
+      "pt": "Peixes: onde estão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Yes. For Pisces rising, Saturn sits on your ascendant, in your first house. It rules your eleventh and twelfth houses, gains and losses. Since late July, you may have felt tired, or slower than you want. From the eleventh of December, Saturn moves forward on you, and energy returns step by step. Jupiter, your ruling planet, sits in Leo, your sixth house of work, health and service. It turns retrograde there on the thirteenth. Jupiter also rules your tenth house, so work matters feel personal for you."
+      "en": "Yes. For Pisces rising, Saturn sits on your ascendant, in your first house. It rules your eleventh and twelfth houses, gains and losses. Since late July, you may have felt tired, or slower than you want. From the eleventh of December, Saturn moves forward on you, and energy returns step by step. Jupiter, your ruling planet, sits in Leo, your sixth house of work, health and service. It turns retrograde there on the thirteenth. Jupiter also rules your tenth house, so work matters feel personal for you.",
+      "ru": "Да. Для лагны Рыб Сатурн стоит на вашей лагне, в первом доме. Он управляет вашим одиннадцатым и двенадцатым домами, приобретениями и потерями. С конца июля вы, возможно, чувствовали усталость или были медленнее, чем хотелось бы. С 11 декабря Сатурн идёт вперёд по вам, и энергия возвращается шаг за шагом. Юпитер, ваша управляющая планета, стоит во Льве, в вашем шестом доме работы, здоровья и служения. Он становится там ретроградным 13-го. Юпитер также управляет вашим десятым домом, поэтому рабочие дела для вас личные.",
+      "es": "Sí. Para el Ascendente Piscis, Saturno está sobre tu Ascendente, en tu casa uno. Rige tus casas once y doce, las ganancias y las pérdidas. Desde finales de julio, puedes haberte sentido cansado o más lento de lo que quieres. Desde el 11 de diciembre, Saturno avanza sobre ti, y la energía vuelve paso a paso. Júpiter, tu planeta regente, está en Leo, tu casa seis del trabajo, la salud y el servicio. Se vuelve retrógrado allí el 13. Júpiter también rige tu casa diez, así que los asuntos de trabajo los sientes personales.",
+      "de": "Ja. Für Aszendent Fische steht Saturn auf deinem Aszendenten, in deinem ersten Haus. Er herrscht über dein elftes und zwölftes Haus, Gewinne und Verluste. Seit Ende Juli hast du dich vielleicht müde oder langsamer gefühlt, als du möchtest. Ab dem 11. Dezember läuft Saturn auf dir vorwärts, und die Energie kehrt Schritt für Schritt zurück. Jupiter, dein herrschender Planet, steht im Löwen, deinem sechsten Haus von Arbeit, Gesundheit und Dienst. Er wird dort am 13. rückläufig. Jupiter herrscht auch über dein zehntes Haus, Arbeitsthemen fühlen sich für dich also persönlich an.",
+      "ar": "نعم. لطالع الحوت، زحل على طالعك، في بيتك الأول. إنه يحكم بيتيك الحادي عشر والثاني عشر، المكاسب والخسائر. منذ أواخر يوليو، ربما شعرت بالتعب، أو بأنك أبطأ مما تريد. ومن 11 ديسمبر، يتقدم زحل إلى الأمام فوقك، وتعود الطاقة خطوة خطوة. المشتري، كوكبك الحاكم، في الأسد، في بيتك السادس، بيت العمل والصحة والخدمة. ويبدأ حركته التراجعية فيه في 13 ديسمبر. المشتري يحكم أيضًا بيتك العاشر، فتبدو أمور العمل شخصية عندك.",
+      "pt": "Sim. Para o Ascendente em Peixes, Saturno está sobre o seu ascendente, na sua casa um. Ele rege suas casas onze e doze, ganhos e perdas. Desde o fim de julho, você pode ter se sentido cansado ou mais lento do que gostaria. A partir de 11 de dezembro, Saturno avança sobre você, e a energia volta passo a passo. Júpiter, seu planeta regente, está em Leão, sua casa seis, do trabalho, da saúde e do serviço. Ele fica retrógrado ali no dia 13. Júpiter também rege sua casa dez, então assuntos de trabalho são pessoais para você."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "What should Pisces revisit?"
+      "en": "What should Pisces revisit?",
+      "ru": "К чему Рыбам стоит вернуться?",
+      "es": "¿Qué debería retomar Piscis?",
+      "de": "Was sollen die Fische noch einmal aufgreifen?",
+      "ar": "إلى ماذا يعود الحوت؟",
+      "pt": "O que Peixes deve rever?"
      },
      "sub": {
-      "en": "Pisces: the review"
+      "en": "Pisces: the review",
+      "ru": "Рыбы: пересмотр",
+      "es": "Piscis: la revisión",
+      "de": "Fische: die Überprüfung",
+      "ar": "الحوت: المراجعة",
+      "pt": "Peixes: a revisão"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "Your daily routine and your health. An old symptom, or an old work conflict, may come back to be solved properly. On the twenty-fourth of January, Jupiter slips back into Cancer, your fifth house. Exalted there, it's lovely for children, romance and study, and its ninth aspect falls on your ascendant. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect sits on Sagittarius, your tenth house. Career asks for patience and proof."
+      "en": "Your daily routine and your health. An old symptom, or an old work conflict, may come back to be solved properly. On the twenty-fourth of January, Jupiter slips back into Cancer, your fifth house. Exalted there, it's lovely for children, romance and study, and its ninth aspect falls on your ascendant. It turns direct on the thirteenth of April. All winter, Saturn's tenth aspect sits on Sagittarius, your tenth house. Career asks for patience and proof.",
+      "ru": "К вашему распорядку дня и здоровью. Старый симптом или старый рабочий конфликт может вернуться, чтобы его решили как следует. 24 января Юпитер отступает в Рак, ваш пятый дом. Экзальтированный там, он прекрасен для детей, романтики и учёбы, и его девятый аспект падает на вашу лагну. Прямым он становится 13 апреля. Всю зиму десятый аспект Сатурна лежит на Стрельце, вашем десятом доме. Карьера требует терпения и доказательств.",
+      "es": "Tu rutina diaria y tu salud. Un viejo síntoma o un viejo conflicto laboral pueden volver para resolverse bien. El 24 de enero, Júpiter retrocede a Cáncer, tu casa cinco. Exaltado allí, es maravilloso para los hijos, el romance y el estudio, y su noveno aspecto cae sobre tu Ascendente. Se vuelve directo el 13 de abril. Todo el invierno, el décimo aspecto de Saturno está sobre Sagitario, tu casa diez. La carrera pide paciencia y pruebas.",
+      "de": "Deine tägliche Routine und deine Gesundheit. Ein altes Symptom oder ein alter Arbeitskonflikt kommt vielleicht zurück, um richtig gelöst zu werden. Am 24. Januar rutscht Jupiter zurück in den Krebs, dein fünftes Haus. Dort erhöht ist er wunderbar für Kinder, Romantik und Studium, und sein neunter Aspekt fällt auf deinen Aszendenten. Am 13. April wird er rechtläufig. Den ganzen Winter liegt Saturns zehnter Aspekt auf dem Schützen, deinem zehnten Haus. Die Karriere verlangt Geduld und Beweise.",
+      "ar": "روتينك اليومي وصحتك. قد يعود عرض قديم، أو خلاف قديم في العمل، ليُحلّ حلًا صحيحًا. في 24 يناير، يرجع المشتري إلى السرطان، بيتك الخامس. وهو في شرفه هناك، رائع للأبناء والحب والدراسة، وتقع نظرته التاسعة على طالعك. ويعود إلى الحركة المباشرة في 13 أبريل. طوال الشتاء، تقع نظرة زحل العاشرة على القوس، بيتك العاشر. المهنة تطلب الصبر والإثبات.",
+      "pt": "Sua rotina diária e sua saúde. Um sintoma antigo ou um velho conflito de trabalho pode voltar para ser resolvido direito. Em 24 de janeiro, Júpiter volta para Câncer, sua casa cinco. Exaltado ali, é ótimo para filhos, romance e estudo, e seu nono aspecto cai sobre o seu ascendente. Ele fica direto em 13 de abril. Durante todo o inverno, o décimo aspecto de Saturno fica sobre Sagitário, sua casa dez. A carreira pede paciência e provas."
      }
     },
     {
      "host": "A",
      "text": {
-      "en": "And how does the story end for Pisces?"
+      "en": "And how does the story end for Pisces?",
+      "ru": "И чем заканчивается история для Рыб?",
+      "es": "¿Y cómo termina la historia para Piscis?",
+      "de": "Und wie endet die Geschichte für die Fische?",
+      "ar": "وكيف تنتهي القصة للحوت؟",
+      "pt": "E como termina a história para Peixes?"
      }
     },
     {
      "host": "B",
      "text": {
-      "en": "On the third of June twenty twenty-seven, Saturn finally leaves your sign and enters Aries, your second house. The pressure on you lifts, and the focus moves to money and family. On the twenty-sixth of June, Jupiter returns to Leo, your sixth house, moving forward. So, Pisces in one sentence: get your strength back in December, enjoy love and learning in spring, and put your finances in order in summer."
+      "en": "On the third of June twenty twenty-seven, Saturn finally leaves your sign and enters Aries, your second house. The pressure on you lifts, and the focus moves to money and family. On the twenty-sixth of June, Jupiter returns to Leo, your sixth house, moving forward. So, Pisces in one sentence: get your strength back in December, enjoy love and learning in spring, and put your finances in order in summer.",
+      "ru": "3 июня 2027 года Сатурн наконец покидает ваш знак и входит в Овен, ваш второй дом. Давление на вас спадает, и фокус смещается на деньги и семью. 26 июня Юпитер возвращается во Льва, в ваш шестой дом, и идёт вперёд. Итак, Рыбы одним предложением: в декабре верните силы, весной наслаждайтесь любовью и учёбой, а летом наведите порядок в финансах.",
+      "es": "El 3 de junio de 2027, Saturno por fin deja tu signo y entra en Aries, tu casa dos. La presión sobre ti se alivia, y el foco pasa al dinero y la familia. El 26 de junio, Júpiter vuelve a Leo, tu casa seis, avanzando. Así que, Piscis en una frase: recupera tus fuerzas en diciembre, disfruta del amor y el estudio en primavera y pon tus finanzas en orden en verano.",
+      "de": "Am 3. Juni 2027 verlässt Saturn endlich dein Zeichen und tritt in den Widder ein, dein zweites Haus. Der Druck auf dich lässt nach, und der Fokus wandert zu Geld und Familie. Am 26. Juni kehrt Jupiter in den Löwen zurück, dein sechstes Haus, vorwärts laufend. Die Fische in einem Satz: Hol dir im Dezember deine Kraft zurück, genieße im Frühling Liebe und Lernen und bring im Sommer deine Finanzen in Ordnung.",
+      "ar": "في 3 يونيو 2027، يغادر زحل برجك أخيرًا ويدخل الحمل، بيتك الثاني. يخف الضغط عنك، ويتحول التركيز إلى المال والعائلة. في 26 يونيو، يعود المشتري إلى الأسد، بيتك السادس، متجهًا إلى الأمام. إذًا الحوت في جملة واحدة: استعد قوتك في ديسمبر، وتمتّع بالحب والتعلّم في الربيع، ورتّب أمورك المالية في الصيف.",
+      "pt": "Em 3 de junho de 2027, Saturno finalmente deixa o seu signo e entra em Áries, sua casa dois. A pressão sobre você diminui, e o foco passa para dinheiro e família. Em 26 de junho, Júpiter volta para Leão, sua casa seis, avançando. Então, Peixes em uma frase: recupere suas forças em dezembro, aproveite amor e estudo na primavera e ponha suas finanças em ordem no verão."
      }
     }
    ],
