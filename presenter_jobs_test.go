@@ -380,3 +380,57 @@ func jsonID(v interface{}) string {
 }
 
 func timeSleepMs(ms int) { time.Sleep(time.Duration(ms) * time.Millisecond) }
+
+// A119 25.11.2026: after TTS_VOICE_MAP changes the voice, a catalog video rendered in the earlier voice (nova / onyx)
+// is still found by lookup and job create — no second render, no voicing — while a text without any video gets a job
+// keyed by the new voice.
+func TestPresenterLegacyVoiceFallback(t *testing.T) {
+	calls := setupPresenterJobsTest(t)
+	os.Setenv("TTS_VOICE_MAP", "*:f=marin,*:m=cedar")
+	t.Cleanup(func() { os.Unsetenv("TTS_VOICE_MAP") })
+	rt := presenterRouter()
+	claims := &JWTClaims{DeviceID: "dev-legacy"}
+	text := "Сегодня Луна в Раке."
+	oldKey := ttsCacheKey(ttsModel, "onyx", "ru", text)
+	newKey := ttsCacheKey(ttsModel, "cedar", "ru", text)
+	if ttsVoiceFor("m", "ru") != "cedar" || oldKey == newKey {
+		t.Fatal("voice map not applied")
+	}
+	dir := filepath.Join(os.Getenv("PRESENTER_VIDEO_DIR"), "v17")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, oldKey+".mp4"), []byte(fakeMP4(4000)), 0o644)
+
+	lookup := func(body string) map[string]interface{} {
+		r := httptest.NewRequest("POST", "/api/presenter/video/lookup", strings.NewReader(body))
+		r = r.WithContext(context.WithValue(r.Context(), "claims", claims))
+		w := httptest.NewRecorder()
+		presenterVideoLookupHandler(w, r)
+		var out map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &out)
+		return out
+	}
+	o := lookup(`{"text":"` + text + `","gender":"m","lang":"ru","version":"v17"}`)
+	if o["key"] != oldKey || o["available"] != true {
+		t.Fatalf("lookup must serve the earlier-voice video: %v", o)
+	}
+	presenterNodeSeenAt.Store(presenterNow())
+	_, j := presenterCall(t, rt, "POST", "/api/presenter/jobs", `{"text":"`+text+`","gender":"m","lang":"ru","version":"v17","presenter":"m-l"}`, claims, false)
+	if j["status"] != "ready" || j["key"] != oldKey {
+		t.Fatalf("job create must answer ready with the earlier video: %v", j)
+	}
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM presenter_jobs`).Scan(&n)
+	if n != 0 || *calls != 0 {
+		t.Fatalf("no job and no voicing expected: jobs=%d voice calls=%d", n, *calls)
+	}
+	// a text with no video at all: the new voice's key
+	o = lookup(`{"text":"Другой текст.","gender":"m","lang":"ru","version":"v17"}`)
+	if o["key"] != ttsCacheKey(ttsModel, "cedar", "ru", "Другой текст.") || o["available"] != false {
+		t.Fatalf("missing video must be keyed by the new voice: %v", o)
+	}
+	// a video in the new voice wins over the earlier one
+	os.WriteFile(filepath.Join(dir, newKey+".mp4"), []byte(fakeMP4(5000)), 0o644)
+	if o = lookup(`{"text":"` + text + `","gender":"m","lang":"ru","version":"v17"}`); o["key"] != newKey {
+		t.Fatalf("new-voice video must win: %v", o)
+	}
+}

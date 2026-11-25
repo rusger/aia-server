@@ -77,6 +77,13 @@ func ttsVoiceFor(gender, lang string) string {
 			return v
 		}
 	}
+	return ttsLegacyVoiceFor(gender, lang)
+}
+
+// ttsLegacyVoiceFor: the voices approved 25.09.2026 (nova / onyx, English shimmer / ash) — the voice of every presenter
+// video rendered before TTS_VOICE_MAP. presenter lookups fall back to it so those videos stay served (A119, 25.11.2026).
+func ttsLegacyVoiceFor(gender, lang string) string {
+	male := strings.HasPrefix(strings.ToLower(gender), "m")
 	if strings.HasPrefix(strings.ToLower(lang), "en") {
 		if male {
 			return "ash"
