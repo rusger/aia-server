@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -141,5 +142,17 @@ func TestFinanceStoreMonthAddUsesEventRate(t *testing.T) {
 	}
 	if got := round2(sm.feeAcc); got != round2(4.99*0.30) {
 		t.Errorf("fee %v want %v", got, round2(4.99*0.30))
+	}
+}
+
+func TestFinanceTokenCostLunaCacheWrite(t *testing.T) {
+	// 1 M uncached (cache-write rate $0.125) + 1 M cached ($0.01) + 1 M output ($0.50).
+	got := financeTokenCostUSD("gpt-6-luna", 2_000_000, 1_000_000, 1_000_000, false)
+	if math.Abs(got-0.635) > 1e-9 {
+		t.Fatalf("luna cost = %v, want 0.635", got)
+	}
+	// Other models keep their rates: gpt-4.1-mini 1 M in + 1 M out = 0.40 + 1.60.
+	if got := financeTokenCostUSD("gpt-4.1-mini", 1_000_000, 1_000_000, 0, false); math.Abs(got-2.0) > 1e-9 {
+		t.Fatalf("gpt-4.1-mini cost = %v, want 2.0", got)
 	}
 }

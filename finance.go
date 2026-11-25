@@ -304,7 +304,13 @@ func financeTokenCostUSD(model string, promptToks, completionToks, cachedToks in
 		// gpt-4o-mini-transcribe list price ≈ $0.003 per audio minute (estimate, not reconciled yet).
 		return float64(promptToks) / 60000.0 * 0.003
 	case strings.Contains(model, "gpt-6-luna"):
-		return regF*0.10 + cacF*0.01 + outF*0.50
+		// Uncached input is billed almost entirely as 30-minute cache writes,
+		// $0.125/M (1.25× input; OpenAI pricing). Reconciled 25.11.2026 with
+		// /v1/organization/costs for 18.11–25.11: «cache writes» 16.17 M tokens
+		// vs prompt−cached 16.15 M in api_calls, plain input only $0.04.
+		// api_calls has no cache_write_tokens, so all uncached input is priced
+		// at the write rate.
+		return regF*0.125 + cacF*0.01 + outF*0.50
 	case strings.Contains(model, "gpt-4.1-nano"):
 		return regF*0.10 + cacF*0.025 + outF*0.40
 	case strings.Contains(model, "gpt-4.1-mini"):
