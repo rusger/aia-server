@@ -380,6 +380,7 @@ type seoPage struct {
 	title string
 	desc  string
 	body  string // inner HTML (already escaped where needed)
+	ld    string // extra JSON-LD node for @graph (razbor VideoObject), "" = none
 }
 
 func writeSeoSite(outDir string, data []*seoYearData) (int, error) {
@@ -419,6 +420,10 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 		pg   seoPage
 	}
 	var pages []out
+	razbors, err := loadRazbors(seoRazborDir)
+	if err != nil {
+		return 0, fmt.Errorf("razbor pages: %w", err)
+	}
 	for _, lang := range seoLangs {
 		pages = append(pages, out{lang, buildLangHub(lang, data, now)})
 		for _, d := range data {
@@ -479,6 +484,19 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 			if t, ok := signs.texts[lang][key]; ok {
 				pages = append(pages, out{lang, buildSignPage(lang, facts[key], t, signs.langsWithText(key))})
 			}
+		}
+	}
+
+	// Razbor pages (A95), each only in the languages its text exists in.
+	for _, r := range razbors {
+		for _, lang := range r.siteLangs() {
+			pages = append(pages, out{lang, buildRazborPage(lang, r, now)})
+		}
+	}
+	// ... and a link to them from the language hub and the related year pages.
+	for i := range pages {
+		if block := razborLinks(pages[i].lang, pages[i].pg.rel, razbors); block != "" {
+			pages[i].pg.body += block
 		}
 	}
 
@@ -812,7 +830,7 @@ header.top a.brand{font-family:Cinzel,Georgia,serif;font-weight:700;letter-spaci
 header.top nav a{color:var(--muted);text-decoration:none;margin-inline-start:14px;font-size:.95rem}
 h1{font-family:Cinzel,Georgia,serif;font-size:1.7rem;line-height:1.25;margin:.4em 0}
 h2{font-family:Cinzel,Georgia,serif;font-size:1.25rem;margin-top:1.6em;color:var(--gold)}
-p.lead{font-size:1.05rem;color:#e6e6e6}p.note,p.empty{color:var(--muted);font-size:.9rem}
+p.lead{font-size:1.05rem;color:#e6e6e6}.razbor p.q{font-weight:600;color:var(--gold)}.razbor p.watch a,.toc a{color:var(--gold)}.toc ol{padding-inline-start:1.4em}.btns{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}p.note,p.empty{color:var(--muted);font-size:.9rem}
 table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.95rem}
 th,td{text-align:start;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.1);vertical-align:top}
 th{color:var(--gold);font-weight:600}time{white-space:nowrap}
@@ -955,7 +973,11 @@ func seoJSONLD(lang, rel string, pg seoPage, canonical, generated string) string
 	}
 	crumbs += `]}`
 	page := `{"@type":"WebPage","@id":"` + canonical + `","url":"` + canonical + `","name":` + strconv.Quote(pg.title) + `,"description":` + strconv.Quote(truncDesc(pg.desc)) + `,"inLanguage":"` + lang + `","dateModified":"` + generated + `","isPartOf":{"@type":"WebSite","name":"Astrolytix","url":"` + seoSiteURL + `/"},"publisher":` + org + `}`
-	return `{"@context":"https://schema.org","@graph":[` + page + `,` + crumbs + `]}`
+	graph := page + `,` + crumbs
+	if pg.ld != "" {
+		graph += `,` + pg.ld
+	}
+	return `{"@context":"https://schema.org","@graph":[` + graph + `]}`
 }
 
 func renderRootHub(years []int) string {

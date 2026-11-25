@@ -165,7 +165,16 @@ func TestWriteSeoSiteDayPages(t *testing.T) {
 	}
 	// 16 hubs + 16×8 year pages + day langs × (92 days 10-01..12-31: the sign-facts
 	// window Oct..Jan reaches past today+60, Jan 2027 has no data + 3 months + today) + 16 json + root + sitemap
-	if want := 16 + 128 + len(seoDayLangs)*(92+3+1) + 16 + 2; n != want {
+	// + one razbor page per (seo_razbor/*.json, language with text)
+	rs, err := loadRazbors(seoRazborDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	razborPages := 0
+	for _, r := range rs {
+		razborPages += len(r.siteLangs())
+	}
+	if want := 16 + 128 + len(seoDayLangs)*(92+3+1) + 16 + 2 + razborPages; n != want {
 		t.Fatalf("%d files, want %d", n, want)
 	}
 	page, err := os.ReadFile(filepath.Join(out, "ru", "2026", "10", "12.html"))
