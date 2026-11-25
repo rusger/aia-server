@@ -8088,7 +8088,8 @@ func adminGetAnalytics(w http.ResponseWriter, r *http.Request) {
                 var estimatedCost float64
                 switch model {
                 case "gpt-6-luna":
-                    estimatedCost = (float64(regularInput)*0.10 + float64(cachedToks)*0.01) / 1000000 + float64(completionToks)*0.50/1000000
+                    // Uncached input at the cache-write rate — see financeTokenCostUSD (finance.go).
+                    estimatedCost = (float64(regularInput)*0.125 + float64(cachedToks)*0.01) / 1000000 + float64(completionToks)*0.50/1000000
                 case "gpt-4.1":
                     estimatedCost = (float64(regularInput)*2.00 + float64(cachedToks)*0.50) / 1000000 + float64(completionToks)*8.00/1000000
                 case "gpt-4.1-mini":
@@ -9182,7 +9183,8 @@ func adminUsageReport(w http.ResponseWriter, r *http.Request) {
 		}
 		switch model {
 		case "gpt-6-luna":
-			return (float64(regularInput)*0.10 + float64(cachedToks)*0.01) / 1000000 + float64(completionToks)*0.50/1000000
+			// Uncached input at the cache-write rate — see financeTokenCostUSD (finance.go).
+			return (float64(regularInput)*0.125 + float64(cachedToks)*0.01) / 1000000 + float64(completionToks)*0.50/1000000
 		case "gpt-4.1":
 			return (float64(regularInput)*2.00 + float64(cachedToks)*0.50) / 1000000 + float64(completionToks)*8.00/1000000
 		case "gpt-4.1-mini":
@@ -9684,7 +9686,8 @@ func adminOpenAICosts(w http.ResponseWriter, r *http.Request) {
 		outF := float64(outputToks) / 1000000.0
 		switch {
 		case strings.Contains(model, "gpt-6-luna"):
-			return regF*0.10 + cacF*0.01 + outF*0.50
+			// Uncached input at the cache-write rate — see financeTokenCostUSD (finance.go).
+			return regF*0.125 + cacF*0.01 + outF*0.50
 		case strings.Contains(model, "gpt-4.1-nano"):
 			return regF*0.10 + cacF*0.025 + outF*0.40
 		case strings.Contains(model, "gpt-4.1-mini"):
