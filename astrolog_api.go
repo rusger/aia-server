@@ -4295,7 +4295,12 @@ func appleAttributeEmail(txn *appleTransactionInfo) string {
     if email := appleEmailForToken(txn.AppAccountToken); email != "" {
         return email
     }
-    return appleEmailForOriginalTxn(txn.OriginalTransactionID)
+    if email := appleEmailForOriginalTxn(txn.OriginalTransactionID); email != "" {
+        return email
+    }
+    // A203 (25.11.2026): old clients synced a renewal/restore transaction id and no original id, so the
+    // original lookup above missed them and DID_RENEW/EXPIRED never reached users. Match this exact transaction.
+    return appleEmailForOriginalTxn(txn.TransactionID)
 }
 
 // upsertAppleTransaction records a new Apple purchase in purchase_history if we
@@ -4562,6 +4567,10 @@ func processAppleNotification(note *appleNotificationPayload, txn *appleTransact
         return false
     }
     const deviceHint = "apple_s2s"
+    // A203: every signed transaction with an expiresDate keeps users.subscription_expiry (forward-only) and
+    // purchase_history.original_transaction_id current, whatever the notification type. Runs before the
+    // type-specific effects so they can attribute through the backfilled original id.
+    applyAppleExpiryFromNotification(note.NotificationType, txn)
     switch note.NotificationType {
     case "SUBSCRIBED", "OFFER_REDEEMED":
         upsertAppleTransaction(txn, deviceHint)
@@ -4866,8 +4875,16 @@ func recordPurchase(w http.ResponseWriter, r *http.Request) {
             log.Printf("✅ Using verified expiry from Google: %v", verifiedExpiry)
             expiryDate = verifiedExpiry
         }
-    } else if req.Store == "google" && req.PurchaseToken == "" && GOOGLE_PLAY_VERIFY_PURCHASES {
-        log.Printf("⚠️ Google purchase without token, verification enabled - this may indicate an issue")
+    } else if req.Store == "google" && req.PurchaseToken == "" {
+        // Fail CLOSED (A203, 25.11.2026): a Google claim without a purchase token cannot be verified, and this
+        // branch used to fall through and grant 'paid' with the client's own expiry. Last used 06.2026.
+        log.Printf("❌ Google purchase without token refused (device %s, product %s)", deviceID, req.ProductID)
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "success": false,
+            "error":   "Purchase verification failed",
+        })
+        return
     }
 
     // Verify Apple purchase. StoreKit 2 clients (the shipping app) send the
@@ -9896,6 +9913,9 @@ func main() {
     migratePresenterJobs()
     go liveActivityEndLoop()
     go pendingAnswersLoop()
+    // A203: nightly Apple expiry repair (missing windows, lapsed-but-renewed payers).
+    migrateAppleExpirySyncRuns()
+    startAppleExpirySyncLoop()
 
     router := mux.NewRouter()
 
