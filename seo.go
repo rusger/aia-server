@@ -21,6 +21,12 @@ package main
 //   <outdir>/<lang>/<yyyy>/<mm>/           month hub of those days
 //   <outdir>/<lang>/today/                 today's page under a stable URL
 //   <outdir>/<lang>/today.json             summary lines for the site's home page
+//
+// CANON of every content page (owner 25.11.2026, A212): first paragraph →
+// «Читать далее ниже ↓» (link to the anchor below) → app frame (personal
+// horoscope + store buttons via /go/?from=top) → the page's content. Done in
+// renderSeoLayout for every page with a <p class="lead">; hubs only are
+// exempt (seoPage.hub). See seo_appframe.go.
 //   <outdir>/.seo-state.json               content hashes → honest <lastmod> (seo_state.go)
 //
 // No DB, no HTTP server. Meant to run from cron on the production box and
@@ -383,6 +389,8 @@ type seoPage struct {
 	ld    string // extra JSON-LD node for @graph (razbor VideoObject), "" = none
 	// oneYear: the page exists for its own year only (razbor pages), no "other years" nav
 	oneYear bool
+	// hub: a list-of-links page (language hub, month hub) — no app frame (A212)
+	hub bool
 }
 
 func writeSeoSite(outDir string, data []*seoYearData) (int, error) {
@@ -618,7 +626,7 @@ func buildLangHub(lang string, data []*seoYearData, now time.Time) seoPage {
 		b.WriteString("</ul></section>\n")
 	}
 	title := seoT("hub_title", lang, map[string]string{"year": yr})
-	return seoPage{rel: "", title: title, desc: seoT("hub_intro", lang, nil), body: b.String()}
+	return seoPage{rel: "", title: title, desc: seoT("hub_intro", lang, nil), body: b.String(), hub: true}
 }
 
 func hasLang(set []string, lang string) bool {
@@ -852,11 +860,14 @@ footer a{color:var(--muted);margin-inline-end:12px}.langs a{margin-inline-end:10
 #stickybar a.btn{animation:pulse 2.4s ease-in-out infinite;white-space:nowrap}
 @keyframes pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 rgba(212,175,55,0)}50%{transform:scale(1.05);box-shadow:0 0 18px rgba(212,175,55,.55)}}
 @media (prefers-reduced-motion:reduce){#stickybar a.btn{animation:none}}
-@media (max-width:600px){#stickybar span{display:none}#stickybar a.btn{width:100%;text-align:center}h1{font-size:1.4rem}}`
+@media (max-width:600px){#stickybar span{display:none}#stickybar a.btn{width:100%;text-align:center}h1{font-size:1.4rem}}
+.cta.cta-top{margin:14px 0 20px;padding:14px 16px}.cta-top h2{font-size:1.05rem;margin:0 0 6px}.cta-top p{margin:0;font-size:.95rem}.cta-top .btns{margin-top:10px}
+p.lead a.more{color:var(--gold);white-space:nowrap}html{scroll-behavior:smooth}#after-app{scroll-margin-top:12px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}`
 
 // seoStickyJS picks the store button for the visitor's platform; no
 // redirect — the owner's 2026-08-22 decision is "invite, don't hijack".
-const seoStickyJS = `(function(){var ua=navigator.userAgent||'';var ios=/iPhone|iPad|iPod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);var and=/Android/i.test(ua);var bar=document.getElementById('stickybar');if(!bar)return;var a=bar.querySelector('a.ios'),g=bar.querySelector('a.android');if(ios&&g)g.style.display='none';if(and&&a)a.style.display='none';})();`
+const seoStickyJS = `(function(){var ua=navigator.userAgent||'';var ios=/iPhone|iPad|iPod/i.test(ua)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);var and=/Android/i.test(ua);document.querySelectorAll('#stickybar,.cta-top').forEach(function(bar){var a=bar.querySelector('a.ios'),g=bar.querySelector('a.android');if(ios&&g)g.style.display='none';if(and&&a)a.style.display='none';});})();`
 
 // seoURL is the public URL of a page; hubs are addressed by their directory.
 func seoURL(lang, rel string) string {
@@ -910,7 +921,11 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, lastmod string) 
 	b.WriteString("<script type=\"application/ld+json\">" + seoJSONLD(lang, rel, pg, canonical, generated) + "</script>\n")
 	b.WriteString("</head>\n<body>\n")
 	b.WriteString("<header class=\"top\"><a class=\"brand\" href=\"" + seoSiteURL + "/\">Astrolytix</a><nav><a href=\"" + seoSiteURL + "/\">" + esc(seoT("nav_back_home", lang, nil)) + "</a><a href=\"" + seoBaseURL + "/" + lang + "/\">" + esc(seoT("nav_calendar", lang, nil)) + "</a></nav></header>\n")
-	b.WriteString("<main>\n<div class=\"wrap\">\n" + pg.body + "</div>\n")
+	body := pg.body
+	if !pg.hub {
+		body, _ = withAppFrame(lang, body) // A212 canon: lead → read more ↓ → app frame → content
+	}
+	b.WriteString("<main>\n<div class=\"wrap\">\n" + body + "</div>\n")
 	// "Other years" only on the year pages (<year>/<topic>.html); day,
 	// month and today pages have their own navigation.
 	if !pg.oneYear && strings.Count(rel, "/") == 1 && !strings.HasSuffix(rel, "/index.html") {
