@@ -85,11 +85,11 @@ func setupRadioCall(t *testing.T, f *radioFake) (*mux.Router, string) {
 	}
 	radioCallPhoneFn = func(in, out string) (float64, error) { return 7.5, os.WriteFile(out, []byte("m4a"), 0o644) }
 	radioCallDurFn = func(path string) (float64, error) { return 4.0, nil }
-	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) { return []byte("mp3"), nil }
+	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, *ttsUsage, error) { return []byte("mp3"), nil, nil }
 	radioCallKokoroFn = func(text, out string) error { return os.WriteFile(out, []byte("wav"), 0o644) }
 	radioWorkerSeen.Store(time.Now().UnixNano()) // Мак на связи, если тест не скажет иначе
 	t.Setenv("RADIO_INTERP", "")
-	radioCallInterpTTSFn = func(text string) ([]byte, error) { return []byte("mp3"), nil }
+	radioCallInterpTTSFn = func(text string) ([]byte, *ttsUsage, error) { return []byte("mp3"), nil, nil }
 	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
 		return 9.25, os.WriteFile(out, []byte("mix"), 0o644)
 	}
@@ -496,7 +496,9 @@ func TestRadioCallOpenAIDownKokoroOnServer(t *testing.T) {
 		transcripts: []string{"I'm Anna", "About Venus?"},
 		checks:      []radioCheck{{OK: true, Name: "Anna", TopicEN: "Venus", Language: "en"}, {OK: true, Language: "en"}},
 	})
-	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) { return nil, errors.New("insufficient_quota") }
+	radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, *ttsUsage, error) {
+		return nil, nil, errors.New("insufficient_quota")
+	}
 	var said string
 	radioCallKokoroFn = func(text, out string) error { said = text; return os.WriteFile(out, []byte("wav"), 0o644) }
 	radioDo(t, r, "POST", "/api/radio/call/consent", radioOwner, `{"version":"`+radioCallConsentVersion+`"}`)
@@ -616,11 +618,11 @@ func TestRadioInterpOpenAI(t *testing.T) {
 	said := map[string]bool{}
 	var mixCaller, mixInterp string
 	var joined []string
-	radioCallInterpTTSFn = func(text string) ([]byte, error) {
+	radioCallInterpTTSFn = func(text string) ([]byte, *ttsUsage, error) {
 		mu.Lock()
 		said[text] = true
 		mu.Unlock()
-		return []byte("mp3:" + text), nil
+		return []byte("mp3:" + text), nil, nil
 	}
 	radioCallInterpJoinFn = func(parts []string, out string) error {
 		for _, p := range parts {
@@ -716,9 +718,9 @@ func radioWorkerInterp(t *testing.T, r *mux.Router) map[string]interface{} {
 func TestRadioInterpMac(t *testing.T) {
 	r, root := setupRadioCall(t, radioRuFake("My name is Olga. What does Saturn over my Moon mean?"))
 	t.Setenv("RADIO_INTERP", "mac")
-	radioCallInterpTTSFn = func(text string) ([]byte, error) {
+	radioCallInterpTTSFn = func(text string) ([]byte, *ttsUsage, error) {
 		t.Error("OpenAI must not be used when the Mac answers")
-		return nil, nil
+		return nil, nil, nil
 	}
 	var mixInterp string
 	radioCallInterpMixFn = func(caller, interp, out string) (float64, error) {
@@ -803,11 +805,11 @@ func TestRadioInterpFailuresAirTheOriginal(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r, root := setupRadioCall(t, radioRuFake(tc.textEN))
 			t.Setenv("RADIO_INTERP", tc.mode)
-			radioCallInterpTTSFn = func(text string) ([]byte, error) {
+			radioCallInterpTTSFn = func(text string) ([]byte, *ttsUsage, error) {
 				if text == "Two?" || text == "Q?" {
-					return []byte("mp3"), tc.tts
+					return []byte("mp3"), nil, tc.tts
 				}
-				return []byte("mp3"), nil
+				return []byte("mp3"), nil, nil
 			}
 			radioCallInterpJoinFn = func(parts []string, out string) error {
 				if tc.join != nil {

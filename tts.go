@@ -18,6 +18,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -30,10 +31,14 @@ import (
 )
 
 const (
+	// ttsModel: the speech model AND the name of the voice family in ttsCacheKey — the /api/tts cache and the
+	// presenter video catalogue are keyed by it, so it stays in the key whichever backend speaks (A119).
 	ttsModel    = "gpt-4o-mini-tts"
 	ttsMaxChars = 4000 // presenters read up to ~3000 chars; OpenAI accepts 4096
-	ttsEndpoint = "https://api.openai.com/v1/audio/speech"
 )
+
+// ttsEndpoint — package var so a test can check the speech request byte for byte.
+var ttsEndpoint = "https://api.openai.com/v1/audio/speech"
 
 // ttsInstructions: one calm narrator for every language — the model follows
 // the text's own language.
@@ -52,8 +57,26 @@ type ttsRequest struct {
 
 // ttsVoiceFor maps the presenter gender to the approved OpenAI voices
 // (owner 25.09.2026: nova / onyx for Russian, shimmer / ash for English).
+// TTS_VOICE_MAP («en:f=shimmer,*:m=cedar», tts_realtime.go) overrides per
+// language, then «*»; unset = the voices above (A119).
 func ttsVoiceFor(gender, lang string) string {
 	male := strings.HasPrefix(strings.ToLower(gender), "m")
+	if vm := ttsVoiceMap(); vm != nil {
+		g := "f"
+		if male {
+			g = "m"
+		}
+		l := strings.ToLower(lang)
+		if len(l) > 2 {
+			l = l[:2]
+		}
+		if v, ok := vm[l+":"+g]; ok {
+			return v
+		}
+		if v, ok := vm["*:"+g]; ok {
+			return v
+		}
+	}
 	if strings.HasPrefix(strings.ToLower(lang), "en") {
 		if male {
 			return "ash"
@@ -86,8 +109,19 @@ func ttsDailyPerDevice() int {
 	return 40
 }
 
-// ttsFetch calls OpenAI; a test injects its own.
+// ttsFetch calls OpenAI; a test injects its own. TTS_BACKEND=realtime sends
+// it to the Realtime API (tts_realtime.go); unset = /v1/audio/speech as before.
+// Consumers that log api_calls go through ttsFetchMetered for the usage.
 var ttsFetch = func(model, voice, instructions, text string) ([]byte, error) {
+	if ttsBackendRealtime() {
+		data, _, err := ttsRealtimeFetchFn(voice, instructions, text)
+		return data, err
+	}
+	return ttsSpeechFetch(model, voice, instructions, text)
+}
+
+// ttsSpeechFetch: /v1/audio/speech — the request unchanged since 25.09.2026.
+func ttsSpeechFetch(model, voice, instructions, text string) ([]byte, error) {
 	body, _ := json.Marshal(map[string]string{
 		"model": model, "voice": voice, "input": text,
 		"instructions": instructions, "response_format": "mp3",
@@ -209,9 +243,16 @@ func ttsEnsure(deviceID, clientIP, text, gender, lang string) (data []byte, voic
 		return nil, voice, false, http.StatusTooManyRequests, "Daily voice limit reached"
 	}
 	started := time.Now()
-	data, err := ttsFetch(ttsModel, voice, ttsInstructions, text)
+	chars := len([]rune(text))
+	data, usage, err := ttsFetchMetered(ttsFetch, ttsModel, voice, ttsInstructions, text)
 	if err != nil {
-		log.Printf("❌ tts: device=%s voice=%s chars=%d: %v", deviceID, voice, len([]rune(text)), err)
+		log.Printf("❌ tts: device=%s voice=%s chars=%d: %v", deviceID, voice, chars, err)
+		if usage != nil { // realtime billed the reply (e.g. a transcript mismatch)
+			ttsLogUsage(deviceID, "tts", usage, chars, chars)
+		}
+		if errors.Is(err, errTTSVoiceNotRealtime) {
+			return nil, voice, false, http.StatusServiceUnavailable, "tts unavailable"
+		}
 		return nil, voice, false, http.StatusBadGateway, "voice synthesis failed"
 	}
 	// Unique temp file + rename: two simultaneous misses for the same text
@@ -232,8 +273,7 @@ func ttsEnsure(deviceID, clientIP, text, gender, lang string) (data []byte, voic
 			os.Remove(tmp)
 		}
 	}
-	chars := len([]rune(text))
-	logAPICallWithTokens(deviceID, "tts", ttsModel, chars, 0, chars, 0)
+	ttsLogUsage(deviceID, "tts", usage, chars, chars)
 	log.Printf("🔊 tts: device=%s voice=%s chars=%d bytes=%d in %dms", deviceID, voice, chars, len(data), time.Since(started).Milliseconds())
 	return data, voice, false, http.StatusOK, ""
 }

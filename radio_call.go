@@ -231,8 +231,9 @@ func radioSayBrand(text, lang string) string {
 }
 
 // radioCallLocalTTSFn: a non-English reply voiced once for all stations (OpenAI TTS, same voices as /api/tts).
-var radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, error) {
-	return ttsFetch(ttsModel, ttsVoiceFor(gender, lang), ttsInstructions, radioSayBrand(text, lang))
+// usage is set by the realtime backend (A119) for the api_calls row (ttsLogUsage).
+var radioCallLocalTTSFn = func(text, lang, gender string) ([]byte, *ttsUsage, error) {
+	return ttsFetchMetered(ttsFetch, ttsModel, ttsVoiceFor(gender, lang), ttsInstructions, radioSayBrand(text, lang))
 }
 
 // radioCallKokoroFn: the free last-resort voice — Kokoro on this box (tools/kokoro_say.py, RADIO_KOKORO_DIR with the
@@ -835,9 +836,11 @@ func radioFallbackSeg(c *radioCall, kind, text string) (radioSegment, error) {
 	dir := filepath.Join(radioRoot(), "call", c.ID)
 	_ = os.MkdirAll(dir, 0o755)
 	name := kind + "_fb.mp3"
-	data, err := radioCallLocalTTSFn(text, "en", "f")
+	data, usage, err := radioCallLocalTTSFn(text, "en", "f")
+	if err == nil || usage != nil { // a failed realtime reply may still be billed
+		ttsLogUsage(c.DeviceID, "radio_call_tts", usage, len([]rune(text)), 0)
+	}
 	if err == nil {
-		logAPICallWithTokens(c.DeviceID, "radio_call_tts", ttsModel, len([]rune(text)), 0, 0, 0)
 		err = os.WriteFile(filepath.Join(dir, name), data, 0o644)
 	}
 	if err != nil {
@@ -1145,9 +1148,10 @@ func radioInterpJoin(parts []string, out string) error {
 	return nil
 }
 
-// radioCallInterpTTSFn: the interpreter's voice via OpenAI (gpt-4o-mini-tts, «ash»), one sentence per call.
-var radioCallInterpTTSFn = func(text string) ([]byte, error) {
-	return ttsFetch(ttsModel, "ash", radioInterpInstructions, text)
+// radioCallInterpTTSFn: the interpreter's voice via OpenAI (gpt-4o-mini-tts, «ash» — also a Realtime voice),
+// one sentence per call; usage as radioCallLocalTTSFn.
+var radioCallInterpTTSFn = func(text string) ([]byte, *ttsUsage, error) {
+	return ttsFetchMetered(ttsFetch, ttsModel, "ash", radioInterpInstructions, text)
 }
 
 // radioCallInterpJoinFn: sentence files → one interpreter file (radioInterpJoin).
@@ -1171,9 +1175,10 @@ func radioInterpOpenAI(c *radioCall, dir string, sentences []string) string {
 		wg.Add(1)
 		go func(i int, s string) {
 			defer wg.Done()
-			data[i], errs[i] = radioCallInterpTTSFn(s)
-			if errs[i] == nil {
-				logAPICallWithTokens(c.DeviceID, "radio_call_interp", ttsModel, len([]rune(s)), 0, 0, 0)
+			var usage *ttsUsage
+			data[i], usage, errs[i] = radioCallInterpTTSFn(s)
+			if errs[i] == nil || usage != nil {
+				ttsLogUsage(c.DeviceID, "radio_call_interp", usage, len([]rune(s)), 0)
 			}
 		}(i, s)
 	}
@@ -1462,8 +1467,9 @@ func radioAnswer(c *radioCall, question, chart, lang, name string) {
 	}
 	var local []byte
 	if err == nil && lang != "en" && strings.TrimSpace(ans.Answer) != "" {
-		local, err = radioCallLocalTTSFn(ans.Answer, lang, "f")
-		logAPICallWithTokens(c.DeviceID, "radio_call_tts", ttsModel, len([]rune(ans.Answer)), 0, 0, 0)
+		var usage *ttsUsage
+		local, usage, err = radioCallLocalTTSFn(ans.Answer, lang, "f")
+		ttsLogUsage(c.DeviceID, "radio_call_tts", usage, len([]rune(ans.Answer)), 0)
 	}
 	var j *radioJob
 	radioLine.Lock()
