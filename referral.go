@@ -28,6 +28,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -431,6 +432,13 @@ func referralInfo(w http.ResponseWriter, r *http.Request) {
 	deviceID := claims.DeviceID
 
 	code, err := getOrCreateReferralCode(email)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Valid JWT but no users row for this email (A201: 500 on 16.11 and 22.11.2026 for a device
+		// placeholder account) — "no such user", not a database failure.
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "User not found"})
+		return
+	}
 	if err != nil {
 		log.Printf("⚠️ [referral] code for %s failed: %v", email, err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -834,7 +842,7 @@ func reverifyGoogleTrials() {
 		return
 	}
 	type trialRow struct {
-		id                          int
+		id                                int
 		email, deviceID, productID, token string
 	}
 	var trials []trialRow
