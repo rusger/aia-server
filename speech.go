@@ -580,7 +580,7 @@ func speechSynthesizeOpenAI(deviceID, text, l, gender string, n int, cfg speechC
 			}
 		}
 		if rt != nil {
-			speechLogAPICall(deviceID, speechOpenAICallType, ttsRealtimeModel, rt.Input, rt.Output, rt.Total, rt.Cached)
+			ttsLogRealtimeRows(speechLogAPICall, deviceID, speechOpenAICallType, *rt)
 		} else if paid > 0 {
 			speechLogAPICall(deviceID, speechOpenAICallType, ttsModel, paid, 0, paid, 0)
 		}

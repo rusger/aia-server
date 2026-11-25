@@ -54,16 +54,30 @@ var ttsRealtimeVoices = map[string]bool{
 // another one — picking the voice is the owner's decision (samples ~/aia/staging/a119/voices).
 var errTTSVoiceNotRealtime = errors.New("tts voice not available in realtime")
 
-// ttsUsage — what one realtime synthesis cost (response.done usage; summed over a mismatch retry).
+// ttsUsage — what one realtime synthesis cost, in the billable buckets of voiceUsage.split (response.done
+// usage; summed over a mismatch retry). TextIn/AudioIn are UNCACHED input; cached tokens are separate.
 type ttsUsage struct {
-	Input, Output, Total, Cached int
+	TextIn, AudioIn, CachedText, CachedAudio, TextOut, AudioOut int
 }
 
 func (u *ttsUsage) add(o ttsUsage) {
-	u.Input += o.Input
-	u.Output += o.Output
-	u.Total += o.Total
-	u.Cached += o.Cached
+	u.TextIn += o.TextIn
+	u.AudioIn += o.AudioIn
+	u.CachedText += o.CachedText
+	u.CachedAudio += o.CachedAudio
+	u.TextOut += o.TextOut
+	u.AudioOut += o.AudioOut
+}
+
+// ttsLogRealtimeRows writes one realtime synthesis as two api_calls rows, the voice.go convention, so finance.go
+// prices audio and text at their own rates: callType under the model (audio tokens) and callType+"_text" under
+// model+"-text" (text tokens). The base row stays one per synthesis, so ttsUsedToday's call_type='tts' count —
+// the daily cap — is unchanged.
+func ttsLogRealtimeRows(logf func(deviceID, callType, model string, p, c, tot, cached int), deviceID, callType string, u ttsUsage) {
+	audioIn := u.AudioIn + u.CachedAudio
+	logf(deviceID, callType, ttsRealtimeModel, audioIn, u.AudioOut, audioIn+u.AudioOut, u.CachedAudio)
+	textIn := u.TextIn + u.CachedText
+	logf(deviceID, callType+"_text", ttsRealtimeModel+"-text", textIn, u.TextOut, textIn+u.TextOut, u.CachedText)
 }
 
 // ttsBackendRealtime: TTS_BACKEND=realtime. Anything else (unset, "speech", a typo) is the speech endpoint.
@@ -87,11 +101,11 @@ func ttsFetchMetered(fetch func(model, voice, instructions, text string) ([]byte
 	return data, nil, err
 }
 
-// ttsLogUsage writes the api_calls row of one synthesis: the realtime model with its tokens when u is set,
+// ttsLogUsage writes the api_calls rows of one synthesis: the two realtime rows when u is set,
 // otherwise the speech row exactly as the caller logged it before A119 (characters as tokens).
 func ttsLogUsage(deviceID, callType string, u *ttsUsage, speechPrompt, speechTotal int) {
 	if u != nil {
-		ttsLogAPICall(deviceID, callType, ttsRealtimeModel, u.Input, u.Output, u.Total, u.Cached)
+		ttsLogRealtimeRows(ttsLogAPICall, deviceID, callType, *u)
 		return
 	}
 	ttsLogAPICall(deviceID, callType, ttsModel, speechPrompt, 0, speechTotal, 0)
@@ -151,14 +165,7 @@ type ttsRealtimeEvent struct {
 	Response *struct {
 		Status        string          `json:"status"`
 		StatusDetails json.RawMessage `json:"status_details"`
-		Usage         *struct {
-			InputTokens       int `json:"input_tokens"`
-			OutputTokens      int `json:"output_tokens"`
-			TotalTokens       int `json:"total_tokens"`
-			InputTokenDetails struct {
-				CachedTokens int `json:"cached_tokens"`
-			} `json:"input_token_details"`
-		} `json:"usage"`
+		Usage         *voiceUsage     `json:"usage"`
 	} `json:"response"`
 }
 
@@ -241,8 +248,8 @@ func ttsRealtimeSession(voice, instructions, text string) (pcm []byte, transcrip
 				return nil, "", nil, errors.New("openai realtime: response.done without response")
 			}
 			if u := ev.Response.Usage; u != nil {
-				usage = &ttsUsage{Input: u.InputTokens, Output: u.OutputTokens, Total: u.TotalTokens,
-					Cached: u.InputTokenDetails.CachedTokens}
+				ti, ai, ct, ca, to, ao := u.split()
+				usage = &ttsUsage{TextIn: ti, AudioIn: ai, CachedText: ct, CachedAudio: ca, TextOut: to, AudioOut: ao}
 			}
 			if st := ev.Response.Status; st != "" && st != "completed" {
 				return nil, "", usage, fmt.Errorf("openai realtime: response %s %s", st,

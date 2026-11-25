@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -101,9 +103,12 @@ func (f *rtFake) serve(t *testing.T) *httptest.Server {
 			{"type": "response.output_audio_transcript.delta", "delta": string(tr[:len(tr)/2])},
 			{"type": "response.output_audio.delta", "delta": base64.StdEncoding.EncodeToString(f.pcm[half:])},
 			{"type": "response.output_audio_transcript.delta", "delta": string(tr[len(tr)/2:])},
+			// the shape measured 25.11 (80 text in, 204 audio + 84 text out), here with 64 of the input cached
 			{"type": "response.done", "response": map[string]interface{}{"status": "completed", "usage": map[string]interface{}{
-				"input_tokens": 120, "output_tokens": 288, "total_tokens": 408,
-				"input_token_details": map[string]interface{}{"cached_tokens": 64},
+				"input_tokens": 80, "output_tokens": 288, "total_tokens": 368,
+				"input_token_details": map[string]interface{}{"text_tokens": 80, "audio_tokens": 0, "cached_tokens": 64,
+					"cached_tokens_details": map[string]interface{}{"text_tokens": 64, "audio_tokens": 0}},
+				"output_token_details": map[string]interface{}{"text_tokens": 84, "audio_tokens": 204},
 			}}},
 		}
 		for _, ev := range send {
@@ -155,7 +160,7 @@ func TestTTSRealtimeFetch(t *testing.T) {
 	if string(data) != "MP3:"+string(f.pcm) {
 		t.Fatalf("audio not collected in order: %d bytes", len(data))
 	}
-	if u == nil || *u != (ttsUsage{Input: 120, Output: 288, Total: 408, Cached: 64}) {
+	if u == nil || *u != (ttsUsage{TextIn: 16, CachedText: 64, TextOut: 84, AudioOut: 204}) {
 		t.Fatalf("usage: %+v", u)
 	}
 	if f.authz != "Bearer sk-test-fake" {
@@ -200,6 +205,24 @@ func TestTTSEnsureRealtimeLogsTokens(t *testing.T) {
 	logged := setupRealtime(t, f)
 	dir := t.TempDir()
 	t.Setenv("TTS_CACHE_DIR", dir)
+	prevA := analyticsDB
+	var err error
+	if analyticsDB, err = sql.Open("sqlite", ":memory:"); err != nil {
+		t.Fatal(err)
+	}
+	analyticsDB.SetMaxOpenConns(1) // every :memory: connection is its own database
+	t.Cleanup(func() { analyticsDB.Close(); analyticsDB = prevA })
+	if _, err := analyticsDB.Exec(`CREATE TABLE api_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL,
+		call_type TEXT NOT NULL, model TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, prompt_tokens INTEGER DEFAULT 0,
+		completion_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0,
+		answer_id TEXT DEFAULT '')`); err != nil {
+		t.Fatal(err)
+	}
+	capture := ttsLogAPICall
+	ttsLogAPICall = func(deviceID, callType, model string, p, c, tot, cached int) {
+		capture(deviceID, callType, model, p, c, tot, cached)
+		logAPICallWithTokens(deviceID, callType, model, p, c, tot, cached)
+	}
 
 	data, voice, hit, status, msg := ttsEnsure("dev1", "203.0.113.7", text, "f", "en")
 	if status != http.StatusOK || hit || voice != "shimmer" || !strings.HasPrefix(string(data), "MP3:") {
@@ -208,8 +231,42 @@ func TestTTSEnsureRealtimeLogsTokens(t *testing.T) {
 	if _, err := os.Stat(dir + "/" + ttsCacheKey(ttsModel, "shimmer", "en", text) + ".mp3"); err != nil {
 		t.Fatalf("not cached under the unchanged key: %v", err)
 	}
-	if len(*logged) != 1 || (*logged)[0] != `["dev1","tts","gpt-realtime-2.1-mini",120,288,408,64]` {
+	wantRows := `["dev1","tts","gpt-realtime-2.1-mini",0,204,204,0]` + "\n" +
+		`["dev1","tts_text","gpt-realtime-2.1-mini-text",80,84,164,64]`
+	if strings.Join(*logged, "\n") != wantRows {
 		t.Fatalf("api_calls: %v", *logged)
+	}
+	// the daily cap counts call_type 'tts' only: still one per synthesis
+	waitRows := func(n int) {
+		for i := 0; i < 200; i++ {
+			var c int
+			if analyticsDB.QueryRow(`SELECT COUNT(*) FROM api_calls`).Scan(&c) == nil && c >= n {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("api_calls rows never reached %d", n)
+	}
+	waitRows(2)
+	if n := ttsUsedToday("dev1"); n != 1 {
+		t.Fatalf("ttsUsedToday after one realtime synthesis = %d, want 1", n)
+	}
+}
+
+// Finance prices the two rows at the gpt-realtime-2.1-mini list rates (audio out $20/M, text in $0.60/M,
+// text out $2.40/M — voiceRatesFor) for the usage measured 25.11.
+func TestTTSRealtimeFinanceCost(t *testing.T) {
+	var cost float64
+	rows := 0
+	ttsLogRealtimeRows(func(_, _, model string, p, c, tot, cached int) {
+		rows++
+		if tot > 0 {
+			cost += financeTokenCostUSD(model, int64(p), int64(c), int64(cached), false)
+		}
+	}, "dev1", "tts", ttsUsage{TextIn: 80, TextOut: 84, AudioOut: 204})
+	want := 80*0.60e-6 + 204*20e-6 + 84*2.40e-6
+	if rows != 2 || cost < want-1e-9 || cost > want+1e-9 {
+		t.Fatalf("cost %.10f over %d rows, want %.10f", cost, rows, want)
 	}
 }
 
@@ -234,7 +291,8 @@ func TestTTSRealtimeMismatch(t *testing.T) {
 		t.Fatalf("mismatch must not be cached: %v", entries)
 	}
 	// the billed reply is still on the books
-	if len(*logged) != 1 || (*logged)[0] != `["dev1","tts","gpt-realtime-2.1-mini",120,288,408,64]` {
+	if len(*logged) != 2 || (*logged)[0] != `["dev1","tts","gpt-realtime-2.1-mini",0,204,204,0]` ||
+		(*logged)[1] != `["dev1","tts_text","gpt-realtime-2.1-mini-text",80,84,164,64]` {
 		t.Fatalf("api_calls: %v", *logged)
 	}
 
@@ -246,7 +304,8 @@ func TestTTSRealtimeMismatch(t *testing.T) {
 	if n := f.conns.Load() - 1; n != 2 {
 		t.Fatalf("flag 1: %d sessions, want exactly 2", n)
 	}
-	if len(*logged) != 2 || (*logged)[1] != `["dev1","tts","gpt-realtime-2.1-mini",240,576,816,128]` {
+	if len(*logged) != 4 || (*logged)[2] != `["dev1","tts","gpt-realtime-2.1-mini",0,408,408,0]` ||
+		(*logged)[3] != `["dev1","tts_text","gpt-realtime-2.1-mini-text",160,168,328,128]` {
 		t.Fatalf("usage of both attempts: %v", *logged)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
