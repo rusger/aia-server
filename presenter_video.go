@@ -52,6 +52,30 @@ func presenterVideoPath(version, key string) (string, bool) {
 	return filepath.Join(presenterVideoDir(), version, key+".mp4"), true
 }
 
+// presenterVideoFind: the key and size of the video of a text. The key is the voice's cache key in /api/tts; when the
+// voice changed (TTS_VOICE_MAP, A119 25.11.2026) and only a video in the earlier voice exists, that one is served —
+// otherwise every catalog video (rendered on the Mac in nova / onyx) would read as missing and be re-rendered.
+// size is 0 when neither exists; key is then the current voice's key (a new render uses the current voice).
+func presenterVideoFind(version, gender, lang, text string) (key string, size int64, ok bool) {
+	key = ttsCacheKey(ttsModel, ttsVoiceFor(gender, lang), lang, text)
+	path, ok := presenterVideoPath(version, key)
+	if !ok {
+		return "", 0, false
+	}
+	if size = presenterVideoSize(path); size > 0 {
+		return key, size, true
+	}
+	if lv := ttsLegacyVoiceFor(gender, lang); lv != ttsVoiceFor(gender, lang) {
+		lkey := ttsCacheKey(ttsModel, lv, lang, text)
+		if lpath, lok := presenterVideoPath(version, lkey); lok {
+			if ls := presenterVideoSize(lpath); ls > 0 {
+				return lkey, ls, true
+			}
+		}
+	}
+	return key, 0, true
+}
+
 // presenterVideoSize: size of a stored video, 0 when it is absent or truncated.
 func presenterVideoSize(path string) int64 {
 	st, err := os.Stat(path)
@@ -94,14 +118,11 @@ func presenterVideoLookupHandler(w http.ResponseWriter, r *http.Request) {
 		presenterVideoError(w, http.StatusBadRequest, fmt.Sprintf("text longer than %d characters", ttsMaxChars))
 		return
 	}
-	// Same key as the voice of this text in /api/tts.
-	key := ttsCacheKey(ttsModel, ttsVoiceFor(req.Gender, req.Lang), req.Lang, text)
-	path, ok := presenterVideoPath(req.Version, key)
+	key, size, ok := presenterVideoFind(req.Version, req.Gender, req.Lang, text)
 	if !ok {
 		presenterVideoError(w, http.StatusBadRequest, "version must look like v17")
 		return
 	}
-	size := presenterVideoSize(path)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true, "key": key, "available": size > 0, "bytes": size,

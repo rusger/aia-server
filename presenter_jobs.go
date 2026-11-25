@@ -143,14 +143,13 @@ func presenterJobCreateHandler(w http.ResponseWriter, r *http.Request) {
 		presenterVideoError(w, http.StatusBadRequest, "presenter must look like j-b")
 		return
 	}
-	key := ttsCacheKey(ttsModel, ttsVoiceFor(req.Gender, req.Lang), req.Lang, text)
-	path, ok := presenterVideoPath(req.Version, key)
+	key, size, ok := presenterVideoFind(req.Version, req.Gender, req.Lang, text)
 	if !ok {
 		presenterVideoError(w, http.StatusBadRequest, "version must look like v17")
 		return
 	}
 	online := presenterNodeOnline()
-	if presenterVideoSize(path) > 0 {
+	if size > 0 {
 		presenterJSON(w, http.StatusOK, map[string]interface{}{"success": true, "status": "ready", "key": key, "node_online": online})
 		return
 	}
