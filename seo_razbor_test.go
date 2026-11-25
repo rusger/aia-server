@@ -10,9 +10,14 @@ import (
 )
 
 func TestRazborDataValid(t *testing.T) {
+	// loadRazbors skips broken files; the repo's own data must all load.
+	paths, _ := filepath.Glob(filepath.Join(seoRazborDir, "*.json"))
 	rs, err := loadRazbors(seoRazborDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(rs) != len(paths) {
+		t.Fatalf("%d of %d seo_razbor files load", len(rs), len(paths))
 	}
 	slugs := map[string]bool{}
 	for _, r := range rs {
@@ -84,7 +89,10 @@ func TestRazborPage(t *testing.T) {
 	if !strings.Contains(ru.body, "Смотреть с 4:37") || !strings.Contains(ru.body, "Ответ.") || strings.Contains(ru.body, "Answer.") {
 		t.Error("ru page not in Russian")
 	}
-	full := renderSeoLayout("ru", pg.rel, ru, []int{2026}, "2026-11-25")
+	full := renderSeoLayout("ru", pg.rel, ru, []int{2026, 2027}, "2026-11-25")
+	if strings.Contains(full, "/2027/rahu-ketu.html") || strings.Contains(full, "/2026/rahu-ketu.html\">2026") {
+		t.Error("razbor page links other years of itself (they do not exist)")
+	}
 	for _, want := range []string{
 		`hreflang="en" href="` + seoBaseURL + `/en/2026/rahu-ketu.html"`,
 		`hreflang="x-default" href="` + seoBaseURL + `/en/2026/rahu-ketu.html"`,
@@ -117,6 +125,21 @@ func TestRazborValidateRefusesPartialLanguage(t *testing.T) {
 	delete(r.Sections[2].Lines[0].Text, "ru")
 	if err := r.validate(); err == nil {
 		t.Fatal("ru listed with a missing line must be refused")
+	}
+	r = testRazbor()
+	r.Langs = append(r.Langs, "fr")
+	r.Title["fr"], r.Lead["fr"] = "t", "l"
+	for i := range r.Sections {
+		r.Sections[i].H["fr"] = "h"
+		for j := range r.Sections[i].Lines {
+			r.Sections[i].Lines[j].Text["fr"] = "x"
+			if r.Sections[i].Lines[j].Sub != nil {
+				r.Sections[i].Lines[j].Sub["fr"] = "s"
+			}
+		}
+	}
+	if err := r.validate(); err == nil {
+		t.Fatal("a language without UI labels must be refused")
 	}
 	r = testRazbor()
 	r.Slug = "../x"
@@ -196,5 +219,15 @@ func TestRazborCountryMapMatchesSite(t *testing.T) {
 		if !strings.Contains(js, c) {
 			t.Errorf("i18n.js lacks %s", c)
 		}
+	}
+}
+
+func TestRazborBrokenFileSkipped(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{"), 0o644)
+	os.WriteFile(filepath.Join(dir, "partial.json"), []byte(`{"slug":"p","year":2026,"video":"V","langs":["en"],"title":{"en":"t"},"lead":{"en":""},"sections":[{"h":{"en":"h"},"lines":[]}]}`), 0o644)
+	rs, err := loadRazbors(dir)
+	if err != nil || len(rs) != 0 {
+		t.Fatalf("broken files must be skipped, not abort: %v %d", err, len(rs))
 	}
 }

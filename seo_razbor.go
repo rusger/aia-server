@@ -24,6 +24,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -95,6 +96,11 @@ func (r *seoRazbor) validate() error {
 		return fmt.Errorf("no en text")
 	}
 	for _, l := range r.Langs {
+		if !hasLang(razborLangs, l) {
+			return fmt.Errorf("%s: no UI labels for this language (razborStr)", l)
+		}
+	}
+	for _, l := range r.Langs {
 		if r.Title[l] == "" || r.Lead[l] == "" {
 			return fmt.Errorf("%s: title/lead missing", l)
 		}
@@ -124,12 +130,16 @@ func loadRazbors(dir string) ([]*seoRazbor, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A broken file loses only its own page: it is skipped (and logged),
+		// never published partly, and the rest of seo-gen still runs.
 		var r seoRazbor
 		if err := json.Unmarshal(raw, &r); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
+			log.Printf("seo-gen: razbor %s skipped: %v", p, err)
+			continue
 		}
 		if err := r.validate(); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
+			log.Printf("seo-gen: razbor %s skipped: %v", p, err)
+			continue
 		}
 		out = append(out, &r)
 	}
@@ -202,10 +212,12 @@ func buildRazborPage(lang string, r *seoRazbor, now time.Time) seoPage {
 	b.WriteString("<div class=\"btns\"><a class=\"btn alt\" rel=\"noopener\" href=\"" + seoYouTube + "?sub_confirmation=1\">" + esc(t("subscribe", nil)) + "</a></div>\n")
 	langs := r.siteLangs()
 	b.WriteString("<script>" + razborLangJS(lang, r.rel(), langs) + "</script>\n")
-	return seoPage{langs: langs, rel: r.rel(), title: r.Title[lang], desc: r.Lead[lang], body: b.String(), ld: razborVideoLD(lang, r)}
+	return seoPage{langs: langs, rel: r.rel(), title: r.Title[lang], desc: r.Lead[lang], body: b.String(), ld: razborVideoLD(lang, r), oneYear: true}
 }
 
 // razborVideoLD is the VideoObject with one Clip per YouTube chapter.
+// inLanguage is the VIDEO's spoken language (English narration, A77 format),
+// not the page's: translated pages describe the same English video.
 func razborVideoLD(lang string, r *seoRazbor) string {
 	var parts []string
 	for i, s := range r.Sections {

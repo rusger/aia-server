@@ -381,6 +381,8 @@ type seoPage struct {
 	desc  string
 	body  string // inner HTML (already escaped where needed)
 	ld    string // extra JSON-LD node for @graph (razbor VideoObject), "" = none
+	// oneYear: the page exists for its own year only (razbor pages), no "other years" nav
+	oneYear bool
 }
 
 func writeSeoSite(outDir string, data []*seoYearData) (int, error) {
@@ -911,7 +913,7 @@ func renderSeoLayout(lang, rel string, pg seoPage, years []int, lastmod string) 
 	b.WriteString("<main>\n<div class=\"wrap\">\n" + pg.body + "</div>\n")
 	// "Other years" only on the year pages (<year>/<topic>.html); day,
 	// month and today pages have their own navigation.
-	if strings.Count(rel, "/") == 1 && !strings.HasSuffix(rel, "/index.html") {
+	if !pg.oneYear && strings.Count(rel, "/") == 1 && !strings.HasSuffix(rel, "/index.html") {
 		b.WriteString("<p class=\"note\">" + esc(seoT("other_years", lang, nil)) + ": ")
 		for i, y := range years {
 			if i > 0 {
