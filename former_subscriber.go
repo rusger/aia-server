@@ -211,15 +211,15 @@ func identityAccounts(email string, installs []string) []string {
 // accountHasAccess mirrors userEntitlement for one account, plus an active
 // referral premium. Unknown accounts have no access.
 func accountHasAccess(account string) bool {
-	var subType string
+	var subType, plan string
 	var expiry sql.NullString
 	var isSuper int
 	if err := db.QueryRow(
-		`SELECT subscription_type, subscription_expiry, COALESCE(is_super,0) FROM users WHERE email = ?`,
-		account).Scan(&subType, &expiry, &isSuper); err != nil {
+		`SELECT subscription_type, COALESCE(subscription_length,''), subscription_expiry, COALESCE(is_super,0) FROM users WHERE email = ?`,
+		account).Scan(&subType, &plan, &expiry, &isSuper); err != nil {
 		return false
 	}
-	if isSuper == 1 || (subType == "paid" && entitlementNotExpired(expiry)) {
+	if isSuper == 1 || (subType == "paid" && entitlementNotExpiredStrict(expiry, plan)) {
 		return true
 	}
 	var ref sql.NullString

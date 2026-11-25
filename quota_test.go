@@ -18,6 +18,7 @@ func setupQuotaTestDBs(t *testing.T) {
 	if _, err = db.Exec(`CREATE TABLE users (
 		email TEXT PRIMARY KEY,
 		subscription_type TEXT NOT NULL DEFAULT 'free',
+		subscription_length TEXT NOT NULL DEFAULT 'monthly',
 		subscription_expiry DATETIME,
 		is_super INTEGER DEFAULT 0,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`); err != nil {
@@ -47,6 +48,13 @@ func addUser(t *testing.T, email, subType string, expiry sql.NullString, isSuper
 	}
 }
 
+func setLength(t *testing.T, email, length string) {
+	t.Helper()
+	if _, err := db.Exec(`UPDATE users SET subscription_length = ? WHERE email = ?`, length, email); err != nil {
+		t.Fatalf("set length %s: %v", email, err)
+	}
+}
+
 func nullStr(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
 
 func TestAiDailyLimitForUser(t *testing.T) {
@@ -59,6 +67,8 @@ func TestAiDailyLimitForUser(t *testing.T) {
 	addUser(t, "paid.active@x.com", "paid", nullStr(future), 0, 100)
 	addUser(t, "paid.expired@x.com", "paid", nullStr(past), 0, 100)   // expired → free, old → not trial
 	addUser(t, "paid.lifetime@x.com", "paid", sql.NullString{}, 0, 100)
+	setLength(t, "paid.lifetime@x.com", "lifetime")
+	addUser(t, "paid.noexpiry@x.com", "paid", sql.NullString{}, 0, 100) // A203 д: monthly without a window → free
 	addUser(t, "free.old@x.com", "free", sql.NullString{}, 0, 30)      // past trial
 	addUser(t, "free.new@x.com", "free", sql.NullString{}, 0, 2)       // within trial
 
@@ -70,6 +80,7 @@ func TestAiDailyLimitForUser(t *testing.T) {
 		{"super@x.com", 0, "super"},
 		{"paid.active@x.com", aiLimitPaid, "paid"},
 		{"paid.lifetime@x.com", aiLimitPaid, "paid"},
+		{"paid.noexpiry@x.com", aiLimitFree, "free"},
 		{"paid.expired@x.com", aiLimitFree, "free"},
 		{"free.old@x.com", aiLimitFree, "free"},
 		{"free.new@x.com", aiLimitTrial, "trial"},
@@ -87,7 +98,7 @@ func TestEntitlementDeviceOR(t *testing.T) {
 	setupQuotaTestDBs(t)
 	// Email account is free/old, but the anonymous device account is paid.
 	addUser(t, "user@x.com", "free", sql.NullString{}, 0, 60)
-	addUser(t, "dev123@device.astrolytix.app", "paid", sql.NullString{}, 0, 60)
+	addUser(t, "dev123@device.astrolytix.app", "paid", nullStr(time.Now().Add(30*24*time.Hour).Format("2006-01-02 15:04:05")), 0, 60)
 
 	limit, tier := aiDailyLimitForUser("user@x.com", "dev123")
 	if limit != aiLimitPaid || tier != "paid" {

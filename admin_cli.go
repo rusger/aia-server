@@ -199,11 +199,22 @@ func updateUser(db *sql.DB, deviceID, subscriptionType, subscriptionLength strin
 
     // Update user — mark as admin-granted so the client knows there is no
     // self-serve renewal channel for this subscription.
+    // A203 д: entitlement is strict — a paid monthly/yearly row without an
+    // expiry is free, so a paid grant always carries its window (as `grant` does).
+    var expiry interface{}
+    if subscriptionType == "paid" {
+        if subscriptionLength == "yearly" {
+            expiry = time.Now().AddDate(1, 0, 0)
+        } else {
+            expiry = time.Now().AddDate(0, 1, 0)
+        }
+    }
     query := `UPDATE users
-              SET subscription_type = ?, subscription_length = ?, last_payment_method = 'admin', updated_at = CURRENT_TIMESTAMP
+              SET subscription_type = ?, subscription_length = ?, subscription_expiry = COALESCE(?, subscription_expiry),
+                  last_payment_method = 'admin', updated_at = CURRENT_TIMESTAMP
               WHERE device_id = ?`
 
-    result, err := db.Exec(query, subscriptionType, subscriptionLength, deviceID)
+    result, err := db.Exec(query, subscriptionType, subscriptionLength, expiry, deviceID)
     if err != nil {
         log.Fatalf("Failed to update user: %v", err)
     }
