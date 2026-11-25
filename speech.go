@@ -548,6 +548,7 @@ func speechSynthesizeOpenAI(deviceID, text, l, gender string, n int, cfg speechC
 	chunks := speechChunks(radioSayBrand(text, l), speechOpenAIChunkRunes)
 	type part struct {
 		audio []byte
+		usage *ttsUsage // set by the realtime backend (TTS_BACKEND=realtime, A119)
 		err   error
 	}
 	parts := make([]part, len(chunks))
@@ -558,20 +559,29 @@ func speechSynthesizeOpenAI(deviceID, text, l, gender string, n int, cfg speechC
 			wg.Add(1)
 			go func(i int, c string) {
 				defer wg.Done()
-				a, err := speechOpenAIFetch(ttsModel, voice, ttsInstructions, c)
-				parts[i] = part{a, err}
+				a, u, err := ttsFetchMetered(speechOpenAIFetch, ttsModel, voice, ttsInstructions, c)
+				parts[i] = part{a, u, err}
 			}(i, c)
 		}
 		wg.Wait()
 		// what OpenAI billed — every piece that came back, even when another
 		// failed or the request already timed out
 		paid := 0
+		var rt *ttsUsage // realtime: tokens of every billed reply, mismatches included
 		for i, p := range parts {
 			if p.err == nil && len(p.audio) > 0 {
 				paid += utf8.RuneCountInString(chunks[i])
 			}
+			if p.usage != nil {
+				if rt == nil {
+					rt = &ttsUsage{}
+				}
+				rt.add(*p.usage)
+			}
 		}
-		if paid > 0 {
+		if rt != nil {
+			ttsLogRealtimeRows(speechLogAPICall, deviceID, speechOpenAICallType, *rt)
+		} else if paid > 0 {
 			speechLogAPICall(deviceID, speechOpenAICallType, ttsModel, paid, 0, paid, 0)
 		}
 		close(done)
