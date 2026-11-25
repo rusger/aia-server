@@ -9823,6 +9823,10 @@ func main() {
         runFixedAnswerListCLI()
         return
     }
+    if len(os.Args) >= 2 && os.Args[1] == "fixed-answer-push-due" {
+        runFixedAnswerPushDueCLI(os.Args[2:])
+        return
+    }
     if len(os.Args) >= 2 && os.Args[1] == "seo-gen" {
         runSeoGenCLI(os.Args[2:])
         return

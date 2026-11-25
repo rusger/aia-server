@@ -63,6 +63,7 @@ func migrateFixedAnswers() {
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_fixed_answers_device ON fixed_answers (device_id)`); err != nil {
 		fmt.Printf("fixed_answers index: %v\n", err)
 	}
+	migrateFixedAnswerPush() // queued pushes (fixed_answer_push.go)
 }
 
 // headRunes returns the first n characters (not bytes) of s.
