@@ -46,6 +46,8 @@ type expiryRepair struct {
 	Email     string `json:"email"`
 	Plan      string `json:"plan"`
 	OrigTxn   string `json:"original_transaction_id"`
+	LookupBy  string `json:"lookup_by,omitempty"` // "original_transaction_id" | "transaction_id" (A203)
+	Kind      string `json:"kind,omitempty"`      // "missing_expiry" | "lapsed_renewed" (A203)
 	NewExpiry string `json:"new_expiry,omitempty"`
 	Status    string `json:"status"`
 	Applied   bool   `json:"applied"`
@@ -70,7 +72,7 @@ func appleStatusLabel(status int) string {
 }
 
 // accountsMissingExpiry lists paid, non-lifetime accounts with no expiry date
-// and the original transaction we can look them up by.
+// and the Apple transaction id we can look them up by (original_transaction_id, else transaction_id — A203).
 func accountsMissingExpiry() ([]expiryRepair, error) {
 	rows, err := db.Query(`
 		SELECT u.email,
@@ -81,6 +83,13 @@ func accountsMissingExpiry() ([]expiryRepair, error) {
 		                   AND p.store = 'apple'
 		                   AND p.original_transaction_id IS NOT NULL
 		                   AND p.original_transaction_id <> ''
+		                 ORDER BY p.id DESC LIMIT 1), ''),
+		       COALESCE((SELECT p.transaction_id
+		                 FROM purchase_history p
+		                 WHERE p.email = u.email
+		                   AND p.store = 'apple'
+		                   AND p.transaction_id IS NOT NULL
+		                   AND p.transaction_id <> ''
 		                 ORDER BY p.id DESC LIMIT 1), '')
 		FROM users u
 		WHERE u.subscription_type = 'paid'
@@ -94,8 +103,18 @@ func accountsMissingExpiry() ([]expiryRepair, error) {
 	var out []expiryRepair
 	for rows.Next() {
 		var r expiryRepair
-		if err := rows.Scan(&r.Email, &r.Plan, &r.OrigTxn); err != nil {
+		var txn string
+		if err := rows.Scan(&r.Email, &r.Plan, &r.OrigTxn, &txn); err != nil {
 			return nil, err
+		}
+		// A203 (25.11.2026): 21 of 25 accounts had a transaction_id but no original_transaction_id on record.
+		// Apple's Get All Subscription Statuses accepts any transaction id of the customer, so fall back to it.
+		switch {
+		case r.OrigTxn != "":
+			r.LookupBy = "original_transaction_id"
+		case txn != "":
+			r.OrigTxn = txn
+			r.LookupBy = "transaction_id"
 		}
 		out = append(out, r)
 	}
@@ -156,6 +175,68 @@ func fetchAppleExpiry(base, jwtToken, origTxn string) (time.Time, int, error) {
 //
 // dryRun defaults on at the call site: this writes entitlement state, so the
 // numbers get eyeballed before anything changes.
+// accountsLapsedButRenewed lists accounts whose stored window has run out although Apple sent a payment
+// notification (Production) after that date and no end/refund after the payment — people who pay but read as
+// free because DID_RENEW never reached users (A203: two such on 25.11.2026). Looked up by their newest Apple id.
+func accountsLapsedButRenewed() ([]expiryRepair, error) {
+	rows, err := db.Query(`
+		WITH m AS (
+			SELECT DISTINCT p.email, a.original_transaction_id AS ot
+			FROM purchase_history p
+			JOIN apple_notifications a ON a.environment = 'Production'
+			 AND (a.original_transaction_id = p.transaction_id
+			      OR a.original_transaction_id = p.original_transaction_id
+			      OR a.transaction_id = p.transaction_id)
+			WHERE p.store = 'apple' AND p.email NOT LIKE 'apple:%'
+		), x AS (
+			SELECT u.email, u.subscription_length AS plan, u.subscription_expiry AS exp,
+			       (SELECT MAX(a.created_at) FROM apple_notifications a
+			         WHERE a.environment = 'Production'
+			           AND a.notification_type IN ('DID_RENEW','SUBSCRIBED','OFFER_REDEEMED','DID_CHANGE_RENEWAL_PREF')
+			           AND a.original_transaction_id IN (SELECT ot FROM m WHERE m.email = u.email)) AS lastpay,
+			       (SELECT MAX(a.created_at) FROM apple_notifications a
+			         WHERE a.environment = 'Production'
+			           AND a.notification_type IN ('EXPIRED','GRACE_PERIOD_EXPIRED','REFUND','REVOKE')
+			           AND a.original_transaction_id IN (SELECT ot FROM m WHERE m.email = u.email)) AS lastend,
+			       (SELECT MAX(ot) FROM m WHERE m.email = u.email) AS ot
+			FROM users u
+			WHERE COALESCE(u.subscription_expiry, '') <> ''
+			  AND u.subscription_length <> 'lifetime'
+			  AND substr(u.subscription_expiry, 1, 19) < strftime('%Y-%m-%d %H:%M:%S', 'now')
+		)
+		SELECT email, plan, ot FROM x
+		WHERE lastpay IS NOT NULL
+		  AND substr(lastpay, 1, 19) > substr(exp, 1, 19)
+		  AND (lastend IS NULL OR lastend < lastpay)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []expiryRepair
+	for rows.Next() {
+		var r expiryRepair
+		if err := rows.Scan(&r.Email, &r.Plan, &r.OrigTxn); err != nil {
+			return nil, err
+		}
+		r.Kind, r.LookupBy = "lapsed_renewed", "original_transaction_id"
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// expiryRepairWrite says what an apply may write for one Apple answer: missing expiries take the signed date
+// whatever the status (an expired date is the truth that ends "paid forever"); a lapsed-but-renewed account is
+// re-opened only when Apple says active (status 1) with a date in the future.
+func expiryRepairWrite(kind string, status int, expiry, now time.Time) (writeExpiry, setPaid bool) {
+	switch kind {
+	case "lapsed_renewed":
+		ok := status == 1 && expiry.After(now)
+		return ok, ok
+	default:
+		return true, false
+	}
+}
+
 func syncAppleExpiries(sandbox, dryRun bool) ([]expiryRepair, error) {
 	if appleRootPool == nil {
 		return nil, fmt.Errorf("apple root CA not loaded; cannot verify payloads")
@@ -174,12 +255,20 @@ func syncAppleExpiries(sandbox, dryRun bool) ([]expiryRepair, error) {
 	if err != nil {
 		return nil, err
 	}
+	for i := range repairs {
+		repairs[i].Kind = "missing_expiry"
+	}
+	lapsed, err := accountsLapsedButRenewed()
+	if err != nil {
+		return nil, err
+	}
+	repairs = append(repairs, lapsed...)
 
 	for i := range repairs {
 		r := &repairs[i]
 		if r.OrigTxn == "" {
 			r.Status = "skipped"
-			r.Note = "no Apple original_transaction_id on record"
+			r.Note = "no Apple transaction id on record"
 			continue
 		}
 		expiry, status, fErr := fetchAppleExpiry(base, jwtToken, r.OrigTxn)
@@ -191,12 +280,19 @@ func syncAppleExpiries(sandbox, dryRun bool) ([]expiryRepair, error) {
 		r.Status = appleStatusLabel(status)
 		r.NewExpiry = expiry.UTC().Format("2006-01-02 15:04:05")
 
-		if dryRun {
+		writeExpiry, setPaid := expiryRepairWrite(r.Kind, status, expiry, time.Now())
+		if !writeExpiry {
+			r.Note = "not applied: Apple does not confirm an active paid period"
+		}
+		if dryRun || !writeExpiry {
 			continue
 		}
-		if _, uErr := db.Exec(
-			`UPDATE users SET subscription_expiry = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`,
-			r.NewExpiry, r.Email); uErr != nil {
+		q := `UPDATE users SET subscription_expiry = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?`
+		if setPaid {
+			q = `UPDATE users SET subscription_type = 'paid', subscription_expiry = ?, last_payment_method = 'apple',
+				updated_at = CURRENT_TIMESTAMP WHERE email = ?`
+		}
+		if _, uErr := db.Exec(q, r.NewExpiry, r.Email); uErr != nil {
 			r.Status = "error"
 			r.Note = uErr.Error()
 			continue
@@ -235,28 +331,21 @@ func expirySyncHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	applied, errors, skipped := 0, 0, 0
-	for _, r := range repairs {
-		switch {
-		case r.Applied:
-			applied++
-		case r.Status == "error":
-			errors++
-		case r.Status == "skipped":
-			skipped++
-		}
-	}
-	log.Printf("✅ [expiry sync] candidates=%d applied=%d errors=%d skipped=%d",
-		len(repairs), applied, errors, skipped)
+	t := summarizeExpiryRepairs(repairs)
+	recordExpirySyncRun(!req.Apply, t)
+	log.Printf("✅ [expiry sync] candidates=%d applied=%d reopened=%d not_confirmed=%d errors=%d skipped=%d",
+		t.Candidates, t.Applied, t.Reopened, t.NotConfirmed, t.Errors, t.Skipped)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"dry_run":    !req.Apply,
-		"candidates": len(repairs),
-		"applied":    applied,
-		"errors":     errors,
-		"skipped":    skipped,
-		"repairs":    repairs,
+		"success":       true,
+		"dry_run":       !req.Apply,
+		"candidates":    t.Candidates,
+		"applied":       t.Applied,
+		"reopened":      t.Reopened,
+		"not_confirmed": t.NotConfirmed,
+		"errors":        t.Errors,
+		"skipped":       t.Skipped,
+		"repairs":       repairs,
 	})
 }
 
@@ -269,4 +358,91 @@ func entitlementNotExpiredStrict(expiry sql.NullString, plan string) bool {
 		return plan == "lifetime"
 	}
 	return entitlementNotExpired(expiry)
+}
+
+// ---------------------------------------------------------------------------
+// Nightly run (A203, owner 25.11.2026: «такие случаи автоматически грамотно оформлять… чтоб не руками каждый
+// раз»). Applies only what Apple answered with a verified signed transaction; a lapsed account is re-opened
+// only on an active status (expiryRepairWrite). Every run leaves one row in apple_expiry_sync_runs for the
+// weekly report. APPLE_EXPIRY_SYNC_NIGHTLY=0 switches the loop off.
+// ---------------------------------------------------------------------------
+
+const (
+	appleExpirySyncFirstRun = 20 * time.Minute
+	appleExpirySyncInterval = 24 * time.Hour
+)
+
+func migrateAppleExpirySyncRuns() {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS apple_expiry_sync_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		ran_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		dry_run INTEGER NOT NULL,
+		candidates INTEGER NOT NULL,
+		applied INTEGER NOT NULL,
+		errors INTEGER NOT NULL,
+		skipped INTEGER NOT NULL,
+		not_confirmed INTEGER NOT NULL,
+		reopened INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		log.Printf("⚠️ [expiry sync] runs table: %v", err)
+	}
+}
+
+type expirySyncTotals struct {
+	Candidates, Applied, Errors, Skipped, NotConfirmed, Reopened int
+}
+
+func summarizeExpiryRepairs(repairs []expiryRepair) expirySyncTotals {
+	t := expirySyncTotals{Candidates: len(repairs)}
+	for _, r := range repairs {
+		switch {
+		case r.Applied:
+			t.Applied++
+			if r.Kind == "lapsed_renewed" {
+				t.Reopened++
+			}
+		case r.Status == "error":
+			t.Errors++
+		case r.Status == "skipped":
+			t.Skipped++
+		case r.Note != "":
+			t.NotConfirmed++
+		}
+	}
+	return t
+}
+
+func recordExpirySyncRun(dryRun bool, t expirySyncTotals) {
+	if _, err := db.Exec(`INSERT INTO apple_expiry_sync_runs
+		(dry_run, candidates, applied, errors, skipped, not_confirmed, reopened) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		dryRun, t.Candidates, t.Applied, t.Errors, t.Skipped, t.NotConfirmed, t.Reopened); err != nil {
+		log.Printf("⚠️ [expiry sync] run row: %v", err)
+	}
+}
+
+func startAppleExpirySyncLoop() {
+	if getEnv("APPLE_EXPIRY_SYNC_NIGHTLY", "1") == "0" {
+		log.Printf("ℹ️ [expiry sync] nightly loop disabled (APPLE_EXPIRY_SYNC_NIGHTLY=0)")
+		return
+	}
+	if _, err := loadAppStoreAPIConfig(); err != nil {
+		log.Printf("ℹ️ [expiry sync] nightly loop disabled: %v", err)
+		return
+	}
+	log.Printf("ℹ️ [expiry sync] nightly loop started: first run in %v, then every %v", appleExpirySyncFirstRun, appleExpirySyncInterval)
+	go func() {
+		time.Sleep(appleExpirySyncFirstRun)
+		for {
+			repairs, err := syncAppleExpiries(false, false)
+			if err != nil {
+				log.Printf("❌ [expiry sync] nightly: %v", err)
+			} else {
+				t := summarizeExpiryRepairs(repairs)
+				recordExpirySyncRun(false, t)
+				log.Printf("✅ [expiry sync] nightly: candidates=%d applied=%d reopened=%d not_confirmed=%d errors=%d skipped=%d",
+					t.Candidates, t.Applied, t.Reopened, t.NotConfirmed, t.Errors, t.Skipped)
+			}
+			time.Sleep(appleExpirySyncInterval)
+		}
+	}()
 }
