@@ -92,6 +92,16 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Аудио радио/ТВ (A142, 25.11.2026): сценки перезаливаются под тем же именем (живые вставки) —
+    # браузер обязан переспросить (ETag/Last-Modified → 304 без тела), иначе играет старую копию по эвристике.
+    # HLS эфира (*.m3u8/*.ts, snippets/radio-deep.conf) это правило не задевает.
+    # Выкат: sudo cp /etc/nginx/sites-enabled/astrologer /etc/nginx/astrologer.bak-1125-cc; скопировать этот файл;
+    # sudo nginx -t (rc отдельно); sudo systemctl reload nginx. Откат — вернуть бэкап + nginx -t + reload.
+    location ~* ^/(radio|tv)/.+\.m4a$ {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
     # Cache static assets (images, css, js, fonts) for 1 year
     location ~* \.(jpg|jpeg|png|gif|ico|svg|webp|css|js|woff|woff2|ttf|eot)$ {
         expires 1y;
@@ -117,6 +127,7 @@ server {
     }
 
     include snippets/radio-deep.conf;
+    include snippets/krug.conf;
 
     # Static files
     location / {
