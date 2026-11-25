@@ -64,7 +64,7 @@ var seoReadMore = map[string]string{
 	"en": "Read more below",
 	"es": "Sigue leyendo abajo",
 	"fr": "Lire la suite ci-dessous",
-	"de": "Weiterlesen unten",
+	"de": "Unten weiterlesen",
 	"it": "Continua a leggere sotto",
 	"pt": "Continue lendo abaixo",
 	"ru": "Читать далее ниже",
