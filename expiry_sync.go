@@ -352,15 +352,21 @@ func expirySyncHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// entitlementNotExpiredStrict is the shape entitlement checks should move to
-// once expiries are populated: a NULL expiry only means "forever" for lifetime
-// plans. Kept unused-by-default deliberately — flipping it before the backfill
-// runs would drop paying monthly subscribers to free.
+// entitlementNotExpiredStrict is the subscription entitlement check (A203 д,
+// 25.11.2026): a NULL/empty expiry only means "forever" for lifetime plans.
+// Switched on after the nightly Apple sync filled every paid monthly/yearly
+// row (first run 25.11: 23 applied, 0 paid non-lifetime rows left without a date).
 func entitlementNotExpiredStrict(expiry sql.NullString, plan string) bool {
-	if !expiry.Valid || expiry.String == "" {
-		return plan == "lifetime"
+	if expiryMissingForPlan(expiry, plan) {
+		return false
 	}
 	return entitlementNotExpired(expiry)
+}
+
+// expiryMissingForPlan: a subscription row with no window on a non-lifetime
+// plan — fail closed, the nightly sync / S2S hook fills the date from Apple.
+func expiryMissingForPlan(expiry sql.NullString, plan string) bool {
+	return (!expiry.Valid || expiry.String == "") && plan != "lifetime"
 }
 
 // ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ func setupFormerSubscriberDB(t *testing.T) {
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(`
 		CREATE TABLE users (email TEXT PRIMARY KEY, subscription_type TEXT NOT NULL DEFAULT 'free',
-			subscription_expiry DATETIME, is_super INTEGER DEFAULT 0, current_device_id TEXT,
+			subscription_length TEXT NOT NULL DEFAULT 'monthly', subscription_expiry DATETIME, is_super INTEGER DEFAULT 0, current_device_id TEXT,
 			referral_premium_until TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 		CREATE TABLE devices (email TEXT, device_id TEXT, revoked INTEGER DEFAULT 0);
 		CREATE TABLE purchase_history (email TEXT, device_id TEXT, product_id TEXT, transaction_id TEXT,

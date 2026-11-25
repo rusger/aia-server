@@ -3245,8 +3245,10 @@ func subscriptionWindowUpdate(curLength string, curExpiry sql.NullString, inLeng
     return curLength, &curT, false
 }
 
-// entitlementNotExpired reports whether a paid subscription_expiry is still in
-// the future. A NULL/empty expiry means no-expiry (lifetime) → still valid.
+// entitlementNotExpired reports whether an expiry timestamp is still in the
+// future; a NULL/empty value counts as valid. Use it for plan-less dates
+// (referral_premium_until). A subscription_expiry goes through
+// entitlementNotExpiredStrict, which knows the plan (A203 д).
 // Mirrors the multi-format parsing in getUserInfo (Go stores times with tz).
 func entitlementNotExpired(expiry sql.NullString) bool {
     if !expiry.Valid || expiry.String == "" {
@@ -3273,18 +3275,18 @@ func entitlementNotExpired(expiry sql.NullString) bool {
 // than the email account, so both are checked.
 func userEntitlement(email, deviceID string) (paid bool, super bool) {
     check := func(id string) {
-        var subType string
+        var subType, plan string
         var expiry sql.NullString
         var isSuper int
         if err := db.QueryRow(
-            `SELECT subscription_type, subscription_expiry, COALESCE(is_super,0) FROM users WHERE email = ?`,
-            id).Scan(&subType, &expiry, &isSuper); err != nil {
+            `SELECT subscription_type, COALESCE(subscription_length,''), subscription_expiry, COALESCE(is_super,0) FROM users WHERE email = ?`,
+            id).Scan(&subType, &plan, &expiry, &isSuper); err != nil {
             return
         }
         if isSuper == 1 {
             super = true
         }
-        if subType == "paid" && entitlementNotExpired(expiry) {
+        if subType == "paid" && entitlementNotExpiredStrict(expiry, plan) {
             paid = true
         }
     }
@@ -3785,6 +3787,9 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
             effectiveSubType = "free" // Subscription expired
         }
     }
+    if effectiveSubType == "paid" && expiryMissingForPlan(subscriptionExpiry, subscriptionLength) {
+        effectiveSubType = "free" // A203 д: no window on a non-lifetime plan = not paid
+    }
 
     // OR-with-device entitlement (email is optional by design). An IAP
     // subscription is attributed to whichever identity (email or the anonymous
@@ -3799,7 +3804,7 @@ func getUserInfo(w http.ResponseWriter, r *http.Request) {
         if e := db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry, last_payment_method
             FROM users WHERE email = ?`, claims.DeviceID+"@device.astrolytix.app").
             Scan(&dType, &dLength, &dExpiry, &dPay); e == nil && dType == "paid" {
-            devActive := true
+            devActive := !expiryMissingForPlan(dExpiry, dLength) // A203 д
             if dExpiry.Valid && dExpiry.String != "" {
                 if t, perr := parseDBTime(dExpiry.String); perr == nil && time.Now().After(t) {
                     devActive = false
@@ -6290,6 +6295,10 @@ func completeEmailLogin(w http.ResponseWriter, email, storedCode, deviceID, devi
                 subscriptionType = "free"
             }
         }
+        if subscriptionType == "paid" && expiryMissingForPlan(subscriptionExpiry, subscriptionLength) {
+            log.Printf("⚠️ Paid %s plan without expiry for %s — treated as free (A203 д)", subscriptionLength, email)
+            subscriptionType = "free"
+        }
 
         log.Printf("✅ Existing user logged in: %s (device: %s, plan: %s)", email, deviceID, subscriptionType)
     }
@@ -6304,7 +6313,7 @@ func completeEmailLogin(w http.ResponseWriter, email, storedCode, deviceID, devi
         var dExpiry sql.NullString
         if e := db.QueryRow(`SELECT subscription_type, subscription_length, subscription_expiry FROM users WHERE email = ?`,
             deviceID+"@device.astrolytix.app").Scan(&dType, &dLength, &dExpiry); e == nil && dType == "paid" {
-            devActive := true
+            devActive := !expiryMissingForPlan(dExpiry, dLength) // A203 д
             if dExpiry.Valid && dExpiry.String != "" {
                 if t, perr := parseDBTime(dExpiry.String); perr == nil && time.Now().After(t) {
                     devActive = false
