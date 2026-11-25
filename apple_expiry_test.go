@@ -136,22 +136,31 @@ func TestAccountsLapsedButRenewed(t *testing.T) {
 		INSERT INTO users (email, subscription_type, subscription_length, subscription_expiry) VALUES
 			('payer@t','free','monthly','2026-09-15 06:27:11 +0000 UTC'),
 			('ended@t','paid','monthly','2026-09-15 06:27:11 +0000 UTC'),
-			('sandbox@t','free','monthly','2026-09-15 06:27:11 +0000 UTC');
+			('sandbox@t','free','monthly','2026-09-15 06:27:11 +0000 UTC'),
+			('legacy@t','free','monthly','2026-09-15 06:27:11 +0000 UTC'),
+			('emptyid@t','free','monthly','2026-09-15 06:27:11 +0000 UTC');
 		INSERT INTO purchase_history (email, store, transaction_id, original_transaction_id) VALUES
-			('payer@t','apple','P1',''), ('ended@t','apple','E1','E1'), ('sandbox@t','apple','S1','S1');
+			('payer@t','apple','P1',''), ('ended@t','apple','E1','E1'), ('sandbox@t','apple','S1','S1'),
+			('legacy@t','apple','L1','L1'), ('emptyid@t','apple','','');
 		INSERT INTO apple_notifications (notification_type, environment, transaction_id, original_transaction_id, created_at) VALUES
 			('DID_RENEW','Production','P5','P1','2026-11-16 20:25:22'),
 			('DID_RENEW','Production','E2','E1','2026-10-01 00:00:00'),
 			('EXPIRED','Production','E2','E1','2026-11-01 00:00:00'),
-			('DID_RENEW','Sandbox','S2','S1','2026-11-16 00:00:00');`); err != nil {
+			('DID_RENEW','Sandbox','S2','S1','2026-11-16 00:00:00'),
+			('DID_RENEW',NULL,'L2','L1','2026-11-16 00:00:00'),
+			('DID_RENEW','Production','','','2026-11-16 00:00:00');`); err != nil {
 		t.Fatal(err)
 	}
 	got, err := accountsLapsedButRenewed()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Email != "payer@t" || got[0].OrigTxn != "P1" || got[0].Kind != "lapsed_renewed" {
-		t.Fatalf("candidates = %+v, want only payer@t via P1", got)
+	by := map[string]expiryRepair{}
+	for _, r := range got {
+		by[r.Email] = r
+	}
+	if len(by) != 2 || by["payer@t"].OrigTxn != "P1" || by["payer@t"].Kind != "lapsed_renewed" || by["legacy@t"].OrigTxn != "L1" {
+		t.Fatalf("candidates = %+v, want payer@t via P1 and legacy@t (NULL environment = production) via L1", got)
 	}
 }
 

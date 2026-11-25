@@ -178,24 +178,27 @@ func fetchAppleExpiry(base, jwtToken, origTxn string) (time.Time, int, error) {
 // accountsLapsedButRenewed lists accounts whose stored window has run out although Apple sent a payment
 // notification (Production) after that date and no end/refund after the payment — people who pay but read as
 // free because DID_RENEW never reached users (A203: two such on 25.11.2026). Looked up by their newest Apple id.
+// Production = the shared rule of renewals.go (appleProductionNotifications): environment <> 'Sandbox', rows
+// written before the column existed count as production. Empty ids never join (a stray row cannot seed a candidate).
 func accountsLapsedButRenewed() ([]expiryRepair, error) {
 	rows, err := db.Query(`
 		WITH m AS (
 			SELECT DISTINCT p.email, a.original_transaction_id AS ot
 			FROM purchase_history p
-			JOIN apple_notifications a ON a.environment = 'Production'
+			JOIN apple_notifications a ON COALESCE(a.environment, '') <> 'Sandbox'
 			 AND (a.original_transaction_id = p.transaction_id
 			      OR a.original_transaction_id = p.original_transaction_id
 			      OR a.transaction_id = p.transaction_id)
 			WHERE p.store = 'apple' AND p.email NOT LIKE 'apple:%'
+			  AND COALESCE(p.transaction_id, '') <> '' AND COALESCE(a.original_transaction_id, '') <> ''
 		), x AS (
 			SELECT u.email, u.subscription_length AS plan, u.subscription_expiry AS exp,
 			       (SELECT MAX(a.created_at) FROM apple_notifications a
-			         WHERE a.environment = 'Production'
+			         WHERE COALESCE(a.environment, '') <> 'Sandbox'
 			           AND a.notification_type IN ('DID_RENEW','SUBSCRIBED','OFFER_REDEEMED','DID_CHANGE_RENEWAL_PREF')
 			           AND a.original_transaction_id IN (SELECT ot FROM m WHERE m.email = u.email)) AS lastpay,
 			       (SELECT MAX(a.created_at) FROM apple_notifications a
-			         WHERE a.environment = 'Production'
+			         WHERE COALESCE(a.environment, '') <> 'Sandbox'
 			           AND a.notification_type IN ('EXPIRED','GRACE_PERIOD_EXPIRED','REFUND','REVOKE')
 			           AND a.original_transaction_id IN (SELECT ot FROM m WHERE m.email = u.email)) AS lastend,
 			       (SELECT MAX(ot) FROM m WHERE m.email = u.email) AS ot
