@@ -327,7 +327,7 @@ var razborStr = map[string]map[string]string{
 	},
 	"watch_from": {
 		"en": "Watch from {time}", "ru": "Смотреть с {time}", "es": "Ver desde {time}",
-		"de": "Ab {time} ansehen", "ar": "شاهد من {time}", "pt": "Assista a partir de {time}",
+		"de": "Ab {time} ansehen", "ar": "شاهد بدءًا من {time}", "pt": "Assista a partir de {time}",
 	},
 	"clip": {
 		"en": "Short video: {title}", "ru": "Короткое видео: {title}", "es": "Video corto: {title}",

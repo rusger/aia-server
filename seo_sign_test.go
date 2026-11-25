@@ -109,7 +109,7 @@ func TestSignPagesRenderOnlyWithText(t *testing.T) {
 		`<link rel="alternate" hreflang="ru" href="https://astrolytix.com/astro/ru/2026/10/libra.html">`,
 		`<link rel="alternate" hreflang="x-default" href="https://astrolytix.com/astro/ru/2026/10/libra.html">`,
 		"<h1>Весы: октябрь 2026 по лунному знаку</h1>",
-		`<p class="lead">Месяц для Весов.</p>`,
+		`<p class="lead">Месяц для Весов. <a class="more" href="#after-app">Читать далее ниже&nbsp;↓</a></p>`,
 		"Дом от Луны", "<td>Солнце</td><td>12 → 1</td><td>Дева → Весы</td>", "<td>Венера (R)</td>",
 		"Ключевые даты", "Солнце входит в Весы (дом 1)", "Новолуние (Амавасья) · Дева (дом 12)",
 		"<h2>Обзор</h2>\n<p>Юпитер в 10-м доме &lt;b&gt;не&lt;/b&gt; тег.</p>",

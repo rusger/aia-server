@@ -440,7 +440,7 @@ func buildMonthPage(lang string, year, month int, days []seoDay, signLinks strin
 	b.WriteString("</ul></nav>\n")
 	b.WriteString("<p class=\"note\">" + esc(seoT("sidereal_note", lang, nil)) + "</p>\n")
 	rel := fmt.Sprintf("%04d/%02d/index.html", year, month)
-	return seoPage{rel: rel, title: seoT("month_title", lang, repl), desc: seoT("month_intro", lang, repl), body: b.String(), langs: dayPageLangs()}
+	return seoPage{rel: rel, title: seoT("month_title", lang, repl), desc: seoT("month_intro", lang, repl), body: b.String(), langs: dayPageLangs(), hub: true}
 }
 
 // seoTodayJSON feeds the site's home-page block: a localized date label,
