@@ -12,8 +12,9 @@ package main
 // (POST /api/ai/fixed-answer/ack).
 //
 //   mode "replace"    — full_text is the complete answer (the model's answer
-//                       before the rewrite, or a paid continuation of it); the
-//                       app runs its own grounding strip over it before showing.
+//                       before the rewrite, or a paid continuation of it),
+//                       already through the guard strip before it was added;
+//                       the app stores and shows it as is, no second pass.
 //   mode "regenerate" — nothing is left to restore (no corpus row): the app
 //                       drops its saved copy and builds the answer again.
 //
