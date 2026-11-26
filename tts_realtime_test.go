@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -413,5 +414,28 @@ func TestTTSPCMToMP3(t *testing.T) {
 	}
 	if len(mp3) < 1000 || !(strings.HasPrefix(string(mp3), "ID3") || mp3[0] == 0xFF) {
 		t.Fatalf("not an mp3: %d bytes %x", len(mp3), mp3[:4])
+	}
+}
+
+// A mismatch line carries both strings whole and the point where the normalized forms part (25.11: the
+// 120-byte cut hid the cause of a Korean failure).
+func TestTTSMismatchLogFull(t *testing.T) {
+	want := "이 커플의 가장 큰 강점은 그라하 마이트리 5/5점에 나타난 대화와 이해의 잠재력, 그리고 서로를 존중하는 태도입니다. 끝까지 함께하세요."
+	got := "이 커플의 가장 큰 강점은 그라하 마이트리 5점 만점에 5점에 나타난 대화와 이해의 잠재력, 그리고 서로를 존중하는 태도입니다. 끝까지 함께하세요."
+	line := ttsMismatchLog(1, 1, "cedar", want, got)
+	for _, s := range []string{fmt.Sprintf("%q", want), fmt.Sprintf("%q", got), "attempt 1/1", "voice=cedar"} {
+		if !strings.Contains(line, s) {
+			t.Fatalf("line lacks %s:\n%s", s, line)
+		}
+	}
+	if !strings.Contains(line, "differ at rune 25:") {
+		t.Fatalf("divergence point:\n%s", line)
+	}
+	if strings.Contains(line, `\x`) {
+		t.Fatalf("broken rune in the line:\n%s", line)
+	}
+	// equal prefix, one string longer → the point is the end of the shorter one
+	if l := ttsMismatchLog(2, 2, "marin", "Да.", "Да. Хорошего вечера!"); !strings.Contains(l, "differ at rune 2:") {
+		t.Fatalf("longer transcript:\n%s", l)
 	}
 }

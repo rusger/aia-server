@@ -140,8 +140,7 @@ func ttsRealtimeFetch(voice, instructions, text string) ([]byte, *ttsUsage, erro
 			return nil, total, err
 		}
 		if ttsTranscriptNorm(transcript) != ttsTranscriptNorm(text) {
-			log.Printf("⚠️ tts realtime: transcript mismatch (attempt %d/%d, voice=%s): want %q got %q",
-				i+1, attempts, voice, truncateForLog(text, 120), truncateForLog(transcript, 120))
+			log.Print(ttsMismatchLog(i+1, attempts, voice, text, transcript))
 			continue
 		}
 		mp3, err := ttsPCMToMP3(pcm)
@@ -261,6 +260,31 @@ func ttsRealtimeSession(voice, instructions, text string) (pcm []byte, transcrip
 			return audio.Bytes(), tr.String(), usage, nil
 		}
 	}
+}
+
+// ttsMismatchLog: the journal line of a transcript mismatch — both strings in full (a truncated pair hid the cause
+// on 25.11: the first 120 bytes matched) and where the normalized forms part, so the cause is readable from the line.
+func ttsMismatchLog(attempt, attempts int, voice, text, transcript string) string {
+	wn, gn := []rune(ttsTranscriptNorm(text)), []rune(ttsTranscriptNorm(transcript))
+	at := 0
+	for at < len(wn) && at < len(gn) && wn[at] == gn[at] {
+		at++
+	}
+	ctx := func(r []rune) string {
+		lo, hi := at-20, at+40
+		if lo < 0 {
+			lo = 0
+		}
+		if hi > len(r) {
+			hi = len(r)
+		}
+		if lo > hi {
+			lo = hi
+		}
+		return string(r[lo:hi])
+	}
+	return fmt.Sprintf("⚠️ tts realtime: transcript mismatch (attempt %d/%d, voice=%s): normalized differ at rune %d: want …%q… got …%q…; want full %q; got full %q",
+		attempt, attempts, voice, at, ctx(wn), ctx(gn), text, transcript)
 }
 
 // ttsTranscriptNorm: lower case, ё = е, punctuation and symbols dropped, whitespace collapsed — the comparison
