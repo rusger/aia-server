@@ -435,10 +435,10 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 		return 0, fmt.Errorf("razbor pages: %w", err)
 	}
 	// Day pages: launch epoch .. today+60, extended to the end of the last
-	// month that gets Moon-sign facts, so every sign page has its month hub
+	// month that gets Moon-sign facts and capped at the horizon month (A246), so every sign page has its month hub
 	// (and is linked from it) — within the computed years. Computed before the
 	// language hubs: they link every month hub of this window (A234).
-	days, err := computeSeoDays(data, seoDayEpoch, seoDayWindowEnd(data, now))
+	days, err := computeSeoDays(data, seoDayEpoch, seoDayWindowEnd(data, now, outDir))
 	if err != nil {
 		return 0, fmt.Errorf("day pages: %w", err)
 	}
