@@ -350,8 +350,40 @@ func TestWriteSeoSiteHonestLastmod(t *testing.T) {
 func TestLangHubLinksEveryMonthHub(t *testing.T) {
 	out := t.TempDir()
 	now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
-	if _, err := writeSeoSiteAt(out, []*seoYearData{fixtureYear(t)}, now); err != nil {
+	n, err := writeSeoSiteAt(out, []*seoYearData{fixtureYear(t)}, now)
+	if err != nil {
 		t.Fatal(err)
+	}
+	// No new URLs: the same file count TestWriteSeoSiteDayPages pins, and the
+	// sitemap names exactly the generated .html pages (one <loc> per file).
+	rs, err := loadRazbors(seoRazborDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	razborPages := 0
+	for _, r := range rs {
+		razborPages += len(r.siteLangs())
+	}
+	if want := 16 + 128 + len(seoDayLangs)*(92+3+1) + 16 + 2 + razborPages; n != want {
+		t.Fatalf("%d files, want %d (page set changed)", n, want)
+	}
+	sm, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	locs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<loc>([^<]+)</loc>`).FindAllStringSubmatch(string(sm), -1) {
+		locs[m[1]] = true
+	}
+	html := 0
+	_ = filepath.Walk(out, func(p string, fi os.FileInfo, err error) error {
+		if err == nil && !fi.IsDir() && strings.HasSuffix(p, ".html") {
+			html++
+		}
+		return nil
+	})
+	if len(locs) != html {
+		t.Errorf("sitemap has %d <loc>, %d .html files written", len(locs), html)
 	}
 	for _, lang := range seoDayLangs {
 		hub, err := os.ReadFile(filepath.Join(out, lang, "index.html"))
