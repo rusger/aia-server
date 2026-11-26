@@ -56,8 +56,10 @@ var errTTSVoiceNotRealtime = errors.New("tts voice not available in realtime")
 
 // ttsUsage — what one realtime synthesis cost, in the billable buckets of voiceUsage.split (response.done
 // usage; summed over a mismatch retry). TextIn/AudioIn are UNCACHED input; cached tokens are separate.
+// Mismatch: the audio was served although its transcript differs from the text (ttsRealtimeServable).
 type ttsUsage struct {
 	TextIn, AudioIn, CachedText, CachedAudio, TextOut, AudioOut int
+	Mismatch                                                    bool
 }
 
 func (u *ttsUsage) add(o ttsUsage) {
@@ -67,6 +69,7 @@ func (u *ttsUsage) add(o ttsUsage) {
 	u.CachedAudio += o.CachedAudio
 	u.TextOut += o.TextOut
 	u.AudioOut += o.AudioOut
+	u.Mismatch = u.Mismatch || o.Mismatch
 }
 
 // ttsLogRealtimeRows writes one realtime synthesis as two api_calls rows, the voice.go convention, so finance.go
@@ -105,6 +108,9 @@ func ttsFetchMetered(fetch func(model, voice, instructions, text string) ([]byte
 // otherwise the speech row exactly as the caller logged it before A119 (characters as tokens).
 func ttsLogUsage(deviceID, callType string, u *ttsUsage, speechPrompt, speechTotal int) {
 	if u != nil {
+		if u.Mismatch { // joins the full ttsMismatchLog line just before it with the device (A119 live check)
+			log.Printf("⚠️ tts realtime mismatch served: device=%s call=%s", deviceID, callType)
+		}
 		ttsLogRealtimeRows(ttsLogAPICall, deviceID, callType, *u)
 		return
 	}
@@ -118,7 +124,10 @@ var ttsLogAPICall = logAPICallWithTokens
 var ttsRealtimeFetchFn = ttsRealtimeFetch
 
 // ttsRealtimeFetch voices text with the Realtime API and returns mp3 bytes. The voice is checked before any
-// network call. A transcript mismatch is retried at most once and only with TTS_REALTIME_RETRY_ON_MISMATCH=1.
+// network call. A transcript mismatch whose reading still starts and ends where the text does is served (the audio
+// is already paid for; owner 26.11.2026: learn the cause from live calls, no paid re-tests) with usage.Mismatch and
+// a full journal line. Any other mismatch — cut short, extra words before or after, another text or language — is
+// an error, retried at most once and only with TTS_REALTIME_RETRY_ON_MISMATCH=1.
 func ttsRealtimeFetch(voice, instructions, text string) ([]byte, *ttsUsage, error) {
 	if !ttsRealtimeVoices[voice] {
 		return nil, nil, fmt.Errorf("%w: %q", errTTSVoiceNotRealtime, voice)
@@ -139,13 +148,23 @@ func ttsRealtimeFetch(voice, instructions, text string) ([]byte, *ttsUsage, erro
 		if err != nil {
 			return nil, total, err
 		}
-		if ttsTranscriptNorm(transcript) != ttsTranscriptNorm(text) {
-			log.Print(ttsMismatchLog(i+1, attempts, voice, text, transcript))
-			continue
+		mismatch := ttsTranscriptNorm(transcript) != ttsTranscriptNorm(text)
+		if mismatch {
+			serve := ttsRealtimeServable(text, transcript)
+			log.Print(ttsMismatchLog(i+1, attempts, voice, text, transcript, serve))
+			if !serve {
+				continue
+			}
 		}
 		mp3, err := ttsPCMToMP3(pcm)
 		if err != nil {
 			return nil, total, fmt.Errorf("tts realtime: mp3: %w", err)
+		}
+		if mismatch {
+			if total == nil {
+				total = &ttsUsage{}
+			}
+			total.Mismatch = true
 		}
 		return mp3, total, nil
 	}
@@ -264,7 +283,7 @@ func ttsRealtimeSession(voice, instructions, text string) (pcm []byte, transcrip
 
 // ttsMismatchLog: the journal line of a transcript mismatch — both strings in full (a truncated pair hid the cause
 // on 25.11: the first 120 bytes matched) and where the normalized forms part, so the cause is readable from the line.
-func ttsMismatchLog(attempt, attempts int, voice, text, transcript string) string {
+func ttsMismatchLog(attempt, attempts int, voice, text, transcript string, served bool) string {
 	wn, gn := []rune(ttsTranscriptNorm(text)), []rune(ttsTranscriptNorm(transcript))
 	at := 0
 	for at < len(wn) && at < len(gn) && wn[at] == gn[at] {
@@ -283,8 +302,23 @@ func ttsMismatchLog(attempt, attempts int, voice, text, transcript string) strin
 		}
 		return string(r[lo:hi])
 	}
-	return fmt.Sprintf("⚠️ tts realtime: transcript mismatch (attempt %d/%d, voice=%s): normalized differ at rune %d: want …%q… got …%q…; want full %q; got full %q",
-		attempt, attempts, voice, at, ctx(wn), ctx(gn), text, transcript)
+	verdict := "blocked"
+	if served {
+		verdict = "served"
+	}
+	return fmt.Sprintf("⚠️ tts realtime: transcript mismatch %s (attempt %d/%d, voice=%s, runes want=%d got=%d): normalized differ at rune %d: want …%q… got …%q…; want full %q; got full %q",
+		verdict, attempt, attempts, voice, len(wn), len(gn), at, ctx(wn), ctx(gn), text, transcript)
+}
+
+// ttsRealtimeServable: a mismatching reading is still served when its first and last normalized words are the
+// text's — it began and finished where the text does. A reading cut short, with words added before or after
+// (a greeting, an answer), or in another text or language, fails this and stays an error. Structural, no ratio.
+func ttsRealtimeServable(text, transcript string) bool {
+	w, g := strings.Fields(ttsTranscriptNorm(text)), strings.Fields(ttsTranscriptNorm(transcript))
+	if len(w) == 0 || len(g) == 0 {
+		return false
+	}
+	return w[0] == g[0] && w[len(w)-1] == g[len(g)-1]
 }
 
 // ttsTranscriptNorm: lower case, ё = е, punctuation and symbols dropped, whitespace collapsed — the comparison
