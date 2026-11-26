@@ -28,10 +28,15 @@ import (
 )
 
 const (
-	seoFactsDir     = ".facts"
-	seoTextDir      = ".text"
-	seoSignMonthsOk = 4 // current month + 3 ahead get facts
+	seoFactsDir = ".facts"
+	seoTextDir  = ".text"
 )
+
+// A246 26.11.2026: NEW months are released only up to the current month +
+// seoSignMonthsAhead (nginx 20–26.11: Google takes 2–16 new /astro/ URLs a
+// day). Months already published stay (seoPublishedHorizon). To return to the
+// old horizon set it back to 3. A var only so tests can vary it.
+var seoSignMonthsAhead = 2
 
 var seoSignPlanets = []string{"Sun", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Rahu", "Ketu"}
 
@@ -213,11 +218,13 @@ func factsKey(year, month int, slug string) string {
 }
 
 // seoSignMonths lists the (year, month) pairs that get facts: the current
-// month and the next seoSignMonthsOk-1, limited to computed years.
-func seoSignMonths(data []*seoYearData, now time.Time) [][2]int {
+// month up to the later of current+seoSignMonthsAhead and the furthest month
+// already published in outDir, limited to computed years.
+func seoSignMonths(data []*seoYearData, now time.Time, outDir string) [][2]int {
 	var out [][2]int
 	m := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < seoSignMonthsOk; i++ {
+	last := seoHorizonMonth(now, outDir)
+	for !m.After(last) {
 		if seoYearFor(data, m.Year()) != nil {
 			out = append(out, [2]int{m.Year(), int(m.Month())})
 		}
@@ -226,15 +233,60 @@ func seoSignMonths(data []*seoYearData, now time.Time) [][2]int {
 	return out
 }
 
+// seoHorizonMonth is the first day of the last month that may get pages:
+// current+seoSignMonthsAhead, or the furthest month already published if
+// that is later — a published URL never drops out of the sitemap/links.
+func seoHorizonMonth(now time.Time, outDir string) time.Time {
+	h := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, seoSignMonthsAhead, 0)
+	if p, ok := seoPublishedHorizon(outDir); ok && p.After(h) {
+		h = p
+	}
+	return h
+}
+
+// seoPublishedHorizon finds the furthest month already on disk: day/month
+// folders <out>/<lang>/YYYY/MM and facts <out>/.facts/YYYY-MM-*.json. Read
+// from the files themselves, not .seo-state.json, so losing the state file
+// can never narrow the window.
+func seoPublishedHorizon(outDir string) (time.Time, bool) {
+	var best time.Time
+	found := false
+	consider := func(y, mo string) {
+		t, err := time.Parse("2006-01", y+"-"+mo)
+		if err != nil {
+			return
+		}
+		if !found || t.After(best) {
+			best, found = t, true
+		}
+	}
+	dirs, _ := filepath.Glob(filepath.Join(outDir, "*", "[0-9][0-9][0-9][0-9]", "[0-1][0-9]"))
+	for _, d := range dirs {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			consider(filepath.Base(filepath.Dir(d)), filepath.Base(d))
+		}
+	}
+	facts, _ := filepath.Glob(filepath.Join(outDir, seoFactsDir, "[0-9][0-9][0-9][0-9]-[0-1][0-9]-*.json"))
+	for _, f := range facts {
+		b := filepath.Base(f)
+		consider(b[0:4], b[5:7])
+	}
+	return best, found
+}
+
 // seoDayWindowEnd is the last day that gets a day page: today+seoDayAhead
-// or the end of the last sign-facts month, whichever is later.
-func seoDayWindowEnd(data []*seoYearData, now time.Time) time.Time {
+// or the end of the last sign-facts month, whichever is later — but never
+// past the end of the horizon month (A246).
+func seoDayWindowEnd(data []*seoYearData, now time.Time, outDir string) time.Time {
 	end := utcDay(now).AddDate(0, 0, seoDayAhead)
-	for _, ym := range seoSignMonths(data, now) {
+	for _, ym := range seoSignMonths(data, now, outDir) {
 		last := time.Date(ym[0], time.Month(ym[1]), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
 		if last.After(end) {
 			end = last
 		}
+	}
+	if cap := seoHorizonMonth(now, outDir).AddDate(0, 1, -1); end.After(cap) {
+		end = cap
 	}
 	return end
 }
@@ -247,7 +299,7 @@ func writeSignFacts(outDir string, data []*seoYearData, now time.Time) (map[stri
 		return nil, err
 	}
 	all := map[string]*seoSignFacts{}
-	for _, ym := range seoSignMonths(data, now) {
+	for _, ym := range seoSignMonths(data, now, outDir) {
 		for s := 0; s < 12; s++ {
 			f, err := computeSignFacts(data, ym[0], ym[1], s)
 			if err != nil {
