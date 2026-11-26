@@ -344,3 +344,67 @@ func TestWriteSeoSiteHonestLastmod(t *testing.T) {
 		t.Error("dateModified must be the content date, not the run date")
 	}
 }
+
+// A234 (26.11.2026): the language hub links every month hub of the day window
+// (future sign-month pages were 30+ links deep), and only month hubs that exist.
+func TestLangHubLinksEveryMonthHub(t *testing.T) {
+	out := t.TempDir()
+	now := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	n, err := writeSeoSiteAt(out, []*seoYearData{fixtureYear(t)}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No new URLs: the same file count TestWriteSeoSiteDayPages pins, and the
+	// sitemap names exactly the generated .html pages (one <loc> per file).
+	rs, err := loadRazbors(seoRazborDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	razborPages := 0
+	for _, r := range rs {
+		razborPages += len(r.siteLangs())
+	}
+	if want := 16 + 128 + len(seoDayLangs)*(92+3+1) + 16 + 2 + razborPages; n != want {
+		t.Fatalf("%d files, want %d (page set changed)", n, want)
+	}
+	sm, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	locs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<loc>([^<]+)</loc>`).FindAllStringSubmatch(string(sm), -1) {
+		locs[m[1]] = true
+	}
+	html := 0
+	_ = filepath.Walk(out, func(p string, fi os.FileInfo, err error) error {
+		if err == nil && !fi.IsDir() && strings.HasSuffix(p, ".html") {
+			html++
+		}
+		return nil
+	})
+	if len(locs) != html {
+		t.Errorf("sitemap has %d <loc>, %d .html files written", len(locs), html)
+	}
+	for _, lang := range seoDayLangs {
+		hub, err := os.ReadFile(filepath.Join(out, lang, "index.html"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		hubs, _ := filepath.Glob(filepath.Join(out, lang, "20[0-9][0-9]", "[01][0-9]", "index.html"))
+		if len(hubs) < 3 {
+			t.Fatalf("%s: %d month hubs, want ≥3 (Oct–Dec)", lang, len(hubs))
+		}
+		for _, h := range hubs {
+			rel, _ := filepath.Rel(filepath.Join(out, lang), filepath.Dir(h))
+			if want := `href="` + seoURL(lang, rel+"/index.html") + `"`; !strings.Contains(string(hub), want) {
+				t.Errorf("%s hub lacks link to month hub %s", lang, rel)
+			}
+		}
+		prefix := seoBaseURL + "/" + lang + "/"
+		for _, m := range regexp.MustCompile(`href="(`+regexp.QuoteMeta(prefix)+`\d{4}/\d{2}/)"`).FindAllStringSubmatch(string(hub), -1) {
+			if _, err := os.Stat(filepath.Join(out, lang, strings.TrimPrefix(m[1], prefix), "index.html")); err != nil {
+				t.Errorf("%s hub links missing month hub %s", lang, m[1])
+			}
+		}
+	}
+}
