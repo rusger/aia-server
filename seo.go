@@ -434,8 +434,17 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 	if err != nil {
 		return 0, fmt.Errorf("razbor pages: %w", err)
 	}
+	// Day pages: launch epoch .. today+60, extended to the end of the last
+	// month that gets Moon-sign facts, so every sign page has its month hub
+	// (and is linked from it) — within the computed years. Computed before the
+	// language hubs: they link every month hub of this window (A234).
+	days, err := computeSeoDays(data, seoDayEpoch, seoDayWindowEnd(data, now))
+	if err != nil {
+		return 0, fmt.Errorf("day pages: %w", err)
+	}
+	months := seoDayMonths(days)
 	for _, lang := range seoLangs {
-		pages = append(pages, out{lang, buildLangHub(lang, data, now)})
+		pages = append(pages, out{lang, buildLangHub(lang, data, now, months)})
 		for _, d := range data {
 			pages = append(pages, out{lang, buildTransitsPage(lang, d, now)})
 			for _, p := range seoRetroPlanets {
@@ -446,13 +455,6 @@ func writeSeoSiteAt(outDir string, data []*seoYearData, now time.Time) (int, err
 		}
 	}
 
-	// Day pages: launch epoch .. today+60, extended to the end of the last
-	// month that gets Moon-sign facts, so every sign page has its month hub
-	// (and is linked from it) — within the computed years.
-	days, err := computeSeoDays(data, seoDayEpoch, seoDayWindowEnd(data, now))
-	if err != nil {
-		return 0, fmt.Errorf("day pages: %w", err)
-	}
 	events := seoYearEvents(data)
 	facts, err := writeSignFacts(outDir, data, now)
 	if err != nil {
@@ -598,7 +600,23 @@ func fmtDay(t time.Time) string { return t.UTC().Format("2006-01-02") }
 
 func fmtInstant(t time.Time) string { return t.UTC().Format("2006-01-02 15:04") + " UTC" }
 
-func buildLangHub(lang string, data []*seoYearData, now time.Time) seoPage {
+// seoDayMonths: the first day of every month the day window covers, in order —
+// exactly the months buildMonthPage renders a hub for.
+func seoDayMonths(days []seoDay) []time.Time {
+	var ms []time.Time
+	for _, d := range days {
+		m := time.Date(d.date.Year(), d.date.Month(), 1, 0, 0, 0, 0, time.UTC)
+		if len(ms) == 0 || !ms[len(ms)-1].Equal(m) {
+			ms = append(ms, m)
+		}
+	}
+	return ms
+}
+
+// buildLangHub: months are the month hubs to link (A234, 26.11.2026: future
+// sign-month pages sat 30+ links deep — Googlebot left them «discovered, not
+// indexed»; the hub now links every month hub, and each lists its signs).
+func buildLangHub(lang string, data []*seoYearData, now time.Time, months []time.Time) seoPage {
 	years := make([]int, 0, len(data))
 	for _, d := range data {
 		years = append(years, d.year)
@@ -610,7 +628,9 @@ func buildLangHub(lang string, data []*seoYearData, now time.Time) seoPage {
 	if hasLang(seoDayLangs, lang) {
 		b.WriteString("<section class=\"year\"><h2>" + esc(seoT("section_days", lang, nil)) + "</h2><ul class=\"links\">\n")
 		b.WriteString("<li><a href=\"" + seoURL(lang, todayRel) + "\">" + esc(seoT("section_today", lang, nil)) + "</a></li>\n")
-		b.WriteString("<li><a href=\"" + seoURL(lang, monthRel(now)) + "\">" + esc(seoT("month_title", lang, map[string]string{"month": seoMonthName(int(now.Month()), lang), "year": yearStr(now.Year())})) + "</a></li>\n")
+		for _, m := range months {
+			b.WriteString("<li><a href=\"" + seoURL(lang, monthRel(m)) + "\">" + esc(seoT("month_title", lang, map[string]string{"month": seoMonthName(int(m.Month()), lang), "year": yearStr(m.Year())})) + "</a></li>\n")
+		}
 		b.WriteString("</ul></section>\n")
 	}
 	for _, d := range data {
