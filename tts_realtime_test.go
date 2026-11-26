@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -422,8 +424,8 @@ func TestTTSPCMToMP3(t *testing.T) {
 func TestTTSMismatchLogFull(t *testing.T) {
 	want := "이 커플의 가장 큰 강점은 그라하 마이트리 5/5점에 나타난 대화와 이해의 잠재력, 그리고 서로를 존중하는 태도입니다. 끝까지 함께하세요."
 	got := "이 커플의 가장 큰 강점은 그라하 마이트리 5점 만점에 5점에 나타난 대화와 이해의 잠재력, 그리고 서로를 존중하는 태도입니다. 끝까지 함께하세요."
-	line := ttsMismatchLog(1, 1, "cedar", want, got)
-	for _, s := range []string{fmt.Sprintf("%q", want), fmt.Sprintf("%q", got), "attempt 1/1", "voice=cedar"} {
+	line := ttsMismatchLog(1, 1, "cedar", want, got, true)
+	for _, s := range []string{fmt.Sprintf("%q", want), fmt.Sprintf("%q", got), "attempt 1/1", "voice=cedar", "mismatch served", "runes want="} {
 		if !strings.Contains(line, s) {
 			t.Fatalf("line lacks %s:\n%s", s, line)
 		}
@@ -435,7 +437,86 @@ func TestTTSMismatchLogFull(t *testing.T) {
 		t.Fatalf("broken rune in the line:\n%s", line)
 	}
 	// equal prefix, one string longer → the point is the end of the shorter one
-	if l := ttsMismatchLog(2, 2, "marin", "Да.", "Да. Хорошего вечера!"); !strings.Contains(l, "differ at rune 2:") {
+	if l := ttsMismatchLog(2, 2, "marin", "Да.", "Да. Хорошего вечера!", false); !strings.Contains(l, "differ at rune 2:") {
 		t.Fatalf("longer transcript:\n%s", l)
+	}
+}
+
+// A119 26.11 (owner: learn from live calls, no paid re-tests): a reading that differs inside but starts and ends
+// where the text does is served and cached, once, with usage.Mismatch and the device line; cut short → error.
+func TestTTSRealtimeMismatchServed(t *testing.T) {
+	text := "이 커플의 강점은 그라하 마이트리 5/5점입니다. 함께하세요."
+	f := &rtFake{transcript: "이 커플의 강점은 그라하 마이트리 5점 만점에 5점입니다. 함께하세요.", pcm: []byte(strings.Repeat("p", 400))}
+	logged := setupRealtime(t, f)
+	dir := t.TempDir()
+	t.Setenv("TTS_CACHE_DIR", dir)
+	t.Setenv("TTS_VOICE_MAP", "*:f=marin,*:m=cedar")
+	t.Setenv("TTS_REALTIME_RETRY_ON_MISMATCH", "1") // a served reading is never retried
+	var jb bytes.Buffer
+	log.SetOutput(&jb)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	data, _, hit, status, _ := ttsEnsure("dev1", "203.0.113.7", text, "m", "ko")
+	if status != http.StatusOK || hit || !strings.HasPrefix(string(data), "MP3:") {
+		t.Fatalf("served mismatch: %d hit=%v", status, hit)
+	}
+	if n := f.conns.Load(); n != 1 {
+		t.Fatalf("%d sessions, want 1", n)
+	}
+	if _, err := os.Stat(dir + "/" + ttsCacheKey(ttsModel, "cedar", "ko", text) + ".mp3"); err != nil {
+		t.Fatalf("served audio not cached: %v", err)
+	}
+	if len(*logged) != 2 {
+		t.Fatalf("api_calls: %v", *logged)
+	}
+	j := jb.String()
+	for _, s := range []string{"transcript mismatch served", "mismatch served: device=dev1 call=tts", "lang=ko", "mismatch=true"} {
+		if !strings.Contains(j, s) {
+			t.Fatalf("journal lacks %q:\n%s", s, j)
+		}
+	}
+
+	// cut short: the end of the text is missing → error, retried once with the flag, nothing cached
+	f.transcript = "이 커플의 강점은 그라하 마이트리"
+	text2 := text + " 끝."
+	if _, _, _, status, _ = ttsEnsure("dev1", "203.0.113.7", text2, "m", "ko"); status != http.StatusBadGateway {
+		t.Fatalf("cut short must fail: %d", status)
+	}
+	if n := f.conns.Load() - 1; n != 2 {
+		t.Fatalf("cut short: %d sessions, want 2 (flag 1)", n)
+	}
+	if !strings.Contains(jb.String(), "transcript mismatch blocked") {
+		t.Fatalf("blocked line missing:\n%s", jb.String())
+	}
+	if _, err := os.Stat(dir + "/" + ttsCacheKey(ttsModel, "cedar", "ko", text2) + ".mp3"); err == nil {
+		t.Fatal("blocked audio cached")
+	}
+
+	// a direct fetch: served → Mismatch true; exact → false
+	f.transcript = "이 커플의 강점은 그라하 마이트리 5점 만점에 5점입니다. 함께하세요."
+	if _, u, err := ttsRealtimeFetch("cedar", "x", text); err != nil || u == nil || !u.Mismatch {
+		t.Fatalf("fetch served: %v %+v", err, u)
+	}
+	f.transcript = text
+	if _, u, err := ttsRealtimeFetch("cedar", "x", text); err != nil || u == nil || u.Mismatch {
+		t.Fatalf("fetch exact: %v %+v", err, u)
+	}
+}
+
+func TestTTSRealtimeServable(t *testing.T) {
+	for _, c := range []struct {
+		text, got string
+		ok        bool
+	}{
+		{"Не торопитесь с решениями.", "Не торопитесь с важными решениями.", true}, // a word inside
+		{"Не торопитесь с решениями.", "Не торопитесь с", false},                   // cut short
+		{"Не торопитесь.", "Не торопитесь. Хорошего вечера!", false},               // added after
+		{"Не торопитесь.", "Конечно: не торопитесь.", false},                       // added before
+		{"Не торопитесь.", "Take your time.", false},                               // another language
+		{"Привет.", "", false},
+	} {
+		if got := ttsRealtimeServable(c.text, c.got); got != c.ok {
+			t.Fatalf("%q / %q → %v, want %v", c.text, c.got, got, c.ok)
+		}
 	}
 }

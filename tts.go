@@ -281,7 +281,8 @@ func ttsEnsure(deviceID, clientIP, text, gender, lang string) (data []byte, voic
 		}
 	}
 	ttsLogUsage(deviceID, "tts", usage, chars, chars)
-	log.Printf("🔊 tts: device=%s voice=%s chars=%d bytes=%d in %dms", deviceID, voice, chars, len(data), time.Since(started).Milliseconds())
+	log.Printf("🔊 tts: device=%s lang=%s voice=%s chars=%d bytes=%d mismatch=%v in %dms", deviceID, lang, voice, chars, len(data),
+		usage != nil && usage.Mismatch, time.Since(started).Milliseconds())
 	return data, voice, false, http.StatusOK, ""
 }
 
