@@ -148,7 +148,7 @@ func ttsRealtimeFetch(voice, instructions, text string) ([]byte, *ttsUsage, erro
 		if err != nil {
 			return nil, total, err
 		}
-		mismatch := ttsTranscriptNorm(transcript) != ttsTranscriptNorm(text)
+		mismatch := ttsTranscriptKey(transcript) != ttsTranscriptKey(text)
 		if mismatch {
 			serve := ttsRealtimeServable(text, transcript)
 			log.Print(ttsMismatchLog(i+1, attempts, voice, text, transcript, serve))
@@ -292,7 +292,7 @@ func ttsRealtimeSession(voice, instructions, text string) (pcm []byte, transcrip
 // ttsMismatchLog: the journal line of a transcript mismatch — both strings in full (a truncated pair hid the cause
 // on 25.11: the first 120 bytes matched) and where the normalized forms part, so the cause is readable from the line.
 func ttsMismatchLog(attempt, attempts int, voice, text, transcript string, served bool) string {
-	wn, gn := []rune(ttsTranscriptNorm(text)), []rune(ttsTranscriptNorm(transcript))
+	wn, gn := []rune(ttsTranscriptKey(text)), []rune(ttsTranscriptKey(transcript))
 	at := 0
 	for at < len(wn) && at < len(gn) && wn[at] == gn[at] {
 		at++
@@ -327,6 +327,26 @@ func ttsRealtimeServable(text, transcript string) bool {
 		return false
 	}
 	return w[0] == g[0] && w[len(w)-1] == g[len(g)-1]
+}
+
+// ttsTranscriptKey: the form compared for a mismatch — ttsTranscriptNorm without the spaces that touch a Han, Hiragana
+// or Katakana rune. Chinese and Japanese write no spaces between words; the norm's spaces there come from line
+// breaks and «：», which the model reads as one sentence (A119, 27.11.2026: zh 12:50 blocked and zh 14:28 «达到28» vs
+// «达到 28» — same words, a space apart). Korean and the Latin/Cyrillic words around CJK keep their own spaces.
+func ttsTranscriptKey(s string) string {
+	r := []rune(ttsTranscriptNorm(s))
+	var b strings.Builder
+	for i, c := range r {
+		if c == ' ' && i > 0 && i+1 < len(r) && (ttsNoSpaceScript(r[i-1]) || ttsNoSpaceScript(r[i+1])) {
+			continue
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
+}
+
+func ttsNoSpaceScript(r rune) bool {
+	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana)
 }
 
 // ttsTranscriptNorm: lower case, ё = е, punctuation and symbols dropped, whitespace collapsed — the comparison
