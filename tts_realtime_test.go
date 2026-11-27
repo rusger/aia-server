@@ -385,6 +385,35 @@ func TestTTSTranscriptNorm(t *testing.T) {
 	}
 }
 
+// A119 27.11.2026, journal astrolog-api: the same Chinese words a line break / a space apart were a mismatch and
+// blocked one reading. Japanese with changed word forms (13:12) stays a mismatch.
+func TestTTSTranscriptKeyCJKSpaces(t *testing.T) {
+	same := [][2]string{
+		{"时期总体描述：\n\n金星大运带来愉悦、创造力。\n\n预期经历：\n\n人际关系改善。", "时期总体描述：金星大运带来愉悦、创造力。\n\n预期经历：人际关系改善。"},
+		{"主要优势是 Ashtakoota 得分达到28/36，Nadi、Bhakut 与 Graha Maitri 均表现突出", "主要优势是 Ashtakoota 得分达到 28/36，Nadi、Bhakut 与 Graha Maitri 均表现突出"},
+		{"結婚生活では、\n相手の気持ちを聞いてから", "結婚生活では、相手の気持ちを聞いてから"},
+	}
+	for _, c := range same {
+		if ttsTranscriptKey(c[0]) != ttsTranscriptKey(c[1]) {
+			t.Fatalf("same words must match:\n%q\n%q", ttsTranscriptKey(c[0]), ttsTranscriptKey(c[1]))
+		}
+	}
+	differ := [][2]string{
+		{"感情の表し方と親密さへの期待が異なり、衝突時に誇りや批判が前面に出やすいことです。", "感情の表し方と親密さへの期待が異なることで、衝突時に誇りや批判が前面に出やすい点です。"},
+		{"graha maitri 均表现突出", "grahamaitri 均表现突出"},
+		{"Не торопитесь.", "Не торопитесь. Хорошего вечера!"},
+		{"안녕 하세요", "안녕하세요"},
+	}
+	for _, c := range differ {
+		if ttsTranscriptKey(c[0]) == ttsTranscriptKey(c[1]) {
+			t.Fatalf("must stay a mismatch: %q vs %q", c[0], c[1])
+		}
+	}
+	if !strings.Contains(ttsMismatchLog(1, 1, "marin", "达到28", "达到 28", true), "runes want=4 got=4") {
+		t.Fatal("the log must compare the same key form")
+	}
+}
+
 func TestTTSVoiceMap(t *testing.T) {
 	t.Setenv("TTS_VOICE_MAP", "")
 	if ttsVoiceFor("f", "ru") != "nova" || ttsVoiceFor("m", "en-US") != "ash" {
