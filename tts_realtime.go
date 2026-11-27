@@ -188,6 +188,15 @@ type ttsRealtimeEvent struct {
 }
 
 // ttsRealtimeSession: one WebSocket session for one text → raw PCM, the model's transcript and usage.
+// ttsRealtimeInstructions is the session prompt. A119 27.11.2026: live calls showed the model "correcting" Russian
+// cases while reading («неожиданные возможности» → «неожиданных возможностей»), hence the word-forms sentence. It only
+// asks for exact reading in the same single call: no retry, and serving on mismatch stays ttsRealtimeServable.
+func ttsRealtimeInstructions(style string) string {
+	return "You are a text-to-speech engine. Read the user's message aloud exactly, word for word, " +
+		"in its language. Do not change word forms, cases or grammar; keep every word exactly as written. " +
+		"Do not add, answer or comment. Voice style: " + style
+}
+
 func ttsRealtimeSession(voice, instructions, text string) (pcm []byte, transcript string, usage *ttsUsage, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), ttsRealtimeTimeout)
 	defer cancel()
@@ -214,8 +223,7 @@ func ttsRealtimeSession(voice, instructions, text string) (pcm []byte, transcrip
 	events := []interface{}{
 		map[string]interface{}{"type": "session.update", "session": map[string]interface{}{
 			"type": "realtime", "output_modalities": []string{"audio"},
-			"instructions": "You are a text-to-speech engine. Read the user's message aloud exactly, word for word, " +
-				"in its language. Do not add, answer or comment. Voice style: " + instructions,
+			"instructions": ttsRealtimeInstructions(instructions),
 			"audio": map[string]interface{}{"output": map[string]interface{}{
 				"voice": voice, "format": map[string]interface{}{"type": "audio/pcm", "rate": ttsRealtimeRate},
 			}},

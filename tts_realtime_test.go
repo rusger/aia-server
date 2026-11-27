@@ -520,3 +520,15 @@ func TestTTSRealtimeServable(t *testing.T) {
 		}
 	}
 }
+
+func TestTTSRealtimeInstructionsKeepWordForms(t *testing.T) {
+	got := ttsRealtimeInstructions("calm, warm")
+	for _, want := range []string{"word for word", "Do not change word forms, cases or grammar; keep every word exactly as written."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("instructions miss %q: %q", want, got)
+		}
+	}
+	if !strings.HasSuffix(got, "Voice style: calm, warm") {
+		t.Fatalf("voice style must stay at the end: %q", got)
+	}
+}
