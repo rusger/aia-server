@@ -34,10 +34,10 @@ func TestTTSCacheKeyPinned(t *testing.T) {
 	}
 }
 
-// TTS_BACKEND unset → the /v1/audio/speech request is byte for byte the one
+// TTS_BACKEND=speech → the /v1/audio/speech request is byte for byte the one
 // sent before A119.
 func TestTTSSpeechRequestUnchanged(t *testing.T) {
-	t.Setenv("TTS_BACKEND", "")
+	t.Setenv("TTS_BACKEND", "speech")
 	var body []byte
 	var authz, ctype string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -330,6 +330,8 @@ func TestTTSRealtimeVoiceNotAllowed(t *testing.T) {
 		}
 	}
 	t.Setenv("TTS_CACHE_DIR", t.TempDir())
+	// unset map → the owner's realtime voices (default since 28.11.2026); a map naming a non-Realtime voice is still refused
+	t.Setenv("TTS_VOICE_MAP", "*:m=onyx")
 	_, voice, _, status, msg := ttsEnsure("dev1", "203.0.113.7", "Привет.", "m", "ru")
 	if voice != "onyx" || status != http.StatusServiceUnavailable || msg != "tts unavailable" {
 		t.Fatalf("ensure onyx: %s %d %q", voice, status, msg)
