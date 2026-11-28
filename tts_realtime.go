@@ -9,7 +9,7 @@ package main
 // plus response.output_audio_transcript.delta and ends with response.done (usage). Protocol measured against the
 // live API 25.11.2026 (~/aia/staging/a119/probe/voices.py).
 //
-// TTS_BACKEND=speech (default) keeps /v1/audio/speech exactly as before; TTS_BACKEND=realtime switches every
+// TTS_BACKEND=speech keeps /v1/audio/speech exactly as before; realtime (the default since 28.11.2026) switches every
 // ttsFetch consumer here. The model READS the text, so its own transcript is compared with the input: a mismatch
 // is an error, nothing is cached and — by default — nothing is retried (runtime LLM retries need the owner's
 // explicit yes, server rules 2026-08-01); TTS_REALTIME_RETRY_ON_MISMATCH=1 allows exactly one retry.
@@ -83,10 +83,16 @@ func ttsLogRealtimeRows(logf func(deviceID, callType, model string, p, c, tot, c
 	logf(deviceID, callType+"_text", ttsRealtimeModel+"-text", textIn, u.TextOut, textIn+u.TextOut, u.CachedText)
 }
 
-// ttsBackendRealtime: TTS_BACKEND=realtime. Anything else (unset, "speech", a typo) is the speech endpoint.
+// ttsBackendRealtime: realtime is the DEFAULT since 28.11.2026 (A119): gpt-4o-mini-tts — the speech endpoint's model —
+// shuts down on 06.01.2027, so a lost or empty TTS_BACKEND must not silently fall back to it. Only an explicit
+// TTS_BACKEND=speech keeps /v1/audio/speech; unset, "realtime" or anything else is realtime.
 func ttsBackendRealtime() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("TTS_BACKEND")), "realtime")
+	return !strings.EqualFold(strings.TrimSpace(os.Getenv("TTS_BACKEND")), "speech")
 }
+
+// ttsVoiceMapDefault: the owner's choice 25.11.2026 13:51/13:53 (women marin, men cedar; English shimmer/ash) — used
+// by the realtime backend when TTS_VOICE_MAP is unset, because the legacy nova/onyx are not Realtime voices.
+const ttsVoiceMapDefault = "en:f=shimmer,en:m=ash,*:f=marin,*:m=cedar"
 
 func ttsRealtimeRetryOnMismatch() bool {
 	return strings.TrimSpace(os.Getenv("TTS_REALTIME_RETRY_ON_MISMATCH")) == "1"
@@ -399,7 +405,10 @@ var ttsPCMToMP3 = func(pcm []byte) ([]byte, error) {
 func ttsVoiceMap() map[string]string {
 	raw := strings.TrimSpace(os.Getenv("TTS_VOICE_MAP"))
 	if raw == "" {
-		return nil
+		if !ttsBackendRealtime() {
+			return nil
+		}
+		raw = ttsVoiceMapDefault
 	}
 	m := map[string]string{}
 	var bad []string

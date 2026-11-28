@@ -58,7 +58,9 @@ type ttsRequest struct {
 // ttsVoiceFor maps the presenter gender to the approved OpenAI voices
 // (owner 25.09.2026: nova / onyx for Russian, shimmer / ash for English).
 // TTS_VOICE_MAP («en:f=shimmer,*:m=cedar», tts_realtime.go) overrides per
-// language, then «*»; unset = the voices above (A119).
+// language, then «*». Unset: the realtime backend (default since 28.11.2026)
+// uses ttsVoiceMapDefault (owner 25.11: marin/cedar, English shimmer/ash);
+// only TTS_BACKEND=speech keeps the voices above (A119).
 func ttsVoiceFor(gender, lang string) string {
 	male := strings.HasPrefix(strings.ToLower(gender), "m")
 	if vm := ttsVoiceMap(); vm != nil {
